@@ -139,49 +139,25 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
             val info = document.select("div.info div.box-inner-block")
 
             val password = info.select("input").attr("value")
-            val downloadAvailable = document.select("div#fukie2.entry a[href]:has(i.fa-download)")
+            val downloadAvailable = document.select("div.post-inner > div.entry > p > a[href]:has(i.fa-download)")
             val downloadLinks = downloadAvailable.joinToString("\n") { element ->
                 val serviceText = element.text()
                 val link = element.attr("href")
-                "$serviceText: $link"
+                "[$serviceText]($link)"
             }
 
             description = "View: $view\n" +
                 "${info.html()
                     .replace("<input.*?>".toRegex(), password)
                     .replace("<.+?>".toRegex(), "")}\n" +
-                "Password: $password\n" +
                 downloadLinks
             genre = document.parseTags()
-        }
-    }
-
-    private fun Element.parseTags(selector: String = ".post-tag a, .post-cats a"): String {
-        return select(selector)
-            .onEach {
-                val uri = it.attr("href")
-                    .removeSuffix("/")
-                    .substringAfterLast('/')
-                tagList = tagList.plus(it.text() to uri)
-            }
-            .joinToString { it.text() }
-    }
-
-    /* Related titles */
-    override fun relatedMangaListParse(response: Response): List<SManga> {
-        val document = response.asJsoup()
-        return document.select(".content > .yarpp-related a.yarpp-thumbnail").map { element ->
-            SManga.create().apply {
-                setUrlWithoutDomain(element.attr("href"))
-                title = element.attr("title")
-                thumbnail_url = element.selectFirst("img")?.imgAttr()
-            }
+            status = SManga.COMPLETED
         }
     }
 
     override fun chapterListSelector() = throw UnsupportedOperationException()
-
-    override fun chapterFromElement(element: Element): SChapter = throw UnsupportedOperationException()
+    override fun chapterFromElement(element: Element) = throw UnsupportedOperationException()
 
     override suspend fun getChapterList(manga: SManga): List<SChapter> {
         client.newCall(chapterListRequest(manga))
@@ -193,43 +169,36 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
                             ?: YEAR_MONTH_REGEX.find(url)?.groupValues?.get(1)?.let { "$it/01" }
                     }
 
-                return listOf(
+                val dateUpload = FULL_DATE_FORMAT.tryParse(dateStr)
+                val maxPage = document.select("div.page-link:first-of-type a.post-page-numbers").last()?.text()?.toInt() ?: 1
+                return (maxPage downTo 1).map { page ->
                     SChapter.create().apply {
-                        chapter_number = 0F
-                        setUrlWithoutDomain(manga.url)
-                        name = "Gallery"
-                        date_upload = FULL_DATE_FORMAT.tryParse(dateStr)
-                    },
-                )
+                        setUrlWithoutDomain("${manga.url}/$page")
+                        name = "Page $page"
+                        date_upload = dateUpload
+                    }
+                }
             }
     }
 
     override fun pageListParse(document: Document): List<Page> {
-        val chapterPage = mutableListOf<String>()
-        val pages = document
-            .select("div.page-link:first-child a")
-            .mapNotNull {
-                it.absUrl("href")
-            }
-
-        chapterPage += parseImageList(document).toMutableList()
-
-        pages.forEach { url ->
-            val request = GET(url, headers)
-            chapterPage += parseImageList(client.newCall(request).execute().asJsoup())
-        }
-
-        return chapterPage.mapIndexed { index, url ->
-            Page(index, imageUrl = url)
-        }
+        return document.select("div.post-inner > div.entry > p > img")
+            .mapIndexed { i, imgEl -> Page(i, imageUrl = imgEl.imgAttr()) }
     }
 
-    private fun parseImageList(document: Document): List<String> = document
-        .select("div.entry p img").map { image ->
-            image.imgAttr()
-        }
-
     override fun imageUrlParse(document: Document) = throw UnsupportedOperationException()
+
+    override fun getFilterList(): FilterList {
+        getTags()
+        return FilterList(
+            TopDaysFilter("Top days", getTopDaysList()),
+            if (tagList.isEmpty()) {
+                Filter.Header("Hit refresh to load Tags")
+            } else {
+                TagsFilter("Browse Tag", tagList.toList())
+            },
+        )
+    }
 
     /* Filters */
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -291,16 +260,27 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
             // Load default tags
             .let { if (it.isNullOrEmpty()) TagList else it }
 
-    override fun getFilterList(): FilterList {
-        getTags()
-        return FilterList(
-            TopDaysFilter("Top days", getTopDaysList()),
-            if (tagList.isEmpty()) {
-                Filter.Header("Hit refresh to load Tags")
-            } else {
-                TagsFilter("Browse Tag", tagList.toList())
-            },
-        )
+    private fun Element.parseTags(selector: String = ".post-tag a, .post-cats a"): String {
+        return select(selector)
+            .onEach {
+                val uri = it.attr("href")
+                    .removeSuffix("/")
+                    .substringAfterLast('/')
+                tagList = tagList.plus(it.text() to uri)
+            }
+            .joinToString { it.text() }
+    }
+
+    /* Related titles */
+    override fun relatedMangaListParse(response: Response): List<SManga> {
+        val document = response.asJsoup()
+        return document.select(".content > .yarpp-related a.yarpp-thumbnail").map { element ->
+            SManga.create().apply {
+                setUrlWithoutDomain(element.attr("href"))
+                title = element.attr("title")
+                thumbnail_url = element.selectFirst("img")?.imgAttr()
+            }
+        }
     }
 
     private fun Element.imgAttr(): String {
