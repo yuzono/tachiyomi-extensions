@@ -1,5 +1,5 @@
 name: 🐞 Issue report
-description: Report a source issue in Tachiyomi
+description: Report a source issue in Yuzōnō
 labels: [Bug]
 body:
 
@@ -63,7 +63,7 @@ body:
       description: |
         You can find your App version in **More → About**.
       placeholder: |
-        Example: "0.16.3"
+        Example: "0.18.0"
     validations:
       required: true
 
