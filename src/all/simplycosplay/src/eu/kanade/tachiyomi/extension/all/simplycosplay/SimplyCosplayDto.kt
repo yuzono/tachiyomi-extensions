@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.extension.all.simplycosplay
 
+import eu.kanade.tachiyomi.extension.all.simplycosplay.SimplyCosplay.Companion.THUMBNAIL_PLACEHOLDER_URL
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import kotlinx.serialization.Serializable
@@ -24,7 +25,7 @@ data class BrowseItem(
     fun toSManga() = SManga.create().apply {
         title = this@BrowseItem.title ?: ""
         url = "/${type.lowercase().trim()}/new/$slug"
-        thumbnail_url = preview?.urls?.thumb?.url
+        thumbnail_url = preview?.urls?.thumb?.url ?: THUMBNAIL_PLACEHOLDER_URL
         description = preview?.publish_date?.let { "Date: $it" }
     }
 }
@@ -54,7 +55,7 @@ data class DetailsResponse(
     val title: String? = null,
     val slug: String,
     val type: String,
-    val preview: Images,
+    val preview: Images?,
     val tags: List<Tag>? = emptyList(),
     val image_count: Int? = null,
     val related: List<BrowseItem>?,
@@ -62,7 +63,7 @@ data class DetailsResponse(
     fun toSManga() = SManga.create().apply {
         title = this@DetailsResponse.title ?: ""
         url = "/${type.lowercase().trim()}/new/$slug"
-        thumbnail_url = preview.urls.thumb.url
+        thumbnail_url = preview?.urls?.thumb?.url ?: THUMBNAIL_PLACEHOLDER_URL
         genre = tags?.mapNotNull { it ->
             it.name?.trim()?.split(" ")?.let { genre ->
                 genre.map {
@@ -81,7 +82,7 @@ data class DetailsResponse(
         description = buildString {
             append("Type: $type\n")
             image_count?.let { append("Images: $it\n") }
-            preview.publish_date?.let { append("Date: $it\n") }
+            preview?.publish_date?.let { append("Date: $it\n") }
         }
         update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
         status = SManga.COMPLETED

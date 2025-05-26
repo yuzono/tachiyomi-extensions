@@ -323,7 +323,7 @@ class SimplyCosplay : HttpSource(), ConfigurableSource {
                 Page(index, "", image.urls.url)
             }
         }
-            ?: Page(1, "", result.data.preview?.urls?.url).let(::listOf)
+            ?: Page(1, "", (result.data.preview?.urls?.url ?: THUMBNAIL_PLACEHOLDER_URL)).let(::listOf)
     }
 
     override fun relatedMangaListRequest(manga: SManga): Request {
@@ -376,12 +376,14 @@ class SimplyCosplay : HttpSource(), ConfigurableSource {
         private const val DEFAULT_TOKEN_PREF = "default_token_pref"
         private const val DEFAULT_FALLBACK_TOKEN = "01730876"
         private const val TOKEN_EXCEPTION = "Unable to fetch new Token"
-        private val TokenRegex = Regex("""token\s*:\s*"([^\"]+)""")
+        private val TokenRegex = Regex("""token\s*:\s*"([^"]+)""")
 
         private val dateFormat by lazy { SimpleDateFormat("yyy-MM-dd'T'HH:mm:ss.SSS", Locale.ENGLISH) }
 
         private const val BROWSE_TYPE_PREF_KEY = "default_browse_type_key"
         private const val BROWSE_TYPE_TITLE = "Default Browse List"
+
+        const val THUMBNAIL_PLACEHOLDER_URL = "https://www.simply-cosplay.com/android-icon-192x192.png"
     }
 
     override fun chapterListParse(response: Response) =
