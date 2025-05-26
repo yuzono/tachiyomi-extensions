@@ -19,13 +19,13 @@ data class BrowseItem(
     val title: String? = null,
     val slug: String,
     val type: String,
-    val preview: Images,
+    val preview: Images?,
 ) {
     fun toSManga() = SManga.create().apply {
         title = this@BrowseItem.title ?: ""
         url = "/${type.lowercase().trim()}/new/$slug"
-        thumbnail_url = preview.urls.thumb.url
-        description = preview.publish_date?.let { "Date: $it" }
+        thumbnail_url = preview?.urls?.thumb?.url
+        description = preview?.publish_date?.let { "Date: $it" }
     }
 }
 
@@ -57,6 +57,7 @@ data class DetailsResponse(
     val preview: Images,
     val tags: List<Tag>? = emptyList(),
     val image_count: Int? = null,
+    val related: List<BrowseItem>?,
 ) {
     fun toSManga() = SManga.create().apply {
         title = this@DetailsResponse.title ?: ""
@@ -90,7 +91,7 @@ data class DetailsResponse(
 @Serializable
 data class PageResponse(
     val images: List<Images>? = null,
-    val preview: Images,
+    val preview: Images?,
 )
 
 @Serializable

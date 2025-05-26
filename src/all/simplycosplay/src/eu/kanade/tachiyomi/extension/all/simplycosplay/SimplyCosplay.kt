@@ -323,7 +323,21 @@ class SimplyCosplay : HttpSource(), ConfigurableSource {
                 Page(index, "", image.urls.url)
             }
         }
-            ?: Page(1, "", result.data.preview.urls.url).let(::listOf)
+            ?: Page(1, "", result.data.preview?.urls?.url).let(::listOf)
+    }
+
+    override fun relatedMangaListRequest(manga: SManga): Request {
+        val url = mangaUrlBuilder(manga.url).apply {
+            addQueryParameter("related", "25")
+        }
+
+        return GET(url.build(), headers)
+    }
+
+    override fun relatedMangaListParse(response: Response): List<SManga> {
+        val result = response.parseAs<detailsResponse>()
+
+        return result.data.related?.map(BrowseItem::toSManga) ?: emptyList()
     }
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
