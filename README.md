@@ -4,6 +4,8 @@
 |-------|------------|----------------|
 | [![Build](https://github.com/yuzono/tachiyomi-extensions/actions/workflows/build_push.yml/badge.svg)](https://github.com/yuzono/tachiyomi-extensions/actions/workflows/build_push.yml) | [![Updated](https://img.shields.io/github/actions/workflow/status/yuzono/tachiyomi-extensions/auto_cherry_pick.yml?label=Updated&labelColor=27303D)](https://github.com/yuzono/tachiyomi-extensions/actions/workflows/auto_cherry_pick.yml) | [![Install](https://img.shields.io/badge/Click%20here%20to%20install%20repo-gray?style=flat&labelColor=red)](https://intradeus.github.io/http-protocol-redirector/?r=tachiyomi://add-repo?url=https://raw.githubusercontent.com/yuzono/manga-repo/repo/index.min.json) |
 
+[![Sponsor me on GitHub](https://custom-icon-badges.demolab.com/badge/-Sponsor-ea4aaa?style=for-the-badge&logo=heart&logoColor=white)](https://github.com/sponsors/cuong-tran "Sponsor me on GitHub")
+
 ![Visitor Count](https://count.getloli.com/get/@yuzono?theme=capoo-2)
 </div>
 
