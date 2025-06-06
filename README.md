@@ -1,6 +1,11 @@
+<div align="center">
+
 | Build | Up to date | Install to app |
 |-------|------------|----------------|
 | [![Build](https://github.com/yuzono/tachiyomi-extensions/actions/workflows/build_push.yml/badge.svg)](https://github.com/yuzono/tachiyomi-extensions/actions/workflows/build_push.yml) | [![Updated](https://img.shields.io/github/actions/workflow/status/yuzono/tachiyomi-extensions/auto_cherry_pick.yml?label=Updated&labelColor=27303D)](https://github.com/yuzono/tachiyomi-extensions/actions/workflows/auto_cherry_pick.yml) | [![Install](https://img.shields.io/badge/Click%20here%20to%20install%20repo-gray?style=flat&labelColor=red)](https://intradeus.github.io/http-protocol-redirector/?r=tachiyomi://add-repo?url=https://raw.githubusercontent.com/yuzono/manga-repo/repo/index.min.json) |
+
+![Visitor Count](https://count.getloli.com/get/@yuzono?theme=capoo-2)
+</div>
 
 # Komikku / Mihon / Tachiyomi Extensions
 
