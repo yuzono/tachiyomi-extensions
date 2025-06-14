@@ -17,6 +17,7 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.utils.getPreferencesLazy
+import keiyoushi.utils.tryParse
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
@@ -32,7 +33,6 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import org.jsoup.parser.Parser
-import java.text.ParseException
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -59,22 +59,6 @@ class DeviantArt : HttpSource(), ConfigurableSource {
 
     private val dateFormatZ by lazy {
         SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
-    }
-
-    private fun parseDate(dateStr: String?): Long {
-        return try {
-            dateFormat.parse(dateStr ?: "")!!.time
-        } catch (_: ParseException) {
-            0L
-        }
-    }
-
-    private fun parseDateZ(dateStr: String?): Long {
-        return try {
-            dateFormatZ.parse(dateStr ?: "")!!.time
-        } catch (_: ParseException) {
-            0L
-        }
     }
 
     private fun queryBuilder(page: Int): HttpUrl.Builder = backendBuilder()
@@ -201,9 +185,9 @@ class DeviantArt : HttpSource(), ConfigurableSource {
             return SManga.create().apply {
                 setUrlWithoutDomain(link)
                 author = document.title().substringBefore(" ")
-                title = when (artistInTitle) {
-                    true -> "$author - $galleryName"
-                    false -> galleryName
+                title = when {
+                    artistInTitle -> "$author - $galleryName"
+                    else -> galleryName
                 }
                 description = gallery?.selectFirst(".legacy-journal")?.wholeText()
                     ?.let { "$it\n\nClick tag to show artist's gallery" }
@@ -267,7 +251,7 @@ class DeviantArt : HttpSource(), ConfigurableSource {
                 SChapter.create().apply {
                     setUrlWithoutDomain(url)
                     name = "Art"
-                    time?.let { date_upload = parseDateZ(it) }
+                    time?.let { date_upload = dateFormatZ.tryParse(it) }
                 },
             )
         }
@@ -390,7 +374,8 @@ class DeviantArt : HttpSource(), ConfigurableSource {
                 } else {
                     artName
                 }
-                date_upload = parseDate(it.selectFirst("pubDate")?.text())
+                date_upload = dateFormat.tryParse(it.selectFirst("pubDate")?.text())
+                // scanlator = it.selectFirst("media|credit")?.text()
             }
         }
     }
@@ -409,16 +394,17 @@ class DeviantArt : HttpSource(), ConfigurableSource {
 
     override fun pageListParse(response: Response): List<Page> {
         val document = response.asJsoup()
-        val firstImageUrl = document.selectFirst("img[fetchpriority=high]")?.absUrl("src")
-        return when (val buttons = document.selectFirst("[draggable=false]")?.children()) {
-            null -> listOf(Page(0, imageUrl = firstImageUrl))
-            else -> buttons.mapIndexed { i, button ->
+        val buttons = document.selectFirst("[draggable=false]")?.children()
+        return if (buttons == null) {
+            val imageUrl = document.selectFirst("img[fetchpriority=high]")?.absUrl("src")
+            listOf(Page(0, imageUrl = imageUrl))
+        } else {
+            buttons.mapIndexed { i, button ->
                 // Remove everything past "/v1/" to get original instead of thumbnail
-                val imageUrl = button.selectFirst("img")?.absUrl("src")?.substringBefore("/v1/")
+                // But need to preserve the query parameter where the token is
+                val imageUrl = button.selectFirst("img")?.absUrl("src")
+                    ?.replaceFirst(Regex("""/v1(/.*)?(?=\?)"""), "")
                 Page(i, imageUrl = imageUrl)
-            }.also {
-                // First image needs token to get original, which is included in firstImageUrl
-                it[0].imageUrl = firstImageUrl
             }
         }
     }
