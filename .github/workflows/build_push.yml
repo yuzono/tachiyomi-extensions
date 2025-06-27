@@ -145,7 +145,7 @@ jobs:
       - name: Checkout repo branch
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          repository: yuzono/manga-repo
+          repository: yuzono/tachiyomi-repo
           token: ${{ secrets.BOT_PAT }}
           ref: repo
           path: repo
@@ -160,8 +160,20 @@ jobs:
         with:
           message: "${{ needs.prepare.outputs.latestCommitMessage }}"
           cwd: "./repo"
-          committer_name: github-actions[bot]
-          committer_email: github-actions[bot]@users.noreply.github.com
+          # committer_name: github-actions[bot]
+          # committer_email: github-actions[bot]@users.noreply.github.com
+
+      - name: Sync repo
+        run: |
+          cd repo
+          git config user.name "Yūzōnō"
+          git config user.email "support+yuzono@noreply.github.com"
+          git remote set-url origin https://github.com/yuzono/manga-repo.git
+          git fetch origin
+          git reset origin/repo
+          git add -A
+          git commit --amend -m "${{ needs.prepare.outputs.latestCommitMessage }}" --no-sign --allow-empty || echo "No changes to commit"
+          git push origin HEAD:repo --force
 
       - name: Purge cached index on jsDelivr
         run: |
