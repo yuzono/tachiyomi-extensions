@@ -29,8 +29,9 @@ with LOCAL_REPO.joinpath("index.min.json").open() as local_index_file:
     local_index = json.load(local_index_file)
 
 index = [
-    item for item in remote_index
-    if not any([item["pkg"].endswith(f".{module}") for module in to_delete])
+    item
+    for item in remote_index
+    if not any(item["pkg"].endswith(f".{module}") for module in to_delete)
 ]
 index.extend(local_index)
 index.sort(key=lambda x: x["pkg"])
