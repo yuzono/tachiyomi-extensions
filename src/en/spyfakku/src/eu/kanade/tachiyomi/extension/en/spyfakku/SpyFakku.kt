@@ -13,7 +13,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import eu.kanade.tachiyomi.source.online.HttpSource
-import keiyoushi.utils.getPreferences
+import keiyoushi.utils.getPreferencesLazy
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -40,7 +40,7 @@ class SpyFakku : HttpSource(), ConfigurableSource {
 
     override val lang = "en"
 
-    private val preferences = getPreferences()
+    private val preferences by getPreferencesLazy()
 
     override val baseUrl = getPrefBaseUrl()
 
