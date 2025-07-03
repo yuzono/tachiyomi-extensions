@@ -295,7 +295,7 @@ class SpyFakku : HttpSource(), ConfigurableSource {
                     name = "Chapter"
                     url = manga.url
                     date_upload = try {
-                        releasedAtFormat.parse(add.released_at)!!.time
+                        add.released_at?.let { releasedAtFormat.parse(it) }!!.time
                     } catch (e: Exception) {
                         0L
                     }
@@ -374,7 +374,7 @@ class SpyFakku : HttpSource(), ConfigurableSource {
 
     // ============================== Settings ==============================
 
-    private fun getPrefBaseUrl(): String = preferences.getString(PREF_DOMAIN_KEY, PREF_DOMAIN_DEFAULT) ?: PREF_DOMAIN_DEFAULT
+    private fun getPrefBaseUrl(): String = preferences.getString(PREF_DOMAIN_KEY, PREF_DOMAIN_DEFAULT)!!
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         ListPreference(screen.context).apply {
@@ -386,9 +386,7 @@ class SpyFakku : HttpSource(), ConfigurableSource {
             summary = "%s"
 
             setOnPreferenceChangeListener { _, newValue ->
-                val selected = newValue as String
                 Toast.makeText(screen.context, "Restart App to apply changes", Toast.LENGTH_LONG).show()
-                preferences.edit().putString(key, selected).apply()
                 true
             }
         }.also(screen::addPreference)
