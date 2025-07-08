@@ -385,7 +385,7 @@ class SpyFakku : HttpSource(), ConfigurableSource {
             setDefaultValue(PREF_DOMAIN_DEFAULT)
             summary = "%s"
 
-            setOnPreferenceChangeListener { _, newValue ->
+            setOnPreferenceChangeListener { _, _ ->
                 Toast.makeText(screen.context, "Restart App to apply changes", Toast.LENGTH_LONG).show()
                 true
             }
