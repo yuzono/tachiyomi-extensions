@@ -1,7 +1,11 @@
 package eu.kanade.tachiyomi.extension.en.spyfakku
 
+import android.widget.Toast
+import androidx.preference.ListPreference
+import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.interceptor.rateLimit
+import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -9,6 +13,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import eu.kanade.tachiyomi.source.online.HttpSource
+import keiyoushi.utils.getPreferencesLazy
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -29,17 +34,19 @@ import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 
-class SpyFakku : HttpSource() {
+class SpyFakku : HttpSource(), ConfigurableSource {
 
     override val name = "SpyFakku"
 
-    override val baseUrl = "https://hentalk.pw"
+    override val lang = "en"
+
+    private val preferences by getPreferencesLazy()
+
+    override val baseUrl = getPrefBaseUrl()
 
     private val baseImageUrl = "$baseUrl/image"
 
     private val baseApiUrl = "$baseUrl/api"
-
-    override val lang = "en"
 
     override val supportsLatest = true
 
@@ -288,7 +295,7 @@ class SpyFakku : HttpSource() {
                     name = "Chapter"
                     url = manga.url
                     date_upload = try {
-                        releasedAtFormat.parse(add.released_at)!!.time
+                        add.released_at?.let { releasedAtFormat.parse(it) }!!.time
                     } catch (e: Exception) {
                         0L
                     }
@@ -364,4 +371,33 @@ class SpyFakku : HttpSource() {
     override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
 
     override val supportsRelatedMangas = false
+
+    // ============================== Settings ==============================
+
+    private fun getPrefBaseUrl(): String = preferences.getString(PREF_DOMAIN_KEY, PREF_DOMAIN_DEFAULT)!!
+
+    override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        ListPreference(screen.context).apply {
+            key = PREF_DOMAIN_KEY
+            title = "Preferred domain"
+            entries = DOMAINS
+            entryValues = DOMAINS
+            setDefaultValue(PREF_DOMAIN_DEFAULT)
+            summary = "%s"
+
+            setOnPreferenceChangeListener { _, _ ->
+                Toast.makeText(screen.context, "Restart App to apply changes", Toast.LENGTH_LONG).show()
+                true
+            }
+        }.also(screen::addPreference)
+    }
+
+    companion object {
+        private const val PREF_DOMAIN_KEY = "preferred_domain"
+        private val DOMAINS = arrayOf(
+            "https://fakku.cc",
+            "https://hentalk.pw",
+        )
+        private val PREF_DOMAIN_DEFAULT = DOMAINS[0]
+    }
 }
