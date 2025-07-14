@@ -1,6 +1,12 @@
 package eu.kanade.tachiyomi.extension.all.koharu
 
+import android.annotation.SuppressLint
+import android.app.Application
 import android.content.SharedPreferences
+import android.os.Handler
+import android.os.Looper
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
@@ -41,8 +47,11 @@ import okhttp3.Request
 import okhttp3.Response
 import rx.Observable
 import uy.kohesive.injekt.injectLazy
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class Koharu(
     override val lang: String = "all",
@@ -58,8 +67,6 @@ class Koharu(
     private val apiUrl = baseUrl.replace("://", "://api.")
 
     private val apiBooksUrl = "$apiUrl/books"
-
-    private val authUrl = "${baseUrl.replace("://", "://auth.")}/clearance"
 
     override val supportsLatest = true
 
@@ -77,7 +84,7 @@ class Koharu(
     private fun alwaysExcludeTags() = preferences.getString(PREF_EXCLUDE_TAGS, "")
 
     private var _domainUrl: String? = null
-    internal val domainUrl: String
+    private val domainUrl: String
         get() {
             return _domainUrl ?: run {
                 val domain = getDomain()
@@ -109,11 +116,63 @@ class Koharu(
         .rateLimit(3)
         .build()
 
-    private val interceptedClient: OkHttpClient
-        get() = network.cloudflareClient.newBuilder()
-            .addInterceptor(TurnstileInterceptor(client, domainUrl, authUrl, lazyHeaders["User-Agent"]))
-            .rateLimit(3)
-            .build()
+    private val clearanceClient = network.cloudflareClient.newBuilder()
+        .addInterceptor { chain ->
+            val request = chain.request()
+            val url = request.url
+            val clearance = getClearance()
+                ?: throw IOException("Open webview to refresh token")
+
+            val newUrl = url.newBuilder()
+                .setQueryParameter("crt", clearance)
+                .build()
+            val newRequest = request.newBuilder()
+                .url(newUrl)
+                .build()
+
+            val response = chain.proceed(newRequest)
+
+            if (response.code !in listOf(400, 403)) {
+                return@addInterceptor response
+            }
+            response.close()
+            _clearance = null
+            throw IOException("Open webview to refresh token")
+        }
+        .rateLimit(3)
+        .build()
+
+    private val context: Application by injectLazy()
+    private val handler by lazy { Handler(Looper.getMainLooper()) }
+    private var _clearance: String? = null
+
+    @SuppressLint("SetJavaScriptEnabled")
+    fun getClearance(): String? {
+        _clearance?.also { return it }
+        val latch = CountDownLatch(1)
+        handler.post {
+            val webview = WebView(context)
+            with(webview.settings) {
+                javaScriptEnabled = true
+                domStorageEnabled = true
+                databaseEnabled = true
+                blockNetworkImage = true
+            }
+            webview.webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    view!!.evaluateJavascript("window.localStorage.getItem('clearance')") { clearance ->
+                        webview.stopLoading()
+                        webview.destroy()
+                        _clearance = clearance.takeUnless { it == "null" }?.removeSurrounding("\"")
+                        latch.countDown()
+                    }
+                }
+            }
+            webview.loadUrl("$domainUrl/")
+        }
+        latch.await(10, TimeUnit.SECONDS)
+        return _clearance
+    }
 
     private fun getManga(book: Entry) = SManga.create().apply {
         setUrlWithoutDomain("${book.id}/${book.key}")
@@ -155,7 +214,7 @@ class Koharu(
             else -> "0"
         }
 
-        val imagesResponse = interceptedClient.newCall(GET("$apiBooksUrl/data/$entryId/$entryKey/$id/$public_key/$realQuality?crt=$token", lazyHeaders)).execute()
+        val imagesResponse = clearanceClient.newCall(GET("$apiBooksUrl/data/$entryId/$entryKey/$id/$public_key/$realQuality", lazyHeaders)).execute()
         val images = imagesResponse.parseAs<ImagesInfo>() to realQuality
         return images
     }
@@ -367,7 +426,7 @@ class Koharu(
     // Page List
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
-        return interceptedClient.newCall(pageListRequest(chapter))
+        return clearanceClient.newCall(pageListRequest(chapter))
             .execute()
             .let { response ->
                 pageListParse(response)
@@ -375,7 +434,7 @@ class Koharu(
     }
 
     override fun pageListRequest(chapter: SChapter): Request {
-        return POST("$apiBooksUrl/detail/${chapter.url}?crt=$token", lazyHeaders)
+        return POST("$apiBooksUrl/detail/${chapter.url}", lazyHeaders)
     }
 
     override fun pageListParse(response: Response): List<Page> {
@@ -398,7 +457,7 @@ class Koharu(
 
     override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> = coroutineScope {
         async {
-            interceptedClient.newCall(relatedMangaListRequest(manga))
+            clearanceClient.newCall(relatedMangaListRequest(manga))
                 .execute()
                 .let { response ->
                     relatedMangaListParse(response)
@@ -407,7 +466,7 @@ class Koharu(
     }
 
     override fun relatedMangaListRequest(manga: SManga) =
-        POST("$apiBooksUrl/detail/${manga.url}?crt=$token", lazyHeaders)
+        POST("$apiBooksUrl/detail/${manga.url}", lazyHeaders)
 
     override fun relatedMangaListParse(response: Response): List<SManga> {
         val data = response.parseAs<MangaData>()
@@ -451,9 +510,6 @@ class Koharu(
         private const val PREF_IMAGERES = "pref_image_quality"
         private const val PREF_REM_ADD = "pref_remove_additional"
         private const val PREF_EXCLUDE_TAGS = "pref_exclude_tags"
-
-        internal var token: String? = null
-        internal var authorization: String? = null
 
         internal val dateReformat = SimpleDateFormat("EEEE, d MMM yyyy HH:mm (z)", Locale.ENGLISH)
     }
