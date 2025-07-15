@@ -3,7 +3,7 @@ ext {
     isNsfw = true
     extName = 'ManHuaGui'
     extClass = '.Manhuagui'
-    extVersionCode = 24
+    extVersionCode = 25
     isNsfw = true
 }
 
