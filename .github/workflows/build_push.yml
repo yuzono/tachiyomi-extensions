@@ -167,7 +167,7 @@ jobs:
         run: |
           cd repo
           git config user.name "Yūzōnō"
-          git config user.email "support+yuzono@noreply.github.com"
+          git config user.email "yuzono@users.noreply.github.com"
           git remote set-url origin https://github.com/yuzono/manga-repo.git
           git fetch origin
           git reset origin/repo
