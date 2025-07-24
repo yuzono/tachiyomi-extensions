@@ -164,6 +164,8 @@ jobs:
           # committer_email: github-actions[bot]@users.noreply.github.com
 
       - name: Sync repo
+        env:
+          COMMIT_MESSAGE: ${{ needs.prepare.outputs.latestCommitMessage }}
         run: |
           cd repo
           git config user.name "Yūzōnō"
@@ -172,7 +174,7 @@ jobs:
           git fetch origin
           git reset origin/repo
           git add -A
-          git commit --amend -m "${{ needs.prepare.outputs.latestCommitMessage }}" --no-sign --allow-empty || echo "No changes to commit"
+          git commit --amend -m "$COMMIT_MESSAGE" --no-sign --allow-empty || echo "No changes to commit"
           git push origin HEAD:repo --force
 
       - name: Purge cached index on jsDelivr
