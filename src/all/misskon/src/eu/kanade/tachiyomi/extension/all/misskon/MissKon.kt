@@ -192,7 +192,7 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
 
     private suspend fun pageListParseAsync(document: Document): List<Page> {
         val pages = document
-            .select("div.page-link:first-child a")
+            .select("div.page-link:first-of-type a")
             .mapNotNull {
                 it.absUrl("href")
             }
