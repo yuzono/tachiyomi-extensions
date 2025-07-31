@@ -215,7 +215,7 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
     override fun pageListParse(document: Document) = throw UnsupportedOperationException()
 
     private fun parseImageList(document: Document): List<String> = document
-        .select("div.entry p img").map { image ->
+        .select("div.post-inner > div.entry > p > img").map { image ->
             image.imgAttr()
         }
 
