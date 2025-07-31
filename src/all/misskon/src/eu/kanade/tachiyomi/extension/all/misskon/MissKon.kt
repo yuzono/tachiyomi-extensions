@@ -18,6 +18,9 @@ import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.tryParse
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
@@ -169,22 +172,52 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
                             ?: YEAR_MONTH_REGEX.find(url)?.groupValues?.get(1)?.let { "$it/01" }
                     }
 
-                val dateUpload = FULL_DATE_FORMAT.tryParse(dateStr)
-                val maxPage = document.select("div.page-link:first-of-type a.post-page-numbers").last()?.text()?.toInt() ?: 1
-                return (maxPage downTo 1).map { page ->
+                return listOf(
                     SChapter.create().apply {
-                        setUrlWithoutDomain("${manga.url}/$page")
-                        name = "Page $page"
-                        date_upload = dateUpload
-                    }
-                }
+                        chapter_number = 0F
+                        setUrlWithoutDomain(manga.url)
+                        name = "Gallery"
+                        date_upload = FULL_DATE_FORMAT.tryParse(dateStr)
+                    },
+                )
             }
     }
 
-    override fun pageListParse(document: Document): List<Page> {
-        return document.select("div.post-inner > div.entry > p > img")
-            .mapIndexed { i, imgEl -> Page(i, imageUrl = imgEl.imgAttr()) }
+    override suspend fun getPageList(chapter: SChapter): List<Page> {
+        return client.newCall(pageListRequest(chapter))
+            .execute().use { response ->
+                pageListParseAsync(response.asJsoup())
+            }
     }
+
+    private suspend fun pageListParseAsync(document: Document): List<Page> {
+        val pages = document
+            .select("div.page-link:first-of-type a")
+            .mapNotNull {
+                it.absUrl("href")
+            }
+
+        val chapterPage = parseImageList(document).toMutableList()
+
+        coroutineScope {
+            chapterPage += pages.map { url ->
+                async(Dispatchers.IO) {
+                    val request = GET(url, headers)
+                    parseImageList(client.newCall(request).execute().asJsoup())
+                }
+            }.awaitAll().flatten()
+        }
+
+        return chapterPage.mapIndexed { index, url ->
+            Page(index, imageUrl = url)
+        }
+    }
+    override fun pageListParse(document: Document) = throw UnsupportedOperationException()
+
+    private fun parseImageList(document: Document): List<String> = document
+        .select("div.post-inner > div.entry > p > img").map { image ->
+            image.imgAttr()
+        }
 
     override fun imageUrlParse(document: Document) = throw UnsupportedOperationException()
 
