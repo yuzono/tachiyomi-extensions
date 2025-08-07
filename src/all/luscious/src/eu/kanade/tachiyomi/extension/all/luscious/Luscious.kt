@@ -316,6 +316,7 @@ abstract class Luscious(
                 }
 
                 val chapter = SChapter.create()
+                // Add images count to URL just so chapter's URL changes and hence giving a new chapter
                 chapter.url = "$mangaUrl#$imageCnt"
                 chapter.name = "Merged Chapter ($imageCnt images)"
                 // chapter.date_upload = it["created"].asLong // not parsing correctly for some reason
@@ -351,21 +352,14 @@ abstract class Luscious(
 
     private fun parseAlbumPages(response: Response, action: (JsonArray) -> Unit) {
         val variablesJson = response.request.url.queryParameter("variables") ?: return
-        val id = run {
-            val input = json.decodeFromString<JsonObject>(variablesJson)["input"]?.jsonObject ?: return@run null
-            val filters = input["filters"]?.jsonArray ?: return@run null
-            val albumIdFilter = filters.firstOrNull {
-                it.jsonObject["name"]?.jsonPrimitive?.content == "album_id"
-            } ?: return@run null
-            albumIdFilter.jsonObject["value"]?.jsonPrimitive?.content
-        } ?: return
+        val id = json.decodeFromString<JsonObject>(variablesJson)["input"]?.jsonObject
+            ?.get("filters")?.jsonArray
+            ?.firstOrNull { it.jsonObject["name"]?.jsonPrimitive?.content == "album_id" }
+            ?.jsonObject?.get("value")?.jsonPrimitive?.content ?: return
 
-        var data = json.decodeFromString<JsonObject>(response.body.string())
-            .let {
-                it["data"]?.jsonObject
-                    ?.get("picture")?.jsonObject
-                    ?.get("list")?.jsonObject
-            } ?: return
+        var data = json.decodeFromString<JsonObject>(response.body.string())["data"]?.jsonObject
+            ?.get("picture")?.jsonObject
+            ?.get("list")?.jsonObject ?: return
 
         var page = 2
         while (true) {
@@ -378,12 +372,10 @@ abstract class Luscious(
             if (!hasNextPage) break
 
             val newPage = runCatching { client.newCall(GET(buildAlbumPicturesPageUrl(id, page))).execute() }.getOrNull() ?: break
-            data = json.decodeFromString<JsonObject>(newPage.body.string())
-                .let {
-                    it["data"]?.jsonObject
-                        ?.get("picture")?.jsonObject
-                        ?.get("list")?.jsonObject
-                } ?: break
+            data = json.decodeFromString<JsonObject>(newPage.body.string())["data"]?.jsonObject
+                ?.get("picture")?.jsonObject
+                ?.get("list")?.jsonObject
+                ?: break
             page++
         }
     }
@@ -457,7 +449,7 @@ abstract class Luscious(
         return when (getMergeChapterPref()) {
             true -> {
                 val id = chapter.url
-                    .substringBeforeLast("#")
+                    .substringBeforeLast("#") // Remove the images count from the URL
                     .substringAfterLast("_").removeSuffix("/")
 
                 client.newCall(GET(buildAlbumPicturesPageUrl(id, 1)))
