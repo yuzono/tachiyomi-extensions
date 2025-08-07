@@ -75,6 +75,7 @@ that existing contributors will not actively teach them to you.
 - [Android Studio](https://developer.android.com/studio)
 - Emulator or phone with developer options enabled and a recent version of Komikku installed
 - [Icon Generator](https://as280093.github.io/AndroidAssetStudio/icons-launcher.html)
+- [Try jsoup](https://try.jsoup.org/)
 
 ### Cloning the repository
 
