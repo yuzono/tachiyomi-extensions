@@ -261,20 +261,32 @@ abstract class Luscious(
 
     private fun parseAlbumListRelatedResponse(response: Response): List<SManga> {
         val data = json.decodeFromString<JsonObject>(response.body.string())
-        with(data["data"]!!.jsonObject["album"]!!.jsonObject["list_related"]) {
-            return listOf(
-                this!!.jsonObject["more_like_this"],
-                this.jsonObject["items_liked_like_this"],
-                this.jsonObject["items_created_by_this_user"],
-            ).mapNotNull { obj ->
-                obj?.jsonArray?.map {
-                    SManga.create().apply {
-                        url = it.jsonObject["url"]!!.jsonPrimitive.content
-                        title = it.jsonObject["title"]!!.jsonPrimitive.content
-                        thumbnail_url = it.jsonObject["cover"]!!.jsonObject["url"]!!.jsonPrimitive.content
-                    }
+        val listRelated = data["data"]?.jsonObject
+            ?.get("album")?.jsonObject
+            ?.get("list_related")?.jsonObject
+            ?: return emptyList()
+
+        return listOfNotNull(
+            listRelated["more_like_this"],
+            listRelated["items_liked_like_this"],
+            listRelated["items_created_by_this_user"],
+        ).flatMap { relatedItems ->
+            relatedItems.jsonArray.mapNotNull { item ->
+                val itemObj = item.jsonObject
+                val url = itemObj["url"]?.jsonPrimitive?.content
+                val title = itemObj["title"]?.jsonPrimitive?.content
+                val thumbnailUrl = itemObj["cover"]?.jsonObject?.get("url")?.jsonPrimitive?.content
+
+                if (url == null || title == null || thumbnailUrl == null) {
+                    return@mapNotNull null
                 }
-            }.flatten()
+
+                SManga.create().apply {
+                    this.url = url
+                    this.title = title
+                    this.thumbnail_url = thumbnailUrl
+                }
+            }
         }
     }
 
