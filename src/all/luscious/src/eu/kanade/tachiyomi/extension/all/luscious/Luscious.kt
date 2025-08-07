@@ -17,6 +17,7 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import keiyoushi.utils.getPreferencesLazy
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
@@ -242,6 +243,53 @@ abstract class Luscious(
         return GET(url, headers)
     }
 
+    private fun buildAlbumListRelatedRequestInput(id: String): JsonObject {
+        return buildJsonObject {
+            put("id", id)
+        }
+    }
+
+    private fun buildAlbumListRelatedRequest(id: String): Request {
+        val input = buildAlbumListRelatedRequestInput(id)
+        val url = apiBaseUrl.toHttpUrl().newBuilder()
+            .addQueryParameter("operationName", "AlbumListRelated")
+            .addQueryParameter("query", albumListRelatedQuery)
+            .addQueryParameter("variables", input.toString())
+            .toString()
+        return GET(url, headers)
+    }
+
+    private fun parseAlbumListRelatedResponse(response: Response): List<SManga> {
+        val data = json.decodeFromString<JsonObject>(response.body.string())
+        val listRelated = data["data"]?.jsonObject
+            ?.get("album")?.jsonObject
+            ?.get("list_related")?.jsonObject
+            ?: return emptyList()
+
+        return listOfNotNull(
+            listRelated["more_like_this"],
+            listRelated["items_liked_like_this"],
+            listRelated["items_created_by_this_user"],
+        ).flatMap { relatedItems ->
+            relatedItems.jsonArray.mapNotNull { item ->
+                val itemObj = item.jsonObject
+                val url = itemObj["url"]?.jsonPrimitive?.content
+                val title = itemObj["title"]?.jsonPrimitive?.content
+                val thumbnailUrl = itemObj["cover"]?.jsonObject?.get("url")?.jsonPrimitive?.content
+
+                if (url == null || title == null || thumbnailUrl == null) {
+                    return@mapNotNull null
+                }
+
+                SManga.create().apply {
+                    this.url = url
+                    this.title = title
+                    this.thumbnail_url = thumbnailUrl
+                }
+            }
+        }
+    }
+
     // Latest
 
     override fun latestUpdatesRequest(page: Int): Request = buildAlbumListRequest(page, getSortFilters(LATEST_DEFAULT_SORT_STATE))
@@ -262,27 +310,22 @@ abstract class Luscious(
         val chapters = mutableListOf<SChapter>()
         when (getMergeChapterPref()) {
             true -> {
+                var imageCnt = 0
+                parseAlbumPages(response) {
+                    imageCnt += it.size
+                }
+
                 val chapter = SChapter.create()
-                chapter.url = mangaUrl
-                chapter.name = "Merged Chapter"
+                // Add images count to URL just so chapter's URL changes and hence giving a new chapter
+                chapter.url = "$mangaUrl#$imageCnt"
+                chapter.name = "Merged Chapter ($imageCnt images)"
                 // chapter.date_upload = it["created"].asLong // not parsing correctly for some reason
                 chapter.chapter_number = 1F
                 chapters.add(chapter)
             }
             false -> {
-                var nextPage = true
-                var page = 2
-                val id = response.request.url.queryParameter("variables").toString()
-                    .let { json.decodeFromString<JsonObject>(it)["input"]!!.jsonObject["filters"]!!.jsonArray }
-                    .let { it.first { f -> f.jsonObject["name"]!!.jsonPrimitive.content == "album_id" } }
-                    .let { it.jsonObject["value"]!!.jsonPrimitive.content }
-
-                var data = json.decodeFromString<JsonObject>(response.body.string())
-                    .let { it.jsonObject["data"]!!.jsonObject["picture"]!!.jsonObject["list"]!!.jsonObject }
-
-                while (nextPage) {
-                    nextPage = data["info"]!!.jsonObject["has_next_page"]!!.jsonPrimitive.boolean
-                    data["items"]!!.jsonArray.map {
+                parseAlbumPages(response) { array ->
+                    array.map {
                         val chapter = SChapter.create()
                         val url = when (getResolutionPref()) {
                             "-1" -> it.jsonObject["url_to_original"]!!.jsonPrimitive.content
@@ -292,22 +335,49 @@ abstract class Luscious(
                             url.startsWith("//") -> chapter.url = "https:$url"
                             else -> chapter.url = url
                         }
-                        chapter.chapter_number = it.jsonObject["position"]!!.jsonPrimitive.int.toFloat()
-                        chapter.name = chapter.chapter_number.toInt().toString() + " - " + it.jsonObject["title"]!!.jsonPrimitive.content
-                        chapter.date_upload = "${it.jsonObject["created"]!!.jsonPrimitive.long}000".toLong()
+                        chapter.chapter_number =
+                            it.jsonObject["position"]!!.jsonPrimitive.int.toFloat()
+                        chapter.name = chapter.chapter_number.toInt()
+                            .toString() + " - " + it.jsonObject["title"]!!.jsonPrimitive.content
+                        chapter.date_upload =
+                            "${it.jsonObject["created"]!!.jsonPrimitive.long}000".toLong()
                         chapters.add(chapter)
                     }
-                    if (nextPage) {
-                        val newPage = client.newCall(GET(buildAlbumPicturesPageUrl(id, page))).execute()
-                        data = json.decodeFromString<JsonObject>(newPage.body.string())
-                            .let { it["data"]!!.jsonObject["picture"]!!.jsonObject["list"]!!.jsonObject }
-                    }
-                    page++
                 }
             }
         }
 
         return chapters.reversed()
+    }
+
+    private fun parseAlbumPages(response: Response, action: (JsonArray) -> Unit) {
+        val variablesJson = response.request.url.queryParameter("variables") ?: return
+        val id = json.decodeFromString<JsonObject>(variablesJson)["input"]?.jsonObject
+            ?.get("filters")?.jsonArray
+            ?.firstOrNull { it.jsonObject["name"]?.jsonPrimitive?.content == "album_id" }
+            ?.jsonObject?.get("value")?.jsonPrimitive?.content ?: return
+
+        var data = json.decodeFromString<JsonObject>(response.body.string())["data"]?.jsonObject
+            ?.get("picture")?.jsonObject
+            ?.get("list")?.jsonObject ?: return
+
+        var page = 2
+        while (true) {
+            val items = data["items"]?.jsonArray
+            if (items != null) {
+                action(items)
+            }
+
+            val hasNextPage = data["info"]?.jsonObject?.get("has_next_page")?.jsonPrimitive?.boolean == true
+            if (!hasNextPage) break
+
+            val newPage = runCatching { client.newCall(GET(buildAlbumPicturesPageUrl(id, page))).execute() }.getOrNull() ?: break
+            data = json.decodeFromString<JsonObject>(newPage.body.string())["data"]?.jsonObject
+                ?.get("picture")?.jsonObject
+                ?.get("list")?.jsonObject
+                ?: break
+            page++
+        }
     }
 
     override fun chapterListParse(response: Response): List<SChapter> = throw UnsupportedOperationException()
@@ -378,7 +448,9 @@ abstract class Luscious(
     override fun fetchPageList(chapter: SChapter): Observable<List<Page>> {
         return when (getMergeChapterPref()) {
             true -> {
-                val id = chapter.url.substringAfterLast("_").removeSuffix("/")
+                val id = chapter.url
+                    .substringBeforeLast("#") // Remove the images count from the URL
+                    .substringAfterLast("_").removeSuffix("/")
 
                 client.newCall(GET(buildAlbumPicturesPageUrl(id, 1)))
                     .asObservableSuccess()
@@ -458,6 +530,15 @@ abstract class Luscious(
         }
     }
     override fun mangaDetailsParse(response: Response): SManga = throw UnsupportedOperationException()
+
+    // Related
+
+    override fun relatedMangaListRequest(manga: SManga): Request {
+        val id = manga.url.substringAfterLast("_").removeSuffix("/")
+        return buildAlbumListRelatedRequest(id)
+    }
+
+    override fun relatedMangaListParse(response: Response): List<SManga> = parseAlbumListRelatedResponse(response)
 
     // Popular
 
@@ -822,6 +903,21 @@ abstract class Luscious(
         }
         fragment AlbumStandard on Album {
             __typename id title labels description created modified like_status number_of_favorites number_of_dislikes rating moderation_status marked_for_deletion marked_for_processing number_of_pictures number_of_animated_pictures number_of_duplicates slug is_manga url download_url permissions cover { width height size url } created_by { id url name display_name user_title avatar { url size } } content { id title url } language { id title url } tags { category text url count } genres { id title slug url } audiences { id title url url } last_viewed_picture { id position url } is_featured featured_date featured_by { id url name display_name user_title avatar { url size } }
+        }
+        """.trimIndent()
+
+        val albumListRelatedQuery = """
+        query AlbumListRelated(${"$"}id: ID!) {
+            album {
+                list_related(id: ${"$"}id) {
+                    more_like_this { ...AlbumInSearchList }
+                    items_liked_like_this { ...AlbumInSearchList }
+                    items_created_by_this_user { ...AlbumInSearchList }
+                }
+            }
+        }
+        fragment AlbumInSearchList on Album {
+            title url cover { url }
         }
         """.trimIndent()
 
