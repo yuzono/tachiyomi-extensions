@@ -350,24 +350,40 @@ abstract class Luscious(
     }
 
     private fun parseAlbumPages(response: Response, action: (JsonArray) -> Unit) {
-        var nextPage = true
-        var page = 2
-        val id = response.request.url.queryParameter("variables").toString()
-            .let { json.decodeFromString<JsonObject>(it)["input"]!!.jsonObject["filters"]!!.jsonArray }
-            .let { it.first { f -> f.jsonObject["name"]!!.jsonPrimitive.content == "album_id" } }
-            .let { it.jsonObject["value"]!!.jsonPrimitive.content }
+        val variablesJson = response.request.url.queryParameter("variables") ?: return
+        val id = run {
+            val input = json.decodeFromString<JsonObject>(variablesJson)["input"]?.jsonObject ?: return@run null
+            val filters = input["filters"]?.jsonArray ?: return@run null
+            val albumIdFilter = filters.firstOrNull {
+                it.jsonObject["name"]?.jsonPrimitive?.content == "album_id"
+            } ?: return@run null
+            albumIdFilter.jsonObject["value"]?.jsonPrimitive?.content
+        } ?: return
 
         var data = json.decodeFromString<JsonObject>(response.body.string())
-            .let { it.jsonObject["data"]!!.jsonObject["picture"]!!.jsonObject["list"]!!.jsonObject }
+            .let {
+                it["data"]?.jsonObject
+                    ?.get("picture")?.jsonObject
+                    ?.get("list")?.jsonObject
+            } ?: return
 
-        while (nextPage) {
-            nextPage = data["info"]!!.jsonObject["has_next_page"]!!.jsonPrimitive.boolean
-            action(data["items"]!!.jsonArray)
-            if (nextPage) {
-                val newPage = client.newCall(GET(buildAlbumPicturesPageUrl(id, page))).execute()
-                data = json.decodeFromString<JsonObject>(newPage.body.string())
-                    .let { it["data"]!!.jsonObject["picture"]!!.jsonObject["list"]!!.jsonObject }
+        var page = 2
+        while (true) {
+            val items = data["items"]?.jsonArray
+            if (items != null) {
+                action(items)
             }
+
+            val hasNextPage = data["info"]?.jsonObject?.get("has_next_page")?.jsonPrimitive?.boolean == true
+            if (!hasNextPage) break
+
+            val newPage = runCatching { client.newCall(GET(buildAlbumPicturesPageUrl(id, page))).execute() }.getOrNull() ?: break
+            data = json.decodeFromString<JsonObject>(newPage.body.string())
+                .let {
+                    it["data"]?.jsonObject
+                        ?.get("picture")?.jsonObject
+                        ?.get("list")?.jsonObject
+                } ?: break
             page++
         }
     }
