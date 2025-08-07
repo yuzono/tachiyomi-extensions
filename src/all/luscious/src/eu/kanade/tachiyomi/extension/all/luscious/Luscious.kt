@@ -243,6 +243,41 @@ abstract class Luscious(
         return GET(url, headers)
     }
 
+    private fun buildAlbumListRelatedRequestInput(id: String): JsonObject {
+        return buildJsonObject {
+            put("id", id)
+        }
+    }
+
+    private fun buildAlbumListRelatedRequest(id: String): Request {
+        val input = buildAlbumListRelatedRequestInput(id)
+        val url = apiBaseUrl.toHttpUrl().newBuilder()
+            .addQueryParameter("operationName", "AlbumListRelated")
+            .addQueryParameter("query", albumListRelatedQuery)
+            .addQueryParameter("variables", input.toString())
+            .toString()
+        return GET(url, headers)
+    }
+
+    private fun parseAlbumListRelatedResponse(response: Response): List<SManga> {
+        val data = json.decodeFromString<JsonObject>(response.body.string())
+        with(data["data"]!!.jsonObject["album"]!!.jsonObject["list_related"]) {
+            return listOf(
+                this!!.jsonObject["more_like_this"],
+                this.jsonObject["items_liked_like_this"],
+                this.jsonObject["items_created_by_this_user"],
+            ).mapNotNull { obj ->
+                obj?.jsonArray?.map {
+                    SManga.create().apply {
+                        url = it.jsonObject["url"]!!.jsonPrimitive.content
+                        title = it.jsonObject["title"]!!.jsonPrimitive.content
+                        thumbnail_url = it.jsonObject["cover"]!!.jsonObject["url"]!!.jsonPrimitive.content
+                    }
+                }
+            }.flatten()
+        }
+    }
+
     // Latest
 
     override fun latestUpdatesRequest(page: Int): Request = buildAlbumListRequest(page, getSortFilters(LATEST_DEFAULT_SORT_STATE))
@@ -475,6 +510,15 @@ abstract class Luscious(
         }
     }
     override fun mangaDetailsParse(response: Response): SManga = throw UnsupportedOperationException()
+
+    // Related
+
+    override fun relatedMangaListRequest(manga: SManga): Request {
+        val id = manga.url.substringAfterLast("_").removeSuffix("/")
+        return buildAlbumListRelatedRequest(id)
+    }
+
+    override fun relatedMangaListParse(response: Response): List<SManga> = parseAlbumListRelatedResponse(response)
 
     // Popular
 
@@ -839,6 +883,21 @@ abstract class Luscious(
         }
         fragment AlbumStandard on Album {
             __typename id title labels description created modified like_status number_of_favorites number_of_dislikes rating moderation_status marked_for_deletion marked_for_processing number_of_pictures number_of_animated_pictures number_of_duplicates slug is_manga url download_url permissions cover { width height size url } created_by { id url name display_name user_title avatar { url size } } content { id title url } language { id title url } tags { category text url count } genres { id title slug url } audiences { id title url url } last_viewed_picture { id position url } is_featured featured_date featured_by { id url name display_name user_title avatar { url size } }
+        }
+        """.trimIndent()
+
+        val albumListRelatedQuery = """
+        query AlbumListRelated(${"$"}id: ID!) {
+            album {
+                list_related(id: ${"$"}id) {
+                    more_like_this { ...AlbumInSearchList }
+                    items_liked_like_this { ...AlbumInSearchList }
+                    items_created_by_this_user { ...AlbumInSearchList }
+                }
+            }
+        }
+        fragment AlbumInSearchList on Album {
+            title url cover { url }
         }
         """.trimIndent()
 
