@@ -46,10 +46,10 @@ class PhiliaScans :
     override val mangaDetailsSelectorDescription: String = "div.serie-info .description-content"
 
     override val mangaDetailsSelectorAuthor: String =
-        "div.serie-info .manga-stats > div:nth-child(7) .stat-value"
+        "div.serie-info .manga-stats > div:has(span.stat-label:contains(Author)) span.stat-value"
 
     override val mangaDetailsSelectorArtist: String =
-        "div.serie-info .manga-stats > div:nth-child(7) .stat-value"
+        "div.serie-info .manga-stats > div:has(span.stat-label:contains(Artist)) span.stat-value"
 
     override val mangaDetailsSelectorGenre: String = "div.serie-info .genre-list > span > a"
 
