@@ -192,11 +192,7 @@ class PhiliaScans :
                     }
                 }
                 is OrderByFilter -> {
-                    when (filter.toUriPart()) {
-                        "most_viewed" -> urlBuilder.addQueryParameter("sort", "most_viewed")
-                        "title_az" -> urlBuilder.addQueryParameter("sort", "title_az")
-                        "recently_added" -> urlBuilder.addQueryParameter("sort", "recently_added")
-                    }
+                    urlBuilder.addQueryParameter("sort", filter.toUriPart())
                 }
                 is StatusFilter -> {
                     filter.state.forEach {
