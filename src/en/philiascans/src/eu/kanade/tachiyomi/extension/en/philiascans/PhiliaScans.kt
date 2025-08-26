@@ -23,8 +23,13 @@ class PhiliaScans :
     override val versionId: Int = 2
     override val useNewChapterEndpoint = true
 
+    private class SeriesTypeCheckBox(name: String, val value: String) : Filter.CheckBox(name)
+
     private class SeriesTypeFilter(title: String, options: List<Pair<String, String>>) :
-        UriPartFilter(title, options.toTypedArray(), 0)
+        Filter.Group<SeriesTypeCheckBox>(
+            title,
+            options.map { SeriesTypeCheckBox(it.first, it.second) },
+        )
 
     override fun popularMangaSelector(): String = ".unit"
     override fun latestUpdatesSelector(): String = popularMangaSelector()
@@ -49,13 +54,14 @@ class PhiliaScans :
     override val mangaDetailsSelectorGenre: String = "div.serie-info .genre-list > span > a"
 
     override fun popularMangaRequest(page: Int): Request {
-        val base = "$baseUrl/?post_type=wp-manga&s=&sort=most_viewed"
         val url =
-            if (page == 1) {
-                base
-            } else {
-                "$baseUrl/page/$page/?post_type=wp-manga&s=&sort=most_viewed"
-            }
+            (if (page == 1) "$baseUrl/" else "$baseUrl/page/$page/")
+                .toHttpUrl()
+                .newBuilder()
+                .addQueryParameter("post_type", "wp-manga")
+                .addQueryParameter("s", "")
+                .addQueryParameter("sort", "most_viewed")
+                .build()
         return GET(url, headers)
     }
 
@@ -70,12 +76,12 @@ class PhiliaScans :
     }
 
     // Override next page selectors for different pagination types
-    override fun popularMangaNextPageSelector(): String? =
-        "li.page-item:not(.disabled) a[rel='next']"
-    override fun latestUpdatesNextPageSelector(): String? =
-        "li.page-item:not(.disabled) a[rel='next']"
+    private val paginationSelector = "li.page-item:not(.disabled) a[rel='next']"
+    override fun popularMangaNextPageSelector(): String? = paginationSelector
+    override fun latestUpdatesNextPageSelector(): String? = paginationSelector
+    override fun searchMangaNextPageSelector(): String? = paginationSelector
 
-    // needed to exclude paid chapters
+    // Override chapter list selector to find free chapters
     override fun chapterListSelector(): String = "#free-list > li > a"
 
     // Override page list selector to find manga pages
@@ -85,8 +91,8 @@ class PhiliaScans :
     // Override chapter parsing to remove "Free" prefix
     override fun chapterFromElement(element: Element): SChapter {
         val chapter = super.chapterFromElement(element)
-        // Remove "Free" prefix from chapter names
-        chapter.name = chapter.name.replace("Free ", "")
+        // Remove anything prefixing "Chapter" in chapter names
+        chapter.name = chapter.name.replace(Regex("^.*?(?=Chapter)"), "")
         return chapter
     }
 
@@ -169,11 +175,7 @@ class PhiliaScans :
         val urlBuilder = base.toHttpUrl().newBuilder()
 
         urlBuilder.addQueryParameter("post_type", "wp-manga")
-        if (query.isNotBlank()) {
-            urlBuilder.addQueryParameter("s", query)
-        } else {
-            urlBuilder.addQueryParameter("s", "")
-        }
+        urlBuilder.addQueryParameter("s", query)
 
         // Apply filters matching site's params
         filters.forEach { filter ->
@@ -230,10 +232,8 @@ class PhiliaScans :
                     }
                 }
                 is SeriesTypeFilter -> {
-                    when (filter.toUriPart()) {
-                        "manga" -> urlBuilder.addQueryParameter("type[]", "manga")
-                        "manhua" -> urlBuilder.addQueryParameter("type[]", "manhua")
-                        "manhwa" -> urlBuilder.addQueryParameter("type[]", "manhwa")
+                    filter.state.filter { it.state }.forEach { g ->
+                        urlBuilder.addQueryParameter("type[]", g.value)
                     }
                 }
                 else -> {
@@ -267,7 +267,4 @@ class PhiliaScans :
         }
         return manga
     }
-
-    override fun searchMangaNextPageSelector(): String? =
-        "li.page-item:not(.disabled) a[rel='next']"
 }
