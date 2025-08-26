@@ -116,8 +116,8 @@ class PhiliaScans :
     override val orderByFilterOptions: Map<String, String> =
         mapOf(
             "Most Viewed" to "most_viewed",
-            "Alphabetical" to "alphabet",
-            "Latest" to "new",
+            "Alphabetical" to "title_az",
+            "Newest" to "recently_added",
         )
 
     val typeFilterOptions: Map<String, String> =
@@ -193,9 +193,9 @@ class PhiliaScans :
                 }
                 is OrderByFilter -> {
                     when (filter.toUriPart()) {
-                        "views" -> urlBuilder.addQueryParameter("sort", "most_viewed")
-                        "alphabet" -> urlBuilder.addQueryParameter("sort", "alphabet")
-                        "latest" -> urlBuilder.addQueryParameter("sort", "new")
+                        "most_viewed" -> urlBuilder.addQueryParameter("sort", "most_viewed")
+                        "title_az" -> urlBuilder.addQueryParameter("sort", "title_az")
+                        "recently_added" -> urlBuilder.addQueryParameter("sort", "recently_added")
                     }
                 }
                 is StatusFilter -> {
