@@ -35,7 +35,7 @@ class PhiliaScans :
         "a.poster .poster-image-wrapper > img:not(.flag-icon)"
     override val searchMangaUrlSelector: String = "a.c-title"
 
-    override val mangaDetailsSelectorTitle: String = "div.serie-info > h1, .serie-info > h1"
+    override val mangaDetailsSelectorTitle: String = "div.serie-info > h1"
     override val mangaDetailsSelectorStatus: String =
         "div.serie-info .manga-stats > div:nth-child(2) > div > span.manga"
     override val mangaDetailsSelectorDescription: String = "div.serie-info .description-content"
