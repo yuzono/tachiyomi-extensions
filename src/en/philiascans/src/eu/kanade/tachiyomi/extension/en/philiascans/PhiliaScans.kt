@@ -23,7 +23,7 @@ class PhiliaScans :
     override val versionId: Int = 2
     override val useNewChapterEndpoint = true
 
-    protected class SeriesTypeFilter(title: String, options: List<Pair<String, String>>) :
+    private class SeriesTypeFilter(title: String, options: List<Pair<String, String>>) :
         UriPartFilter(title, options.toTypedArray(), 0)
 
     override fun popularMangaSelector(): String = ".unit"
@@ -245,7 +245,7 @@ class PhiliaScans :
         return GET(urlBuilder.build(), headers)
     }
 
-    override fun parseGenres(document: org.jsoup.nodes.Document): List<Genre> {
+    override fun parseGenres(document: Document): List<Genre> {
         return document.select("ul.genres li").mapNotNull { li ->
             val id = li.selectFirst("input[name='genre[]'][value]")?.attr("value")?.trim()
             val name = li.selectFirst("label")?.text()?.trim()
