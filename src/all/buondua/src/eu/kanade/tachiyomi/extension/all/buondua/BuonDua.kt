@@ -17,6 +17,10 @@ import eu.kanade.tachiyomi.source.online.ParsedHttpSource
 import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.tryParse
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import okhttp3.Response
@@ -71,7 +75,7 @@ class BuonDua : ConfigurableSource, ParsedHttpSource() {
     override fun searchMangaFromElement(element: Element) = latestUpdatesFromElement(element)
     override fun searchMangaNextPageSelector() = latestUpdatesNextPageSelector()
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
-        val tagFilter = filters.findInstance<TagFilter>()!!
+        val tagFilter = filters.filterIsInstance<TagFilter>().firstOrNull() ?: TagFilter()
         return when {
             query.isNotEmpty() -> GET("$baseUrl/?search=$query&start=${20 * (page - 1)}")
             tagFilter.state.isNotEmpty() -> GET("$baseUrl/tag/${tagFilter.state}&start=${20 * (page - 1)}")
@@ -85,14 +89,39 @@ class BuonDua : ConfigurableSource, ParsedHttpSource() {
     override fun mangaDetailsParse(document: Document): SManga {
         val manga = SManga.create()
         manga.title = document.select(".article-header").text()
-        manga.description = document.select(".article-info > strong").text().trim()
-        val genres = mutableListOf<String>()
-        document.select(".article-tags").first()!!.select(".tags > .tag").forEach {
-            genres.add(it.text().substringAfter("#"))
+            .replace(titlePageRegex, "")
+
+        val articleInfo = document.select(".article-info > strong").text().replace("Buondua", "").trim()
+
+        val password = document.select("code").text()
+        val downloadAvailable = document.select(".article-links a[href]")
+        val downloadLinks = downloadAvailable.joinToString("\n") { element ->
+            val serviceText = element.text()
+            val link = element.attr("href")
+            "[$serviceText]($link)"
         }
-        manga.genre = genres.joinToString(", ")
+
+        manga.description = StringBuilder().apply {
+            if (articleInfo.isNotBlank()) {
+                append(articleInfo).append("\n")
+            }
+            if (downloadLinks.isNotBlank()) {
+                append("\n").append(downloadLinks).append("\n")
+            }
+            if (password.isNotBlank()) {
+                append("\n").append(password)
+            }
+        }.toString()
+
+        val genres = document.select(".article-tags").first()?.let {
+            it.select(".tags > .tag").map { tag ->
+                tag.text().substringAfter("#")
+            }
+        }
+        manga.genre = genres?.joinToString()?.takeIf { it.isNotBlank() }
         return manga
     }
+    private val titlePageRegex = """ - \( Page \d+ / \d+ \)""".toRegex()
 
     override fun chapterListSelector() = throw UnsupportedOperationException()
     override fun chapterFromElement(element: Element) = throw UnsupportedOperationException()
