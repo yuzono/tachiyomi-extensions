@@ -89,9 +89,10 @@ class BuonDua : ConfigurableSource, ParsedHttpSource() {
     override fun mangaDetailsParse(document: Document): SManga {
         val manga = SManga.create()
         manga.title = document.select(".article-header").text()
-            .replace(titlePageRegex, "")
+            .replace(titlePageRegex, "").trim()
 
-        val articleInfo = document.select(".article-info > strong").text().replace("Buondua", "").trim()
+        val articleInfo = document.select(".article-info > strong").text()
+            .replace("Buondua", "").trim()
 
         val password = document.select("code").text()
         val downloadAvailable = document.select(".article-links a[href]")
@@ -181,7 +182,7 @@ class BuonDua : ConfigurableSource, ParsedHttpSource() {
                 async(Dispatchers.IO) {
                     val doc = when (page) {
                         1 -> document
-                        else -> client.newCall(GET("$basePageUrl?page=$page")).execute().asJsoup()
+                        else -> client.newCall(GET("$basePageUrl?page=$page")).execute().use { it.asJsoup() }
                     }
                     doc.select(pageListSelector).map { imgEl ->
                         imgEl.absUrl("src")
