@@ -1,9 +1,13 @@
 package eu.kanade.tachiyomi.extension.all.buondua
 
+import android.content.SharedPreferences
+import androidx.preference.PreferenceScreen
+import androidx.preference.SwitchPreferenceCompat
 import eu.kanade.tachiyomi.lib.randomua.UserAgentType
 import eu.kanade.tachiyomi.lib.randomua.setRandomUserAgent
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
+import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.Page
@@ -11,6 +15,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.ParsedHttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.tryParse
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
@@ -21,7 +26,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-class BuonDua() : ParsedHttpSource() {
+class BuonDua : ConfigurableSource, ParsedHttpSource() {
     override val baseUrl = "https://buondua.com"
     override val lang = "all"
     override val name = "Buon Dua"
@@ -33,6 +38,8 @@ class BuonDua() : ParsedHttpSource() {
         .build()
 
     override fun headersBuilder() = super.headersBuilder().add("Referer", "$baseUrl/")
+
+    private val preferences by getPreferencesLazy()
 
     // Latest
     override fun latestUpdatesFromElement(element: Element): SManga {
@@ -90,28 +97,49 @@ class BuonDua() : ParsedHttpSource() {
     override fun chapterListSelector() = throw UnsupportedOperationException()
     override fun chapterFromElement(element: Element) = throw UnsupportedOperationException()
     override fun chapterListParse(response: Response): List<SChapter> {
-        val doc = response.asJsoup()
-        val dateUploadStr = doc.selectFirst(".article-info > small")?.text()
+        val document = response.asJsoup()
+        val dateUploadStr = document.selectFirst(".article-info > small")?.text()
         val dateUpload = DATE_FORMAT.tryParse(dateUploadStr)
-        // /xiuren-no-10051---10065-1127-photos-467c89d5b3e204eebe33ddbc54d905b1-47452?page=57
-        val maxPage = doc.select("nav.pagination:first-of-type a.pagination-next").last()
-            ?.absUrl("href")
-            ?.takeIf { it.startsWith("http") }
-            ?.toHttpUrl()
-            ?.queryParameter("page")?.toInt() ?: 1
-        val basePageUrl = response.request.url
-        return (maxPage downTo 1).map { page ->
-            SChapter.create().apply {
-                setUrlWithoutDomain("$basePageUrl?page=$page")
-                name = "Page $page"
-                date_upload = dateUpload
+        val basePageUrl = response.request.url.toString()
+        if (preferences.splitPages) {
+            val maxPage = document.getLastPageNum
+            return (maxPage downTo 1).map { page ->
+                SChapter.create().apply {
+                    setUrlWithoutDomain("$basePageUrl?page=$page")
+                    name = "Page $page"
+                    date_upload = dateUpload
+                }
             }
+        } else {
+            return listOf(
+                SChapter.create().apply {
+                    setUrlWithoutDomain(basePageUrl)
+                    chapter_number = 0F
+                    name = "Gallery"
+                    date_upload = dateUpload
+                },
+            )
         }
     }
 
     // Pages
+    override suspend fun getPageList(chapter: SChapter): List<Page> {
+        return client.newCall(pageListRequest(chapter))
+            .execute().use { response ->
+                response.asJsoup().let {
+                    if (preferences.splitPages) {
+                        pageListParse(it)
+                    } else {
+                        pageListParseAsync(it)
+                    }
+                }
+            }
+    }
+
+    private val pageListSelector = ".article-fulltext img"
+
     override fun pageListParse(document: Document): List<Page> {
-        return document.select(".article-fulltext img")
+        return document.select(pageListSelector)
             .mapIndexed { i, imgEl -> Page(i, imageUrl = imgEl.absUrl("src")) }
     }
 
@@ -126,7 +154,19 @@ class BuonDua() : ParsedHttpSource() {
 
     class TagFilter : Filter.Text("Tag ID")
 
-    private inline fun <reified T> Iterable<*>.findInstance() = find { it is T } as? T
+    // Settings
+    private val SharedPreferences.splitPages
+        get() = getBoolean(PREF_SPLIT_PAGES, DEFAULT_SPLIT_PAGES)
+
+    override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        SwitchPreferenceCompat(screen.context).apply {
+            key = PREF_SPLIT_PAGES
+            title = "Split into multiple pages"
+            summaryOff = "Single gallery"
+            summaryOn = "Multiple pages"
+            setDefaultValue(DEFAULT_SPLIT_PAGES)
+        }.also(screen::addPreference)
+    }
 
     companion object {
         private val DATE_FORMAT = SimpleDateFormat("H:m DD-MM-yyyy", Locale.US)
