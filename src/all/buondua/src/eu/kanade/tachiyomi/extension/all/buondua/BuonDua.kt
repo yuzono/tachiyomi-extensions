@@ -164,6 +164,16 @@ class BuonDua : ConfigurableSource, ParsedHttpSource() {
         }
     }
 
+    private val Document.getLastPageNum: Int
+        get() = select("nav.pagination:first-of-type a.pagination-next").last()
+            ?.let {
+                runCatching {
+                    it.absUrl("href")
+                        .toHttpUrl()
+                        .queryParameter("page")?.toInt()
+                }.getOrNull()
+            } ?: 1
+
     override fun imageUrlParse(document: Document): String = throw UnsupportedOperationException()
 
     // Filters
