@@ -200,6 +200,9 @@ class BuonDua : ConfigurableSource, ParsedHttpSource() {
     }
 
     companion object {
-        private val DATE_FORMAT = SimpleDateFormat("H:m DD-MM-yyyy", Locale.US)
+        private val DATE_FORMAT = SimpleDateFormat("HH:mm dd-MM-yyyy", Locale.US)
+
+        private const val PREF_SPLIT_PAGES = "pref_split_pages"
+        private const val DEFAULT_SPLIT_PAGES = true
     }
 }
