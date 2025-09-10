@@ -143,6 +143,27 @@ class BuonDua : ConfigurableSource, ParsedHttpSource() {
             .mapIndexed { i, imgEl -> Page(i, imageUrl = imgEl.absUrl("src")) }
     }
 
+    private suspend fun pageListParseAsync(document: Document): List<Page> {
+        val basePageUrl = document.location()
+        val maxPage = document.getLastPageNum
+
+        return coroutineScope {
+            (1..maxPage).map { page ->
+                async(Dispatchers.IO) {
+                    val doc = when (page) {
+                        1 -> document
+                        else -> client.newCall(GET("$basePageUrl?page=$page")).execute().asJsoup()
+                    }
+                    doc.select(pageListSelector).map { imgEl ->
+                        imgEl.absUrl("src")
+                    }
+                }
+            }.awaitAll().flatten()
+        }.mapIndexed { index, url ->
+            Page(index, imageUrl = url)
+        }
+    }
+
     override fun imageUrlParse(document: Document): String = throw UnsupportedOperationException()
 
     // Filters
