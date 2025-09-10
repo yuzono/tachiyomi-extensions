@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.extension.all.misskon
 import android.content.SharedPreferences
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
+import androidx.preference.SwitchPreferenceCompat
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
 import eu.kanade.tachiyomi.source.ConfigurableSource
@@ -51,6 +52,9 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
     private val SharedPreferences.topDays
         get() = getString(PREF_TOP_DAYS, DEFAULT_TOP_DAYS)
 
+    private val SharedPreferences.splitPages
+        get() = getBoolean(PREF_SPLIT_PAGES, DEFAULT_SPLIT_PAGES)
+
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         ListPreference(screen.context).apply {
             key = PREF_TOP_DAYS
@@ -59,6 +63,14 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
             entries = topDaysList().map { it.name }.toTypedArray()
             entryValues = topDaysList().indices.map { it.toString() }.toTypedArray()
             setDefaultValue(DEFAULT_TOP_DAYS)
+        }.also(screen::addPreference)
+
+        SwitchPreferenceCompat(screen.context).apply {
+            key = PREF_SPLIT_PAGES
+            title = "Split into multiple pages"
+            summaryOff = "Single gallery"
+            summaryOn = "Multiple pages"
+            setDefaultValue(DEFAULT_SPLIT_PAGES)
         }.also(screen::addPreference)
     }
 
@@ -172,22 +184,45 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
                             ?: YEAR_MONTH_REGEX.find(url)?.groupValues?.get(1)?.let { "$it/01" }
                     }
 
-                return listOf(
-                    SChapter.create().apply {
-                        chapter_number = 0F
-                        setUrlWithoutDomain(manga.url)
-                        name = "Gallery"
-                        date_upload = FULL_DATE_FORMAT.tryParse(dateStr)
-                    },
-                )
+                val dateUpload = FULL_DATE_FORMAT.tryParse(dateStr)
+                if (preferences.splitPages) {
+                    val maxPage = document.select("div.page-link:first-of-type a.post-page-numbers").last()?.text()?.toInt() ?: 1
+                    return (maxPage downTo 1).map { page ->
+                        SChapter.create().apply {
+                            setUrlWithoutDomain("${manga.url}/$page")
+                            name = "Page $page"
+                            date_upload = dateUpload
+                        }
+                    }
+                } else {
+                    return listOf(
+                        SChapter.create().apply {
+                            chapter_number = 0F
+                            setUrlWithoutDomain(manga.url)
+                            name = "Gallery"
+                            date_upload = dateUpload
+                        },
+                    )
+                }
             }
     }
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         return client.newCall(pageListRequest(chapter))
             .execute().use { response ->
-                pageListParseAsync(response.asJsoup())
+                response.asJsoup().let {
+                    if (preferences.splitPages) {
+                        pageListParse(it)
+                    } else {
+                        pageListParseAsync(it)
+                    }
+                }
             }
+    }
+
+    override fun pageListParse(document: Document): List<Page> {
+        return document.select("div.post-inner > div.entry > p > img")
+            .mapIndexed { i, imgEl -> Page(i, imageUrl = imgEl.imgAttr()) }
     }
 
     private suspend fun pageListParseAsync(document: Document): List<Page> {
@@ -212,7 +247,6 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
             Page(index, imageUrl = url)
         }
     }
-    override fun pageListParse(document: Document) = throw UnsupportedOperationException()
 
     private fun parseImageList(document: Document): List<String> = document
         .select("div.post-inner > div.entry > p > img").map { image ->
@@ -329,7 +363,10 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
 
     companion object {
         private const val PREF_TOP_DAYS = "pref_top_days"
-        private const val DEFAULT_TOP_DAYS = "1"
+        private const val DEFAULT_TOP_DAYS = "1" // 7-days
+
+        private const val PREF_SPLIT_PAGES = "pref_split_pages"
+        private const val DEFAULT_SPLIT_PAGES = false
 
         private val FULL_DATE_REGEX = Regex("""/(\d{4}/\d{2}/\d{2})/""")
         private val YEAR_MONTH_REGEX = Regex("""/(\d{4}/\d{2})/""")
