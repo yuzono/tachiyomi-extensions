@@ -139,7 +139,7 @@ class BuonDua : ConfigurableSource, ParsedHttpSource() {
                         basePageUrl.toHttpUrl().newBuilder()
                             .setQueryParameter("page", page.toString())
                             .build()
-                            .toString()
+                            .toString(),
                     )
                     name = "Page $page"
                     date_upload = dateUpload
