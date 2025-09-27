@@ -135,7 +135,12 @@ class BuonDua : ConfigurableSource, ParsedHttpSource() {
             val maxPage = document.getLastPageNum
             return (maxPage downTo 1).map { page ->
                 SChapter.create().apply {
-                    setUrlWithoutDomain("$basePageUrl?page=$page")
+                    setUrlWithoutDomain(
+                        basePageUrl.toHttpUrl().newBuilder()
+                            .setQueryParameter("page", page.toString())
+                            .build()
+                            .toString()
+                    )
                     name = "Page $page"
                     date_upload = dateUpload
                 }
@@ -182,7 +187,13 @@ class BuonDua : ConfigurableSource, ParsedHttpSource() {
                 async(Dispatchers.IO) {
                     val doc = when (page) {
                         1 -> document
-                        else -> client.newCall(GET("$basePageUrl?page=$page")).execute().use { it.asJsoup() }
+                        else -> {
+                            val pageUrl = basePageUrl.toHttpUrl().newBuilder()
+                                .setQueryParameter("page", page.toString())
+                                .build()
+                                .toString()
+                            client.newCall(GET(pageUrl)).execute().use { it.asJsoup() }
+                        }
                     }
                     doc.select(pageListSelector).map { imgEl ->
                         imgEl.absUrl("src")
