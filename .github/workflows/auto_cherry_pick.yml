@@ -60,7 +60,7 @@ jobs:
           for (( i=${#upcoming_changes_hash[@]}; i>=0; i-- )); do
             if [ ! -z "${upcoming_changes_hash[i]}" -a "${upcoming_changes_hash[i]}" != " " ]; then
               echo "[$i]: Cherry picking '${upcoming_changes_hash[i]}'"
-              git cherry-pick --allow-empty "${upcoming_changes_hash[i]}"
+              git cherry-pick --allow-empty --keep-redundant-commits "${upcoming_changes_hash[i]}"
               latest_hash=${upcoming_changes_hash[i]}
             else
               echo "[$i]: skip '${upcoming_changes_hash[i]}'"
