@@ -83,14 +83,20 @@ class Hiperdex :
 
     override fun mangaDetailsParse(document: Document): SManga {
         return super.mangaDetailsParse(document).apply {
-            title = title.apply {
+            val cleanedTitle = title.let {
+                var tempTitle = it
                 if (customRemoveTitle().isNotEmpty()) {
-                    replace(Regex(customRemoveTitle()), "")
+                    tempTitle = tempTitle.replace(Regex(customRemoveTitle()), "")
                 }
                 if (isRemoveTitleVersion()) {
-                    replace(titleRegex, "")
+                    tempTitle = tempTitle.replace(titleRegex, "")
                 }
-                trim()
+                tempTitle.trim()
+            }
+            if (cleanedTitle != title) {
+                description = listOfNotNull(title, description)
+                    .joinToString("\n\n")
+                title = cleanedTitle
             }
         }
     }
