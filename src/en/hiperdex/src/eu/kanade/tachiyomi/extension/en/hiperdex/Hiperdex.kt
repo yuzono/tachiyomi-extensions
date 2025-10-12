@@ -87,10 +87,12 @@ class Hiperdex :
 
     override fun mangaDetailsParse(document: Document): SManga {
         return super.mangaDetailsParse(document).apply {
-            val cleanedTitle = title.let {
-                var tempTitle = it
-                if (customRemoveTitle().isNotEmpty()) {
-                    tempTitle = tempTitle.replace(Regex(customRemoveTitle()), "")
+            val cleanedTitle = title.let { originalTitle ->
+                var tempTitle = originalTitle
+                customRemoveTitle().takeIf { it.isNotEmpty() }?.let { customRegex ->
+                    runCatching {
+                        tempTitle = tempTitle.replace(Regex(customRegex), "")
+                    }
                 }
                 if (isRemoveTitleVersion()) {
                     tempTitle = tempTitle.replace(titleRegex, "")
@@ -110,7 +112,7 @@ class Hiperdex :
         return preferences.getBoolean("${REMOVE_TITLE_VERSION_PREF}_$lang", false)
     }
     private fun customRemoveTitle(): String =
-        preferences.getString("${REMOVE_TITLE_CUSTOM_PREF}_$lang", "") ?: ""
+        preferences.getString("${REMOVE_TITLE_CUSTOM_PREF}_$lang", "")!!
 
     init {
         preferences.getString(DEFAULT_BASE_URL_PREF, null).let { defaultBaseUrl ->
