@@ -71,6 +71,13 @@ class Hiperdex :
             title = "Custom regex to be removed from title"
             summary = preferences.getString("${REMOVE_TITLE_CUSTOM_PREF}_$lang", "") ?: ""
             setDefaultValue("")
+            setOnPreferenceChangeListener { _, newValue ->
+                runCatching {
+                    Regex(newValue as String)
+                }.onFailure {
+                    Toast.makeText(screen.context, it.message, Toast.LENGTH_LONG).show()
+                }.isSuccess
+            }
         }.also { screen.addPreference(it) }
 
         addRandomUAPreferenceToScreen(screen)
