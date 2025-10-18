@@ -95,6 +95,12 @@ class Atsumaru : HttpSource() {
         return response.parseAs<MangaObjectDto>().mangaPage.toSManga(baseUrl)
     }
 
+    override fun relatedMangaListRequest(manga: SManga) = mangaDetailsRequest(manga)
+
+    override fun relatedMangaListParse(response: Response): List<SManga> {
+        return response.parseAs<MangaObjectDto>().mangaPage.recommendations(baseUrl)
+    }
+
     // ============================== Chapters ==============================
 
     private fun fetchChaptersRequest(mangaId: String, page: Int): Request {
