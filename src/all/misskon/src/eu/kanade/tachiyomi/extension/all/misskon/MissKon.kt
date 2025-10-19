@@ -211,12 +211,11 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         return client.newCall(pageListRequest(chapter))
             .execute().use { response ->
-                response.asJsoup().let {
-                    if (preferences.splitPages) {
-                        pageListParse(it)
-                    } else {
-                        pageListParseAsync(it)
-                    }
+                val document = response.asJsoup()
+                if (preferences.splitPages) {
+                    pageListParse(document)
+                } else {
+                    pageListMerge(document)
                 }
             }
     }
@@ -226,7 +225,7 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
             .mapIndexed { i, imgEl -> Page(i, imageUrl = imgEl.imgAttr()) }
     }
 
-    private suspend fun pageListParseAsync(document: Document): List<Page> {
+    private suspend fun pageListMerge(document: Document): List<Page> {
         val pages = document
             .select("div.page-link:first-of-type a")
             .mapNotNull {
