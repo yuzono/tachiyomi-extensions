@@ -6,6 +6,7 @@ import androidx.preference.SwitchPreferenceCompat
 import eu.kanade.tachiyomi.lib.randomua.UserAgentType
 import eu.kanade.tachiyomi.lib.randomua.setRandomUserAgent
 import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.network.await
 import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
@@ -23,7 +24,6 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
-import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.text.SimpleDateFormat
@@ -126,30 +126,32 @@ class BuonDua : ConfigurableSource, ParsedHttpSource() {
 
     override fun chapterListSelector() = throw UnsupportedOperationException()
     override fun chapterFromElement(element: Element) = throw UnsupportedOperationException()
-    override fun chapterListParse(response: Response): List<SChapter> {
-        val document = response.asJsoup()
-        val dateUploadStr = document.selectFirst(".article-info > small")?.text()
+
+    override suspend fun getChapterList(manga: SManga): List<SChapter> {
+        val doc = client.newCall(chapterListRequest(manga)).await().asJsoup()
+        val dateUploadStr = doc.selectFirst(".article-info > small")?.text()
+
         val dateUpload = DATE_FORMAT.tryParse(dateUploadStr)
-        val basePageUrl = response.request.url.toString()
         if (preferences.splitPages) {
-            val maxPage = document.getLastPageNum
+            val maxPage = doc.getLastPageNum
             return (maxPage downTo 1).map { page ->
                 SChapter.create().apply {
                     setUrlWithoutDomain(
-                        basePageUrl.toHttpUrl().newBuilder()
+                        "${baseUrl}${manga.url}".toHttpUrl().newBuilder()
                             .setQueryParameter("page", page.toString())
                             .build()
                             .toString(),
                     )
                     name = "Page $page"
+                    chapter_number = page.toFloat()
                     date_upload = dateUpload
                 }
             }
         } else {
             return listOf(
                 SChapter.create().apply {
-                    setUrlWithoutDomain(basePageUrl)
                     chapter_number = 0F
+                    setUrlWithoutDomain(manga.url)
                     name = "Gallery"
                     date_upload = dateUpload
                 },
@@ -159,15 +161,12 @@ class BuonDua : ConfigurableSource, ParsedHttpSource() {
 
     // Pages
     override suspend fun getPageList(chapter: SChapter): List<Page> {
-        return client.newCall(pageListRequest(chapter))
-            .execute().use { response ->
-                val document = response.asJsoup()
-                if (preferences.splitPages) {
-                    pageListParse(document)
-                } else {
-                    pageListMerge(document)
-                }
-            }
+        val document = client.newCall(pageListRequest(chapter)).await().asJsoup()
+        return if (preferences.splitPages) {
+            pageListParse(document)
+        } else {
+            pageListMerge(document)
+        }
     }
 
     private val pageListSelector = ".article-fulltext img"
@@ -191,7 +190,7 @@ class BuonDua : ConfigurableSource, ParsedHttpSource() {
                                 .setQueryParameter("page", page.toString())
                                 .build()
                                 .toString()
-                            client.newCall(GET(pageUrl)).execute().use { it.asJsoup() }
+                            client.newCall(GET(pageUrl)).await().asJsoup()
                         }
                     }
                     doc.select(pageListSelector).map { imgEl ->

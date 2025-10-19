@@ -215,13 +215,14 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
         }
     }
 
+    private val imageListSelector = "div.post-inner > div.entry > p > img"
     private fun parseImageList(document: Document): List<String> =
-        document.select("div.post-inner > div.entry > p > img")
+        document.select(imageListSelector)
             .map { it.imgAttr() }
 
     override fun pageListParse(document: Document): List<Page> {
-        return parseImageList(document)
-            .mapIndexed { i, img -> Page(i, imageUrl = img) }
+        return document.select(imageListSelector)
+            .mapIndexed { i, img -> Page(i, imageUrl = img.imgAttr()) }
     }
 
     private suspend fun pageListMerge(document: Document): List<Page> {
