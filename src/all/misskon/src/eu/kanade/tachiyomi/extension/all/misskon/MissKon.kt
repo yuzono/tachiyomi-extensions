@@ -215,9 +215,13 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
         }
     }
 
+    private fun parseImageList(document: Document): List<String> =
+        document.select("div.post-inner > div.entry > p > img")
+            .map { it.imgAttr() }
+
     override fun pageListParse(document: Document): List<Page> {
-        return document.select("div.post-inner > div.entry > p > img")
-            .mapIndexed { i, imgEl -> Page(i, imageUrl = imgEl.imgAttr()) }
+        return parseImageList(document)
+            .mapIndexed { i, img -> Page(i, imageUrl = img) }
     }
 
     private suspend fun pageListMerge(document: Document): List<Page> {
@@ -242,10 +246,6 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
             Page(index, imageUrl = url)
         }
     }
-
-    private fun parseImageList(document: Document): List<String> =
-        document.select("div.post-inner > div.entry > p > img")
-            .map { it.imgAttr() }
 
     override fun imageUrlParse(document: Document) = throw UnsupportedOperationException()
 
