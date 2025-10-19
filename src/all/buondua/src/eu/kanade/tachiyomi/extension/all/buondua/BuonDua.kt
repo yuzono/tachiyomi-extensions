@@ -161,12 +161,11 @@ class BuonDua : ConfigurableSource, ParsedHttpSource() {
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         return client.newCall(pageListRequest(chapter))
             .execute().use { response ->
-                response.asJsoup().let {
-                    if (preferences.splitPages) {
-                        pageListParse(it)
-                    } else {
-                        pageListParseAsync(it)
-                    }
+                val document = response.asJsoup()
+                if (preferences.splitPages) {
+                    pageListParse(document)
+                } else {
+                    pageListMerge(document)
                 }
             }
     }
@@ -178,7 +177,7 @@ class BuonDua : ConfigurableSource, ParsedHttpSource() {
             .mapIndexed { i, imgEl -> Page(i, imageUrl = imgEl.absUrl("src")) }
     }
 
-    private suspend fun pageListParseAsync(document: Document): List<Page> {
+    private suspend fun pageListMerge(document: Document): List<Page> {
         val basePageUrl = document.location()
         val maxPage = document.getLastPageNum
 
