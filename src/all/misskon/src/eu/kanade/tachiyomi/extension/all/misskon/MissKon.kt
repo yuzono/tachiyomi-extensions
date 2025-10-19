@@ -186,11 +186,12 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
 
                 val dateUpload = FULL_DATE_FORMAT.tryParse(dateStr)
                 if (preferences.splitPages) {
-                    val maxPage = document.select("div.page-link:first-of-type a.post-page-numbers").last()?.text()?.toInt() ?: 1
+                    val maxPage = document.select("div.page-link:first-of-type a.post-page-numbers").last()?.text()?.toIntOrNull() ?: 1
                     return (maxPage downTo 1).map { page ->
                         SChapter.create().apply {
                             setUrlWithoutDomain("${manga.url}/$page")
                             name = "Page $page"
+                            chapter_number = page.toFloat()
                             date_upload = dateUpload
                         }
                     }
