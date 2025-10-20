@@ -69,7 +69,7 @@ class Hiperdex :
         EditTextPreference(screen.context).apply {
             key = "${REMOVE_TITLE_CUSTOM_PREF}_$lang"
             title = "Custom regex to be removed from title"
-            summary = customRemoveTitle()
+            summary = preferences.getString("${REMOVE_TITLE_CUSTOM_PREF}_$lang", "") ?: ""
             setDefaultValue("")
             setOnPreferenceChangeListener { _, newValue ->
                 runCatching {
