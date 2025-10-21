@@ -30,6 +30,7 @@ import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import okhttp3.Headers
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
@@ -55,6 +56,11 @@ abstract class Luscious(
     private val apiBaseUrl: String = "$baseUrl/graphql/nobatch/"
 
     private val json: Json by injectLazy()
+
+    override fun headersBuilder(): Headers.Builder {
+        return super.headersBuilder()
+            .add("Referer", "$baseUrl/")
+    }
 
     override val client: OkHttpClient
         get() = network.cloudflareClient.newBuilder()
@@ -565,6 +571,12 @@ abstract class Luscious(
     override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
         return if (query.startsWith("ID:")) {
             val id = query.substringAfterLast("ID:")
+            client.newCall(buildAlbumInfoRequest(id))
+                .asObservableSuccess()
+                .map { MangasPage(listOf(detailsParse(it)), false) }
+        } else if (query.startsWith("ALBUM:")) {
+            val album = query.substringAfterLast("ALBUM:")
+            val id = album.split("_").last()
             client.newCall(buildAlbumInfoRequest(id))
                 .asObservableSuccess()
                 .map { MangasPage(listOf(detailsParse(it)), false) }
