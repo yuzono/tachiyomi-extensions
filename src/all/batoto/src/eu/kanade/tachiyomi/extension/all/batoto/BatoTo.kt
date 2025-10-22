@@ -2,6 +2,10 @@ package eu.kanade.tachiyomi.extension.all.batoto
 
 import android.app.Application
 import android.content.SharedPreferences
+import android.text.Editable
+import android.text.TextWatcher
+import android.widget.Button
+import android.widget.Toast
 import androidx.preference.CheckBoxPreference
 import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
@@ -91,8 +95,41 @@ open class BatoTo(
         val removeCustomPref = EditTextPreference(screen.context).apply {
             key = "${REMOVE_TITLE_CUSTOM_PREF}_$lang"
             title = "Custom regex to be removed from title"
-            summary = preferences.getString("${REMOVE_TITLE_CUSTOM_PREF}_$lang", "") ?: ""
+            summary = customRemoveTitle()
             setDefaultValue("")
+
+            val validate = { str: String ->
+                runCatching { Regex(str) }
+                    .map { true to "" }
+                    .getOrElse { false to it.message }
+            }
+
+            setOnBindEditTextListener { editText ->
+                editText.addTextChangedListener(
+                    object : TextWatcher {
+                        override fun beforeTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) {}
+                        override fun onTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) {}
+
+                        override fun afterTextChanged(editable: Editable?) {
+                            editable ?: return
+                            val text = editable.toString()
+                            val valid = validate(text)
+                            editText.error = if (!valid.first) valid.second else null
+                            editText.rootView.findViewById<Button>(android.R.id.button1)?.isEnabled = editText.error == null
+                        }
+                    },
+                )
+            }
+
+            setOnPreferenceChangeListener { _, newValue ->
+                val (isValid, message) = validate(newValue as String)
+                if (isValid) {
+                    summary = newValue
+                } else {
+                    Toast.makeText(screen.context, message, Toast.LENGTH_LONG).show()
+                }
+                isValid
+            }
         }
         screen.addPreference(mirrorPref)
         screen.addPreference(altChapterListPref)
@@ -129,7 +166,7 @@ open class BatoTo(
         return preferences.getBoolean("${REMOVE_TITLE_VERSION_PREF}_$lang", false)
     }
     private fun customRemoveTitle(): String =
-        preferences.getString("${REMOVE_TITLE_CUSTOM_PREF}_$lang", "") ?: ""
+        preferences.getString("${REMOVE_TITLE_CUSTOM_PREF}_$lang", "")!!
 
     private fun SharedPreferences.migrateMirrorPref() {
         val selectedMirror = getString("${MIRROR_PREF_KEY}_$lang", MIRROR_PREF_DEFAULT_VALUE)!!
@@ -159,7 +196,7 @@ open class BatoTo(
         val manga = SManga.create()
         val item = element.select("a.item-cover")
         val imgurl = item.select("img").attr("abs:src")
-        manga.setUrlWithoutDomain(item.attr("href"))
+        manga.setUrlWithoutDomain(stripSeriesUrl(item.attr("href")))
         manga.title = element.select("a.item-title").text().removeEntities()
         manga.thumbnail_url = imgurl
         return manga
@@ -287,7 +324,7 @@ open class BatoTo(
         manga.title = infoElement.select("h3").text().removeEntities()
         manga.thumbnail_url = document.select("div.attr-cover img")
             .attr("abs:src")
-        manga.setUrlWithoutDomain(infoElement.select("h3 a").attr("abs:href"))
+        manga.setUrlWithoutDomain(stripSeriesUrl(infoElement.select("h3 a").attr("abs:href")))
         return MangasPage(listOf(manga), false)
     }
 
@@ -318,7 +355,7 @@ open class BatoTo(
 
     private fun searchUtilsFromElement(element: Element): SManga {
         val manga = SManga.create()
-        manga.setUrlWithoutDomain(element.select("td a").attr("href"))
+        manga.setUrlWithoutDomain(stripSeriesUrl(element.select("td a").attr("href")))
         manga.title = element.select("td a").text()
         manga.thumbnail_url = element.select("img").attr("abs:src")
         return manga
@@ -326,7 +363,7 @@ open class BatoTo(
 
     private fun searchHistoryFromElement(element: Element): SManga {
         val manga = SManga.create()
-        manga.setUrlWithoutDomain(element.select(".position-relative a").attr("href"))
+        manga.setUrlWithoutDomain(stripSeriesUrl(element.select(".position-relative a").attr("href")))
         manga.title = element.select(".position-relative a").text()
         manga.thumbnail_url = element.select("img").attr("abs:src")
         return manga
@@ -356,8 +393,6 @@ open class BatoTo(
         }
         return super.mangaDetailsRequest(manga)
     }
-    private var titleRegex: Regex =
-        Regex("\\([^()]*\\)|\\{[^{}]*\\}|\\[(?:(?!]).)*]|«[^»]*»|〘[^〙]*〙|「[^」]*」|『[^』]*』|≪[^≫]*≫|﹛[^﹜]*﹜|〖[^〖〗]*〗|𖤍.+?𖤍|《[^》]*》|⌜.+?⌝|⟨[^⟩]*⟩|\\/Official|\\/ Official", RegexOption.IGNORE_CASE)
 
     override fun mangaDetailsParse(document: Document): SManga {
         val infoElement = document.selectFirst("div#mainer div.container-fluid")!!
@@ -378,18 +413,19 @@ open class BatoTo(
                 append(it.text().split('/').joinToString("\n") { "• ${it.trim()}" })
             }
         }.trim()
-
-        val cleanedTitle = originalTitle
-            .replace(Regex(customRemoveTitle()), "")
-            .replace(if (isRemoveTitleVersion()) titleRegex else Regex(""), "")
-            .trim()
+        val cleanedTitle = originalTitle.cleanTitleIfNeeded()
 
         manga.title = cleanedTitle
         manga.author = infoElement.select("div.attr-item:contains(author) span").text()
         manga.artist = infoElement.select("div.attr-item:contains(artist) span").text()
         manga.status = parseStatus(workStatus, uploadStatus)
         manga.genre = infoElement.select(".attr-item b:contains(genres) + span ").joinToString { it.text() }
-        manga.description = description
+        manga.description = if (originalTitle.trim() != cleanedTitle) {
+            listOf(originalTitle, description)
+                .joinToString("\n\n")
+        } else {
+            description
+        }
         manga.thumbnail_url = document.select("div.attr-cover img").attr("abs:src")
         return manga
     }
@@ -433,9 +469,9 @@ open class BatoTo(
     }
 
     override fun chapterListRequest(manga: SManga): Request {
-        return if (getAltChapterListPref()) {
-            val id = manga.url.substringBeforeLast("/").substringAfterLast("/").trim()
-
+        val id = seriesIdRegex.find(manga.url)
+            ?.groups?.get(1)?.value?.trim()
+        return if (getAltChapterListPref() && !id.isNullOrBlank()) {
             GET("$baseUrl/rss/series/$id.xml", headers)
         } else if (manga.url.startsWith("http")) {
             // Check if trying to use a deprecated mirror, force current mirror
@@ -579,6 +615,19 @@ open class BatoTo(
     override fun imageUrlParse(document: Document): String = throw UnsupportedOperationException()
 
     private fun String.removeEntities(): String = Parser.unescapeEntities(this, true)
+
+    private fun String.cleanTitleIfNeeded(): String {
+        var tempTitle = this
+        customRemoveTitle().takeIf { it.isNotEmpty() }?.let { customRegex ->
+            runCatching {
+                tempTitle = tempTitle.replace(Regex(customRegex), "")
+            }
+        }
+        if (isRemoveTitleVersion()) {
+            tempTitle = tempTitle.replace(titleRegex, "")
+        }
+        return tempTitle.trim()
+    }
 
     override fun getFilterList() = FilterList(
         LetterFilter(getLetterFilter(), 0),
@@ -1035,7 +1084,14 @@ open class BatoTo(
         CheckboxFilterOption("pt-PT", "Portuguese (Portugal)"),
     ).filterNot { it.value == siteLang }
 
+    private fun stripSeriesUrl(url: String): String {
+        val matchResult = seriesUrlRegex.find(url)
+        return matchResult?.groups?.get(1)?.value ?: url
+    }
+
     companion object {
+        private val seriesUrlRegex = Regex("""(.*/series/\d+)/.*""")
+        private val seriesIdRegex = Regex("""series/(\d+)""")
         private const val MIRROR_PREF_KEY = "MIRROR"
         private const val MIRROR_PREF_TITLE = "Mirror"
         private const val REMOVE_TITLE_VERSION_PREF = "REMOVE_TITLE_VERSION"
@@ -1114,5 +1170,8 @@ open class BatoTo(
         private const val ALT_CHAPTER_LIST_PREF_TITLE = "Alternative Chapter List"
         private const val ALT_CHAPTER_LIST_PREF_SUMMARY = "If checked, uses an alternate chapter list"
         private const val ALT_CHAPTER_LIST_PREF_DEFAULT_VALUE = false
+
+        private val titleRegex: Regex =
+            Regex("\\([^()]*\\)|\\{[^{}]*\\}|\\[(?:(?!]).)*]|«[^»]*»|〘[^〙]*〙|「[^」]*」|『[^』]*』|≪[^≫]*≫|﹛[^﹜]*﹜|〖[^〖〗]*〗|\uD81A\uDD0D.+?\uD81A\uDD0D|《[^》]*》|⌜.+?⌝|⟨[^⟩]*⟩|/Official|/ Official", RegexOption.IGNORE_CASE)
     }
 }
