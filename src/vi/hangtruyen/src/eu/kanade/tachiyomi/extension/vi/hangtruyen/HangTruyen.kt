@@ -146,6 +146,9 @@ class HangTruyen : ParsedHttpSource(), ConfigurableSource {
         thumbnail_url = element.selectFirst("img")?.attr("abs:data-src")
     }
 
+    // Related
+    override fun relatedMangaListSelector() = "#cm-related ul.list-unstyled > li"
+
     // Details
     override fun mangaDetailsParse(document: Document) = SManga.create().apply {
         title = document.selectFirst("h1.title-detail a")!!.text()
