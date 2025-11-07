@@ -5,12 +5,10 @@ import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
-import eu.kanade.tachiyomi.source.model.SManga
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import org.jsoup.nodes.Document
-import org.jsoup.nodes.Element
 
 class ManyComic : Madara("ManyComic", "https://manycomic.com", "en") {
     override val mangaSubString = "comic"
@@ -109,23 +107,4 @@ class ManyComic : Madara("ManyComic", "https://manycomic.com", "en") {
 
     private class GenreFilter(title: String, options: List<Genre>, state: Int = 0) :
         UriPartFilter(title, options.map { Pair(it.name, it.id) }.toTypedArray(), state)
-
-    override fun relatedMangaListSelector() = ".related-manga .related-reading-wrap"
-
-    override fun relatedMangaFromElement(element: Element): SManga {
-        val manga = SManga.create()
-
-        with(element) {
-            selectFirst(".related-reading-content .widget-title a")!!.let {
-                manga.setUrlWithoutDomain(it.attr("abs:href"))
-                manga.title = it.ownText()
-            }
-
-            selectFirst("img")?.let {
-                manga.thumbnail_url = imageFromElement(it)
-            }
-        }
-
-        return manga
-    }
 }
