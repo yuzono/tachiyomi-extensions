@@ -1,0 +1,28 @@
+name: Delete Merged Branch
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  delete_merged_branch:
+    runs-on: 'ubuntu-24.04'
+    if: github.event.pull_request.merged == true && github.repository == github.event.pull_request.head.repo.full_name
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+
+      - name: Delete branch
+        run: |
+          branch_name=$(echo "${{ github.event.pull_request.head.ref }}")
+          if [ "$branch" != "refs/heads/main" ] && [ "$branch" != "refs/heads/master" ]; then
+            echo "Deleting branch ${branch_name}"
+            git push origin --delete $branch_name
+          else
+            echo "Skipping deletion of main or master branch"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

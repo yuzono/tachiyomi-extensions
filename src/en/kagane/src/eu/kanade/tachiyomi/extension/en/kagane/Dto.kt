@@ -9,83 +9,93 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 @Serializable
-class BookDto(
-    val id: String,
-    val name: String,
+class SearchDto(
+    val content: List<Book>,
+    val last: Boolean,
+) {
+    fun hasNextPage() = !last
+
+    @Serializable
+    class Book(
+        val name: String,
+        val id: String,
+    ) {
+
+        fun toSManga(domain: String): SManga = SManga.create().apply {
+            title = name
+            url = id
+            thumbnail_url = "$domain/api/v1/series/$id/thumbnail"
+        }
+    }
+}
+
+@Serializable
+class DetailsDto(
     val source: String,
-    val metadata: MetadataDto,
-    val booksMetadata: BooksMetadataDto,
+    val authors: List<String>,
+    val status: String,
+    val summary: String?,
+    val genres: List<String>,
+    @SerialName("alternate_titles")
+    val alternateTitles: List<AlternateTitles>,
 ) {
     @Serializable
-    class MetadataDto(
-        val genres: List<String>,
-        val status: String,
-        val summary: String,
+    class AlternateTitles(
+        val title: String,
     )
 
-    @Serializable
-    class BooksMetadataDto(
-        val authors: List<AuthorDto>,
-    ) {
-        @Serializable
-        class AuthorDto(
-            val name: String,
-            val role: String,
-        )
-    }
+    fun toSManga(): SManga = SManga.create().apply {
+        val desc = StringBuilder()
+        if (!summary.isNullOrBlank()) desc.append(summary + "\n\n")
+        desc.append("Source: ").append(source + "\n\n")
 
-    fun toSManga(domain: String): SManga = SManga.create().apply {
-        title = name
-        url = "/series/$id"
-        description = buildString {
-            append(metadata.summary)
-            append("\n\n")
-            append("Source: ")
-            append(source)
+        if (alternateTitles.isNotEmpty()) {
+            desc.append("Associated Name(s):\n\n")
+            alternateTitles.forEach { desc.append("• ${it.title}\n") }
         }
-        thumbnail_url = "https://api.$domain/api/v1/series/$id/thumbnail"
-        author = getRoles(listOf("writer"))
-        artist = getRoles(listOf("inker", "colorist", "penciller"))
-        genre = metadata.genres.joinToString()
-        status = metadata.status.toStatus()
+
+        author = authors.joinToString()
+        description = desc.toString()
+        genre = genres.joinToString()
+        status = this@DetailsDto.status.toStatus()
     }
 
     private fun String.toStatus(): Int {
         return when (this) {
             "ONGOING" -> SManga.ONGOING
             "ENDED" -> SManga.COMPLETED
-            else -> SManga.COMPLETED
+            else -> SManga.UNKNOWN
         }
-    }
-
-    private fun getRoles(roles: List<String>): String {
-        return booksMetadata.authors
-            .filter { roles.contains(it.role) }
-            .joinToString { it.name }
     }
 }
 
 @Serializable
 class ChapterDto(
-    val id: String,
-    val metadata: MetadataDto,
+    val content: List<Book>,
 ) {
     @Serializable
-    class MetadataDto(
-        val releaseDate: String? = null,
+    class Book(
+        val id: String,
+        @SerialName("series_id")
+        val seriesId: String,
         val title: String,
-    )
-
-    fun toSChapter(seriesId: String): SChapter = SChapter.create().apply {
-        url = "$seriesId;$id"
-        name = metadata.title
-        date_upload = dateFormat.tryParse(metadata.releaseDate)
+        @SerialName("release_date")
+        val releaseDate: String?,
+        @SerialName("pages_count")
+        val pagesCount: Int,
+        @SerialName("number_sort")
+        val number: Float,
+    ) {
+        fun toSChapter(): SChapter = SChapter.create().apply {
+            url = "$seriesId;$id;$pagesCount"
+            name = title
+            date_upload = dateFormat.tryParse(releaseDate)
+            chapter_number = number
+        }
     }
 
     companion object {
-        private val dateFormat by lazy {
-            SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH)
-        }
+        private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH)
     }
 }
 
@@ -93,11 +103,6 @@ class ChapterDto(
 class ChallengeDto(
     @SerialName("access_token")
     val accessToken: String,
-    @SerialName("page_count")
-    val pageCount: Int,
-)
-
-@Serializable
-class PaginationDto(
-    val hasNext: Boolean,
+    @SerialName("cache_url")
+    val cacheUrl: String,
 )

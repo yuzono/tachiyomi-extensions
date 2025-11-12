@@ -20,13 +20,14 @@ import org.jsoup.nodes.Element
 import rx.Observable
 import java.text.SimpleDateFormat
 import java.util.Locale
+import kotlin.random.Random
 
 class Ikiru : ParsedHttpSource() {
     // Formerly "MangaTale"
     override val id = 1532456597012176985
 
     override val name = "Ikiru"
-    override val baseUrl = "https://01.ikiru.wtf"
+    override val baseUrl = "https://02.ikiru.wtf"
     override val lang = "id"
     override val supportsLatest = true
 
@@ -65,7 +66,7 @@ class Ikiru : ParsedHttpSource() {
 
         if (searchNonce.isNullOrEmpty()) {
             val document = client.newCall(
-                GET("$baseUrl/ajax-call?type=search_form&action=get_nonce", headers),
+                GET("$baseUrl/wp-admin/admin-ajax.php?type=search_form&action=get_nonce", headers),
             ).execute().asJsoup()
             searchNonce = document.selectFirst("input[name=search_nonce]")!!.attr("value")
         }
@@ -77,7 +78,7 @@ class Ikiru : ParsedHttpSource() {
             .addFormDataPart("nonce", searchNonce!!)
             .build()
 
-        return POST("$baseUrl/ajax-call?action=advanced_search", body = requestBody)
+        return POST("$baseUrl/wp-admin/admin-ajax.php?action=advanced_search", body = requestBody)
     }
 
     override fun searchMangaSelector() = "div.overflow-hidden:has(a.font-medium)"
@@ -126,15 +127,15 @@ class Ikiru : ParsedHttpSource() {
             ?: client.newCall(mangaDetailsRequest(manga)).execute().asJsoup().getMangaId()
             ?: throw Exception("Could not find manga ID")
 
-        val chapterListUrl = "$baseUrl/ajax-call".toHttpUrl().newBuilder()
+        val chapterListUrl = "$baseUrl/wp-admin/admin-ajax.php".toHttpUrl().newBuilder()
             .addQueryParameter("manga_id", mangaId)
-            .addQueryParameter("page", "") // keep empty for loading hidden chapter
+            .addQueryParameter("page", "${Random.nextInt(99, 9999)}") // keep above 3 for loading hidden chapter
             .addQueryParameter("action", "chapter_list")
             .build()
 
         val response = client.newCall(GET(chapterListUrl, headers)).execute()
 
-        response.asJsoup().select("#chapter-list .cursor-pointer a").map { element ->
+        response.asJsoup().select("div a").map { element ->
             SChapter.create().apply {
                 setUrlWithoutDomain(element.attr("href"))
                 name = element.select("span").text()

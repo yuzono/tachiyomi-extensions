@@ -1,7 +1,8 @@
 ext {
+    kmkVersionCode = 2
     extName = 'Buon Dua'
     extClass = '.BuonDua'
-    extVersionCode = 5
+    extVersionCode = 6
     isNsfw = true
 }
 

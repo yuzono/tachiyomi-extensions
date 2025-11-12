@@ -3,7 +3,9 @@ package eu.kanade.tachiyomi.extension.all.misskon
 import android.content.SharedPreferences
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
+import androidx.preference.SwitchPreferenceCompat
 import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.network.await
 import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
@@ -51,6 +53,9 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
     private val SharedPreferences.topDays
         get() = getString(PREF_TOP_DAYS, DEFAULT_TOP_DAYS)
 
+    private val SharedPreferences.splitPages
+        get() = getBoolean(PREF_SPLIT_PAGES, DEFAULT_SPLIT_PAGES)
+
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         ListPreference(screen.context).apply {
             key = PREF_TOP_DAYS
@@ -59,6 +64,14 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
             entries = topDaysList().map { it.name }.toTypedArray()
             entryValues = topDaysList().indices.map { it.toString() }.toTypedArray()
             setDefaultValue(DEFAULT_TOP_DAYS)
+        }.also(screen::addPreference)
+
+        SwitchPreferenceCompat(screen.context).apply {
+            key = PREF_SPLIT_PAGES
+            title = "Split into multiple pages"
+            summaryOff = "Single gallery"
+            summaryOn = "Multiple pages"
+            setDefaultValue(DEFAULT_SPLIT_PAGES)
         }.also(screen::addPreference)
     }
 
@@ -163,34 +176,56 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
     override fun chapterFromElement(element: Element) = throw UnsupportedOperationException()
 
     override suspend fun getChapterList(manga: SManga): List<SChapter> {
-        client.newCall(chapterListRequest(manga))
-            .execute().use { response ->
-                val document = response.asJsoup()
-                val dateStr = document.selectFirst(".entry img")?.imgAttr()
-                    ?.let { url ->
-                        FULL_DATE_REGEX.find(url)?.groupValues?.get(1)
-                            ?: YEAR_MONTH_REGEX.find(url)?.groupValues?.get(1)?.let { "$it/01" }
-                    }
-
-                return listOf(
-                    SChapter.create().apply {
-                        chapter_number = 0F
-                        setUrlWithoutDomain(manga.url)
-                        name = "Gallery"
-                        date_upload = FULL_DATE_FORMAT.tryParse(dateStr)
-                    },
-                )
+        val doc = client.newCall(chapterListRequest(manga)).await().asJsoup()
+        val dateUploadStr = doc.selectFirst(".entry img")?.imgAttr()
+            ?.let { url ->
+                FULL_DATE_REGEX.find(url)?.groupValues?.get(1)
+                    ?: YEAR_MONTH_REGEX.find(url)?.groupValues?.get(1)?.let { "$it/01" }
             }
+
+        val dateUpload = FULL_DATE_FORMAT.tryParse(dateUploadStr)
+        if (preferences.splitPages) {
+            val maxPage = doc.select("div.page-link:first-of-type a.post-page-numbers").last()?.text()?.toIntOrNull() ?: 1
+            return (maxPage downTo 1).map { page ->
+                SChapter.create().apply {
+                    setUrlWithoutDomain("${manga.url}/$page")
+                    name = "Page $page"
+                    chapter_number = page.toFloat()
+                    date_upload = dateUpload
+                }
+            }
+        } else {
+            return listOf(
+                SChapter.create().apply {
+                    chapter_number = 0F
+                    setUrlWithoutDomain(manga.url)
+                    name = "Gallery"
+                    date_upload = dateUpload
+                },
+            )
+        }
     }
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
-        return client.newCall(pageListRequest(chapter))
-            .execute().use { response ->
-                pageListParseAsync(response.asJsoup())
-            }
+        val document = client.newCall(pageListRequest(chapter)).await().asJsoup()
+        return if (preferences.splitPages) {
+            pageListParse(document)
+        } else {
+            pageListMerge(document)
+        }
     }
 
-    private suspend fun pageListParseAsync(document: Document): List<Page> {
+    private val imageListSelector = "div.post-inner > div.entry > p > img"
+    private fun parseImageList(document: Document): List<String> =
+        document.select(imageListSelector)
+            .map { it.imgAttr() }
+
+    override fun pageListParse(document: Document): List<Page> {
+        return document.select(imageListSelector)
+            .mapIndexed { i, img -> Page(i, imageUrl = img.imgAttr()) }
+    }
+
+    private suspend fun pageListMerge(document: Document): List<Page> {
         val pages = document
             .select("div.page-link:first-of-type a")
             .mapNotNull {
@@ -203,7 +238,7 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
             chapterPage += pages.map { url ->
                 async(Dispatchers.IO) {
                     val request = GET(url, headers)
-                    parseImageList(client.newCall(request).execute().asJsoup())
+                    parseImageList(client.newCall(request).await().asJsoup())
                 }
             }.awaitAll().flatten()
         }
@@ -212,12 +247,6 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
             Page(index, imageUrl = url)
         }
     }
-    override fun pageListParse(document: Document) = throw UnsupportedOperationException()
-
-    private fun parseImageList(document: Document): List<String> = document
-        .select("div.post-inner > div.entry > p > img").map { image ->
-            image.imgAttr()
-        }
 
     override fun imageUrlParse(document: Document) = throw UnsupportedOperationException()
 
@@ -244,17 +273,15 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
             if (!tagsFetched && tagsFetchAttempt < 3) {
                 try {
                     client.newCall(GET("$baseUrl/sets/", headers)).execute()
-                        .use { response ->
-                            response.asJsoup()
-                                .select(".entry .tag-counterz a[href*=/tag/]")
-                                .mapNotNull {
-                                    Pair(
-                                        it.select("strong").text(),
-                                        it.attr("href")
-                                            .removeSuffix("/")
-                                            .substringAfterLast('/'),
-                                    )
-                                }
+                        .asJsoup()
+                        .select(".entry .tag-counterz a[href*=/tag/]")
+                        .mapNotNull {
+                            Pair(
+                                it.select("strong").text(),
+                                it.attr("href")
+                                    .removeSuffix("/")
+                                    .substringAfterLast('/'),
+                            )
                         }
                         .onEach {
                             tagList = tagList.plus(it)
@@ -329,7 +356,10 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
 
     companion object {
         private const val PREF_TOP_DAYS = "pref_top_days"
-        private const val DEFAULT_TOP_DAYS = "1"
+        private const val DEFAULT_TOP_DAYS = "1" // 7-days
+
+        private const val PREF_SPLIT_PAGES = "pref_split_pages"
+        private const val DEFAULT_SPLIT_PAGES = false
 
         private val FULL_DATE_REGEX = Regex("""/(\d{4}/\d{2}/\d{2})/""")
         private val YEAR_MONTH_REGEX = Regex("""/(\d{4}/\d{2})/""")

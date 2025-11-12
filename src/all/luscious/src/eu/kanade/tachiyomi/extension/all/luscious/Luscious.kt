@@ -30,6 +30,7 @@ import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import okhttp3.Headers
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
@@ -55,6 +56,11 @@ abstract class Luscious(
     private val apiBaseUrl: String = "$baseUrl/graphql/nobatch/"
 
     private val json: Json by injectLazy()
+
+    override fun headersBuilder(): Headers.Builder {
+        return super.headersBuilder()
+            .add("Referer", "$baseUrl/")
+    }
 
     override val client: OkHttpClient
         get() = network.cloudflareClient.newBuilder()
@@ -568,6 +574,12 @@ abstract class Luscious(
             client.newCall(buildAlbumInfoRequest(id))
                 .asObservableSuccess()
                 .map { MangasPage(listOf(detailsParse(it)), false) }
+        } else if (query.startsWith("ALBUM:")) {
+            val album = query.substringAfterLast("ALBUM:")
+            val id = album.split("_").last()
+            client.newCall(buildAlbumInfoRequest(id))
+                .asObservableSuccess()
+                .map { MangasPage(listOf(detailsParse(it)), false) }
         } else {
             super.fetchSearchManga(page, query, filters)
         }
@@ -941,7 +953,7 @@ abstract class Luscious(
         private const val MIRROR_PREF_KEY = "MIRROR"
         private const val MIRROR_PREF_TITLE = "Mirror"
         private val MIRROR_PREF_ENTRIES = arrayOf("Guest", "API", "Members")
-        private val MIRROR_PREF_ENTRY_VALUES = arrayOf("https://www.luscious.net", "https://api.luscious.net", "https://members.luscious.net")
+        private val MIRROR_PREF_ENTRY_VALUES = arrayOf("https://www.luscious.net", "https://apicdn.luscious.net", "https://members.luscious.net")
         private val MIRROR_PREF_DEFAULT_VALUE = MIRROR_PREF_ENTRY_VALUES[0]
     }
 

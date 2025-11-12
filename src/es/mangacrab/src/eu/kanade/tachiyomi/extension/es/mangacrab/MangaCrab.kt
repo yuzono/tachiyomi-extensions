@@ -51,9 +51,30 @@ class MangaCrab :
     override val pageListParseSelector = "div.page-break:not([style*='display:none']) img:not([src])"
 
     override fun imageFromElement(element: Element): String? {
+        val url = element.attributes()
+            .firstNotNullOfOrNull { attr ->
+                element.absUrl(attr.key).toHttpUrlOrNull()
+                    ?.takeIf { it.encodedQuery.toString().contains("wp-content") }
+            }
+
+        val fileUrl = url?.let { httpUrl ->
+            httpUrl.queryParameterNames
+                .firstNotNullOfOrNull { name ->
+                    httpUrl.queryParameterValues(name)
+                        .firstOrNull { value -> value?.contains("wp-content") == true }
+                }
+                ?.let { file ->
+                    httpUrl.newBuilder()
+                        .encodedPath("/$file")
+                        .query(null)
+                        .build()
+                }
+        }
+
         val imageAbsUrl = element.attributes().firstOrNull { it.value.toHttpUrlOrNull() != null }?.value
 
         return when {
+            fileUrl != null -> fileUrl.toString()
             element.hasAttr("data-src") -> element.attr("abs:data-src")
             element.hasAttr("data-lazy-src") -> element.attr("abs:data-lazy-src")
             element.hasAttr("srcset") -> element.attr("abs:srcset").getSrcSetImage()

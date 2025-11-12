@@ -1,9 +1,10 @@
 ext {
+    kmkVersionCode = 1
     extName = 'Hiperdex'
     extClass = '.Hiperdex'
     themePkg = 'madara'
-    baseUrl = 'https://hiperdex.tv'
-    overrideVersionCode = 19
+    baseUrl = 'https://hiperdex.com'
+    overrideVersionCode = 21
     isNsfw = true
 }
 
