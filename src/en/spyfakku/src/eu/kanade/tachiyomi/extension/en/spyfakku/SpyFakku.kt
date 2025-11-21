@@ -1,6 +1,6 @@
 package eu.kanade.tachiyomi.extension.en.spyfakku
 
-import android.widget.Toast
+import android.annotation.SuppressLint
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.network.GET
@@ -13,7 +13,8 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import eu.kanade.tachiyomi.source.online.HttpSource
-import keiyoushi.utils.getPreferencesLazy
+import keiyoushi.utils.getPreferences
+import keiyoushi.utils.tryParse
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -28,10 +29,15 @@ import okhttp3.Request
 import okhttp3.Response
 import rx.Observable
 import uy.kohesive.injekt.injectLazy
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
 import kotlin.random.Random
 
 class SpyFakku : HttpSource(), ConfigurableSource {
@@ -40,27 +46,77 @@ class SpyFakku : HttpSource(), ConfigurableSource {
 
     override val lang = "en"
 
-    private val preferences by getPreferencesLazy()
-
-    override val baseUrl = getPrefBaseUrl()
-
-    private val baseImageUrl = "$baseUrl/image"
-
-    private val baseApiUrl = "$baseUrl/api"
-
     override val supportsLatest = true
+
+    private val preferences = getPreferences()
+
+    override val baseUrl: String
+        get() {
+            val index = preferences.getString(MIRROR_PREF_KEY, "0")!!.toInt()
+                .coerceAtMost(mirrors.size - 1)
+
+            return mirrors[index]
+        }
+
+    private val baseImageUrl = "$tmpCdnUrl/image"
+
+    private val baseApiUrl get() = "$baseUrl/api"
 
     private val json: Json by injectLazy()
 
     override val client = network.cloudflareClient.newBuilder()
+        // add referer in interceptor due to domain change preference
+        .addNetworkInterceptor { chain ->
+            val request = chain.request().newBuilder()
+                .header("Referer", "$baseUrl/")
+                .header("Origin", baseUrl)
+                .build()
+
+            chain.proceed(request)
+        }
+        // change domain of image urls
+        .addInterceptor { chain ->
+            val url = chain.request().url
+            if (url.host == tmpCdnDomain) {
+                val (host, port) = baseUrl.toHttpUrl().let { it.host to it.port }
+                val newUrl = url.newBuilder()
+                    .scheme("https")
+                    .host(host)
+                    .port(port)
+                    .build()
+
+                val request = chain.request().newBuilder()
+                    .url(newUrl)
+                    .build()
+
+                chain.proceed(request)
+            } else {
+                chain.proceed(chain.request())
+            }
+        }
+        // airdns domain is self-signed
+        .apply {
+            val naiveTrustManager = @SuppressLint("CustomX509TrustManager")
+            object : X509TrustManager {
+                override fun getAcceptedIssuers(): Array<X509Certificate?> = emptyArray()
+                override fun checkClientTrusted(certs: Array<X509Certificate>, authType: String) = Unit
+                override fun checkServerTrusted(certs: Array<X509Certificate>, authType: String) = Unit
+            }
+
+            val insecureSocketFactory = SSLContext.getInstance("SSL").apply {
+                val trustAllCerts = arrayOf<TrustManager>(naiveTrustManager)
+                init(null, trustAllCerts, SecureRandom())
+            }.socketFactory
+
+            sslSocketFactory(insecureSocketFactory, naiveTrustManager)
+            hostnameVerifier { _, _ -> true }
+        }
+        // airdns domain is protected by Anibus
+        .addInterceptor(AnibusInterceptor)
         .rateLimit(2, 1, TimeUnit.SECONDS)
         .build()
 
     private val charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-
-    override fun headersBuilder() = super.headersBuilder()
-        .set("Referer", "$baseUrl/")
-        .set("Origin", baseUrl)
 
     override fun popularMangaRequest(page: Int): Request {
         return GET("$baseApiUrl/library?sort=released_at&page=$page", headers)
@@ -294,11 +350,7 @@ class SpyFakku : HttpSource(), ConfigurableSource {
                 SChapter.create().apply {
                     name = "Chapter"
                     url = manga.url
-                    date_upload = try {
-                        add.released_at?.let { releasedAtFormat.parse(it) }!!.time
-                    } catch (e: Exception) {
-                        0L
-                    }
+                    date_upload = releasedAtFormat.tryParse(add.released_at)
                 },
             ),
         )
@@ -370,34 +422,23 @@ class SpyFakku : HttpSource(), ConfigurableSource {
 
     override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
 
-    override val supportsRelatedMangas = false
-
-    // ============================== Settings ==============================
-
-    private fun getPrefBaseUrl(): String = preferences.getString(PREF_DOMAIN_KEY, PREF_DOMAIN_DEFAULT)!!
-
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         ListPreference(screen.context).apply {
-            key = PREF_DOMAIN_KEY
-            title = "Preferred domain"
-            entries = DOMAINS
-            entryValues = DOMAINS
-            setDefaultValue(PREF_DOMAIN_DEFAULT)
+            key = MIRROR_PREF_KEY
+            title = "Preferred Mirror"
+            entries = mirrors
+            entryValues = Array(mirrors.size) { it.toString() }
             summary = "%s"
-
-            setOnPreferenceChangeListener { _, _ ->
-                Toast.makeText(screen.context, "Restart App to apply changes", Toast.LENGTH_LONG).show()
-                true
-            }
+            setDefaultValue("0")
         }.also(screen::addPreference)
     }
-
-    companion object {
-        private const val PREF_DOMAIN_KEY = "preferred_domain"
-        private val DOMAINS = arrayOf(
-            "https://fakku.cc",
-            "https://hentalk.pw",
-        )
-        private val PREF_DOMAIN_DEFAULT = DOMAINS[0]
-    }
 }
+
+private const val MIRROR_PREF_KEY = "pref_mirror"
+private val mirrors = arrayOf(
+    "https://hentalk.pw",
+    "https://fakku.cc",
+    "https://fakkuonion.airdns.org:4096",
+)
+private const val tmpCdnDomain = "127.0.0.1"
+private const val tmpCdnUrl = "http://$tmpCdnDomain"
