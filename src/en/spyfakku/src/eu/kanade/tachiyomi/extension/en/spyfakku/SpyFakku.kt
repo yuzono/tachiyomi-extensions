@@ -432,6 +432,8 @@ class SpyFakku : HttpSource(), ConfigurableSource {
             setDefaultValue("0")
         }.also(screen::addPreference)
     }
+
+    override val supportsRelatedMangas = false
 }
 
 private const val MIRROR_PREF_KEY = "pref_mirror"
