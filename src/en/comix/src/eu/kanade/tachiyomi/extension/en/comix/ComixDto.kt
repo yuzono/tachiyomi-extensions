@@ -217,13 +217,13 @@ class ChapterResponse(
     val result: Items?,
 ) {
     @Serializable
-    class Items(
+    data class Items(
         @SerialName("chapter_id")
         val chapterId: Int,
         val images: List<ImageItem>,
     ) {
         @Serializable
-        class ImageItem(
+        data class ImageItem(
             val width: Int,
             val height: Int,
             val url: String,
