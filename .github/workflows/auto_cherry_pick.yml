@@ -46,11 +46,11 @@ jobs:
           echo "Last commit: `git log -1 --oneline`"
           git remote add yuzuno-upstream https://github.com/yuzono/tachiyomi-extensions
           git fetch yuzuno-upstream
-          echo "Last commit: `git log -1 --oneline keiyoushi-upstream/main`"
+          echo "Last commit: `git log -1 --oneline yuzuno-upstream/master`"
 
           echo "Incoming commits:"
-          echo "`git log yuzuno..yuzuno-upstream/main --oneline`"
-          upcoming_changes=`git log yuzuno..yuzuno-upstream/main --pretty="%h"`
+          echo "`git log yuzuno..yuzuno-upstream/master --oneline`"
+          upcoming_changes=`git log yuzuno..yuzuno-upstream/master --pretty="%h"`
 
           # Read the upcoming changes' hash into an array
           upcoming_changes_hash=()
