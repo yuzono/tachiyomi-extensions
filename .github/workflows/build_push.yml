@@ -1,16 +1,16 @@
 name: CI
 
 on:
-  push:
-    branches:
-      # - main
-      - master
-    paths:
-      - '**'
-      - '!**.md'
-      - '!.github/**'
-      - '.github/scripts/**'
-      - '.github/workflows/build_push.yml'
+  #push:
+  #  branches:
+  #    # - main
+  #    - master
+  #  paths:
+  #    - '**'
+  #    - '!**.md'
+  #    - '!.github/**'
+  #    - '.github/scripts/**'
+  #    - '.github/workflows/build_push.yml'
   # Manual trigger
   workflow_dispatch:
 
@@ -50,7 +50,7 @@ jobs:
       - name: Set up Java
         uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
         with:
-          java-version: 17
+          java-version: 21
           distribution: temurin
 
       - name: Set up Gradle
@@ -109,7 +109,7 @@ jobs:
 
       - name: Upload APKs (${{ matrix.chunk.number }})
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        if: github.repository == 'yuzono/tachiyomi-extensions'
+        # if: github.repository == 'yuzono/tachiyomi-extensions'
         with:
           name: "individual-apks-${{ matrix.chunk.number }}"
           path: "**/*.apk"
@@ -121,7 +121,7 @@ jobs:
   publish:
     name: Publish extension repo
     needs: [prepare, build]
-    if: github.repository == 'yuzono/tachiyomi-extensions'
+    # if: github.repository == 'yuzono/tachiyomi-extensions'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -155,7 +155,7 @@ jobs:
       - name: Checkout repo branch
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          repository: yuzono/tachiyomi-repo
+          repository: AhmadNaruto/mihon-extension
           token: ${{ secrets.BOT_PAT }}
           ref: repo
           path: repo
@@ -181,9 +181,9 @@ jobs:
           COMMIT_MESSAGE: ${{ needs.prepare.outputs.latestCommitMessage }}
         run: |
           cd repo
-          git config user.name "Yūzōnō"
-          git config user.email "yuzono@users.noreply.github.com"
-          git remote set-url origin https://github.com/yuzono/manga-repo.git
+          git config user.name "AhmadNaruto"
+          git config user.email "ahmadnatuto@users.noreply.github.com"
+          git remote set-url origin https://github.com/AhmadNaruto/mihon-extension
           git fetch origin
           git reset origin/repo
           git add -A
@@ -192,4 +192,4 @@ jobs:
 
       - name: Purge cached index on jsDelivr
         run: |
-          curl https://purge.jsdelivr.net/gh/yuzono/manga-repo@repo/index.min.json
+          curl https://purge.jsdelivr.net/gh/AhmadNaruto/mihon-extension@repo/index.min.json
