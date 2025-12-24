@@ -15,7 +15,7 @@
 
                 <data
                     android:host="anime-sama.si"
-                    android:pathPattern="/catalogue/.*"
+                    android:pathPattern="/catalogue/..*"
                     android:scheme="https" />
             </intent-filter>
         </activity>
