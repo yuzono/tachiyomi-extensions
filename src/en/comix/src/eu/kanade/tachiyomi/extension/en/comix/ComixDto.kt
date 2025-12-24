@@ -185,6 +185,8 @@ class Chapter(
     val updatedAt: Long,
     @SerialName("scanlation_group")
     private val scanlationGroup: ScanlationGroup?,
+    @SerialName("is_official")
+    val isOfficial: Int,
 ) {
     @Serializable
     class ScanlationGroup(
@@ -200,7 +202,13 @@ class Chapter(
         }
         date_upload = this@Chapter.updatedAt * 1000
         chapter_number = this@Chapter.number.toFloat()
-        scanlator = this@Chapter.scanlationGroup?.name ?: "Unknown"
+        scanlator = if (this@Chapter.scanlationGroup != null) {
+            this@Chapter.scanlationGroup.name
+        } else if (this@Chapter.isOfficial == 1) {
+            "Official"
+        } else {
+            "Unknown"
+        }
     }
 }
 
@@ -212,6 +220,11 @@ class ChapterResponse(
     class Items(
         @SerialName("chapter_id")
         val chapterId: Int,
-        val images: List<String>,
+        val images: List<Images>,
+    )
+
+    @Serializable
+    class Images(
+        val url: String,
     )
 }

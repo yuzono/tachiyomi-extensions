@@ -3,9 +3,13 @@ name: Auto cherry-pick Keiyoushi
 on:
   schedule:
     - cron: "0 2 * * *"
+    - cron: "0 5 * * *"
     - cron: "0 8 * * *"
+    - cron: "0 11 * * *"
     - cron: "0 14 * * *"
+    - cron: "0 17 * * *"
     - cron: "0 20 * * *"
+    - cron: "0 23 * * *"
   workflow_dispatch: # Manual dispatch
 
 concurrency:
@@ -23,7 +27,7 @@ jobs:
 
     steps:
       - name: Clone master
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           ref: master
           path: master

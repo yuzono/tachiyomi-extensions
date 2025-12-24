@@ -225,8 +225,8 @@ class Comix : HttpSource(), ConfigurableSource {
                 chapterMap[key] = ch
             } else {
                 // Prefer official scan group
-                val officialNew = ch.scanlationGroupId == 9275
-                val officialCurrent = current.scanlationGroupId == 9275
+                val officialNew = (ch.scanlationGroupId == 9275 || ch.isOfficial == 1)
+                val officialCurrent = (current.scanlationGroupId == 9275 || current.isOfficial == 1)
                 val better = when {
                     officialNew && !officialCurrent -> true
                     !officialNew && officialCurrent -> false
@@ -257,8 +257,8 @@ class Comix : HttpSource(), ConfigurableSource {
             throw Exception("No images found for chapter ${result.chapterId}")
         }
 
-        return result.images.mapIndexed { index, url ->
-            Page(index, imageUrl = url)
+        return result.images.mapIndexed { index, img ->
+            Page(index, imageUrl = img.url)
         }
     }
 

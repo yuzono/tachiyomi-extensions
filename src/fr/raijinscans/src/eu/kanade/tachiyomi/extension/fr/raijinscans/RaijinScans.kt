@@ -20,6 +20,7 @@ import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.util.Calendar
 import java.util.Locale
+import kotlin.collections.mapIndexed
 
 class RaijinScans : HttpSource() {
 
@@ -35,6 +36,8 @@ class RaijinScans : HttpSource() {
     private val nonceRegex = """"nonce"\s*:\s*"([^"]+)"""".toRegex()
     private val numberRegex = """(\d+)""".toRegex()
     private val descriptionScriptRegex = """content\.innerHTML = `([\s\S]+?)`;""".toRegex()
+    private val rmdRegex = """window\._rmd\s*=\s*["']([^"']+)["']""".toRegex()
+    private val rmkRegex = """window\._rmk\s*=\s*["']([^"']+)["']""".toRegex()
 
     override fun headersBuilder() = super.headersBuilder().add("Referer", "$baseUrl/")
 
@@ -190,6 +193,7 @@ class RaijinScans : HttpSource() {
     }
 
     // ========================== Page List =============================
+
     override fun pageListParse(response: Response): List<Page> {
         return response.asJsoup().select("div.protected-image-data").mapIndexed { index, element ->
             val encodedUrl = element.attr("data-src")
