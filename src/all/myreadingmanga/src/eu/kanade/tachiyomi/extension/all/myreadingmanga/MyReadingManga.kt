@@ -10,8 +10,8 @@ import androidx.preference.EditTextPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
-import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.network.asObservableSuccess
+import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -20,6 +20,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.ParsedHttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.utils.getPreferencesLazy
 import okhttp3.FormBody
 import okhttp3.Headers
 import okhttp3.Interceptor
@@ -28,11 +29,12 @@ import okhttp3.Response
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import rx.Observable
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
-import rx.Observable
 import java.text.SimpleDateFormat
 import java.util.Locale
+import kotlin.getValue
 
 open class MyReadingManga(override val lang: String, private val siteLang: String, private val latestLang: String) : ParsedHttpSource(), ConfigurableSource {
 
@@ -44,7 +46,7 @@ open class MyReadingManga(override val lang: String, private val siteLang: Strin
             .set("User-Agent", USER_AGENT)
             .add("X-Requested-With", randomString((1..20).random()))
 
-    private val preferences: SharedPreferences = Injekt.get<Application>().getSharedPreferences("source_$id", 0x0000)
+    private val preferences: SharedPreferences by getPreferencesLazy()
     private val credentials: Credential get() = Credential(
         username = preferences.getString(USERNAME_PREF, "") ?: "",
         password = preferences.getString(PASSWORD_PREF, "") ?: "",
@@ -94,9 +96,8 @@ open class MyReadingManga(override val lang: String, private val siteLang: Strin
                 isLoggedIn = true
                 return chain.proceed(request)
             } else {
-                Toast.makeText(Injekt.get<Application>(), "MyReadingManga login failed. Please check your credentials.", Toast.LENGTH_LONG).show()
+                throw Exception("MyReadingManga login failed. Please check your credentials.")
             }
-            return chain.proceed(request)
         } catch (_: Exception) {
             return chain.proceed(request)
         }
@@ -160,9 +161,6 @@ open class MyReadingManga(override val lang: String, private val siteLang: Strin
     // Search
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
         val filterList = if (filters.isEmpty()) getFilterList() else filters
-        // whether enforce language is true will change the index of the loop below
-        val indexModifier = filterList.filterIsInstance<EnforceLanguageFilter>().first().indexModifier()
-
         val uri = Uri.parse("$baseUrl/page/$page/").buildUpon()
             .appendQueryParameter("s", query)
         filterList.forEachIndexed { i, filter ->
@@ -258,8 +256,7 @@ open class MyReadingManga(override val lang: String, private val siteLang: Strin
                 "Completed" -> SManga.COMPLETED
                 "Ongoing" -> SManga.ONGOING
                 "Licensed" -> SManga.LICENSED
-                "Dropped" -> SManga.CANCELLED
-                "Discontinued" -> SManga.CANCELLED
+                "Dropped", "Discontinued" -> SManga.CANCELLED
                 "Hiatus" -> SManga.ON_HIATUS
                 else -> SManga.UNKNOWN
             }
@@ -354,7 +351,9 @@ open class MyReadingManga(override val lang: String, private val siteLang: Strin
             filtersCached = true
             Jsoup.parse(filterMap[url]!!)
         }
-        return document?.select(css)?.map { Pair(it.text(), it.attr("href")?.split("/")?.dropLast(1)?.last() ?: "") }?.toTypedArray()
+        return document?.select(css)?.map {
+            Pair(it.text(), it.attr("href").split("/").dropLast(1).last())
+        }?.toTypedArray()
             ?: arrayOf(Pair("Press 'Reset' to load filters", ""))
     }
 
@@ -381,7 +380,6 @@ open class MyReadingManga(override val lang: String, private val siteLang: Strin
     }
 
     private class EnforceLanguageFilter(val siteLang: String) : Filter.CheckBox("Enforce language", true), UriFilter {
-        fun indexModifier() = if (state) 0 else 1
         override fun addToUri(uri: Uri.Builder) {
             if (state) uri.appendQueryParameter("ep_filter_lang", siteLang)
         }
