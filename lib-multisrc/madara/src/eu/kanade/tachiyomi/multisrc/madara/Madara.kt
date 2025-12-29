@@ -196,6 +196,21 @@ abstract class Madara(
             "div.nav-previous, nav.navigation-ajax, a.nextpostslink"
         }
 
+    // Related Manga
+    override fun relatedMangaListSelector() = ".related-reading-wrap"
+
+    override fun relatedMangaFromElement(element: Element): SManga {
+        return SManga.create().apply {
+            element.selectFirst(".widget-title a")!!.let {
+                setUrlWithoutDomain(it.attr("abs:href"))
+                title = it.ownText()
+            }
+            element.selectFirst(".widget-thumbnail img")?.let {
+                thumbnail_url = imageFromElement(it)
+            }
+        }
+    }
+
     // Latest Updates
 
     override fun latestUpdatesSelector() = popularMangaSelector()

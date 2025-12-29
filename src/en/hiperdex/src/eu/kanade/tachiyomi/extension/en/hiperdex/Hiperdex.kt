@@ -17,7 +17,6 @@ import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.SManga
 import keiyoushi.utils.getPreferences
 import org.jsoup.nodes.Document
-import org.jsoup.nodes.Element
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -114,20 +113,6 @@ class Hiperdex :
         }.also { screen.addPreference(it) }
 
         addRandomUAPreferenceToScreen(screen)
-    }
-
-    override fun relatedMangaListSelector() = ".related-reading-wrap"
-
-    override fun relatedMangaFromElement(element: Element): SManga {
-        return SManga.create().apply {
-            element.selectFirst(".widget-title a")!!.let {
-                setUrlWithoutDomain(it.attr("abs:href"))
-                title = it.ownText()
-            }
-            element.selectFirst(".widget-thumbnail img")?.let {
-                thumbnail_url = imageFromElement(it)
-            }
-        }
     }
 
     override fun searchMangaSelector() = "#loop-content div.page-listing-item"
