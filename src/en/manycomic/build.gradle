@@ -1,5 +1,4 @@
 ext {
-    kmkVersionCode = 1
     extName = 'ManyComic'
     extClass = '.ManyComic'
     themePkg = 'madara'

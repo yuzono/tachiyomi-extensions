@@ -1,5 +1,5 @@
 ext {
-    kmkVersionCode = 2
+    kmkVersionCode = 1
     extName = 'Manga District'
     extClass = '.MangaDistrict'
     themePkg = 'madara'
