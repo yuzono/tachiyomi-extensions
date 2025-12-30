@@ -1,4 +1,4 @@
-package eu.kanade.tachiyomi.extension.all.batotovx
+package eu.kanade.tachiyomi.extension.all.batotov4
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
@@ -7,7 +7,7 @@ import android.os.Bundle
 import android.util.Log
 import kotlin.system.exitProcess
 
-class BatoToVxUrlActivity : Activity() {
+class UrlActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
