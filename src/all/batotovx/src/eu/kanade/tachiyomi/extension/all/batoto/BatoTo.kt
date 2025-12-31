@@ -1,4 +1,4 @@
-package eu.kanade.tachiyomi.extension.all.batotovx
+package eu.kanade.tachiyomi.extension.all.batoto
 
 import android.widget.Toast
 import androidx.preference.ListPreference
@@ -15,7 +15,7 @@ import keiyoushi.utils.getPreferencesLazy
 import okhttp3.Response
 import kotlin.getValue
 
-open class BatoToVx(
+open class BatoTo(
     final override val lang: String,
     siteLang: String = lang,
 ) : ConfigurableSource, HttpSource() {

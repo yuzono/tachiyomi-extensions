@@ -1,4 +1,4 @@
-package eu.kanade.tachiyomi.extension.all.batotovx
+package eu.kanade.tachiyomi.extension.all.batoto
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
