@@ -34,6 +34,8 @@ open class BatoToVx(
             else -> BatoTo(lang, siteLang, preferences)
         }
 
+    override val client = _delegate.client
+
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         val siteVerPref = ListPreference(screen.context).apply {
             key = "${SITE_VER_PREF_KEY}_$lang"

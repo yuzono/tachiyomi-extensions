@@ -148,9 +148,16 @@ open class BatoTo(
     override val supportsLatest = true
     private val json: Json by injectLazy()
 
-    override val client = network.cloudflareClient.newBuilder().apply {
-        addInterceptor(::imageFallbackInterceptor)
-    }.build()
+    override val client = network.cloudflareClient.newBuilder()
+        .addInterceptor(::imageFallbackInterceptor)
+        .addNetworkInterceptor { chain ->
+            val request = chain.request().newBuilder()
+                .header("Referer", "$baseUrl/")
+                .build()
+
+            chain.proceed(request)
+        }
+        .build()
 
     override fun latestUpdatesRequest(page: Int): Request {
         return GET("$baseUrl/browse?langs=$siteLang&sort=update&page=$page", headers)
