@@ -33,7 +33,6 @@ class BatoToVxFactory : SourceFactory {
         BatoToVx("es"),
         BatoToVx("es-419", "es_419"),
         BatoToVx("sv"),
-        BatoToVx("th"),
         BatoToVx("tr"),
         BatoToVx("uk"),
         BatoToVx("vi"),
