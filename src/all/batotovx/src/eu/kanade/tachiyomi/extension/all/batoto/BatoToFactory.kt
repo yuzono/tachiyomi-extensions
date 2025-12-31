@@ -2,7 +2,7 @@ package eu.kanade.tachiyomi.extension.all.batoto
 
 import eu.kanade.tachiyomi.source.SourceFactory
 
-class BatoToVxFactory : SourceFactory {
+class BatoToFactory : SourceFactory {
     override fun createSources() = listOf(
         BatoTo("all", ""),
         BatoTo("en"),
