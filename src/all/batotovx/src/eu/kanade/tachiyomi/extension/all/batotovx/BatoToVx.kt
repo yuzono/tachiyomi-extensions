@@ -3,7 +3,7 @@ package eu.kanade.tachiyomi.extension.all.batotovx
 import android.widget.Toast
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
-import eu.kanade.tachiyomi.extension.all.batoto.BatoTo
+import eu.kanade.tachiyomi.extension.all.batotov2.BatoToV2
 import eu.kanade.tachiyomi.extension.all.batotov4.BatoToV4
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -31,7 +31,7 @@ open class BatoToVx(
     private val _delegate: HttpSource =
         when (siteVer()) {
             "v4" -> BatoToV4(lang, siteLang, preferences)
-            else -> BatoTo(lang, siteLang, preferences)
+            else -> BatoToV2(lang, siteLang, preferences)
         }
 
     override val client = _delegate.client

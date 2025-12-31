@@ -1,4 +1,4 @@
-package eu.kanade.tachiyomi.extension.all.batoto
+package eu.kanade.tachiyomi.extension.all.batotov2
 
 import android.content.SharedPreferences
 import android.text.Editable
@@ -46,7 +46,7 @@ import java.util.Calendar
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-open class BatoTo(
+open class BatoToV2(
     final override val lang: String,
     private val siteLang: String,
     private val preferences: SharedPreferences,
