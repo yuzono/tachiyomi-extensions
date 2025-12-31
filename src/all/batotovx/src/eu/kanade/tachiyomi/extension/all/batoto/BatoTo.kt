@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.extension.all.batoto
 
-import android.app.Application
 import android.content.SharedPreferences
 import android.text.Editable
 import android.text.TextWatcher
@@ -10,7 +9,6 @@ import androidx.preference.CheckBoxPreference
 import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
-import eu.kanade.tachiyomi.extension.BuildConfig
 import eu.kanade.tachiyomi.lib.cryptoaes.CryptoAES
 import eu.kanade.tachiyomi.lib.cryptoaes.Deobfuscator
 import eu.kanade.tachiyomi.network.GET
@@ -41,16 +39,12 @@ import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import org.jsoup.parser.Parser
 import rx.Observable
-import uy.kohesive.injekt.Injekt
-import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.injectLazy
 import java.text.ParseException
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 import java.util.concurrent.TimeUnit
-import kotlin.random.Random
-import kotlin.text.Regex
 
 open class BatoTo(
     final override val lang: String,
@@ -60,7 +54,13 @@ open class BatoTo(
 
     override val name: String = "Bato.to"
 
-    override val baseUrl: String get() = getMirrorPref()
+    override val baseUrl: String
+        get() {
+            val index = preferences.getString(MIRROR_PREF_KEY, "0")!!.toInt()
+                .coerceAtMost(mirrors.size - 1)
+
+            return mirrors[index]
+        }
 
     override val id: Long = when (lang) {
         "zh-Hans" -> 2818874445640189582
@@ -71,12 +71,12 @@ open class BatoTo(
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         val mirrorPref = ListPreference(screen.context).apply {
-            key = "${MIRROR_PREF_KEY}_$lang"
-            title = MIRROR_PREF_TITLE
-            entries = MIRROR_PREF_ENTRIES
-            entryValues = MIRROR_PREF_ENTRY_VALUES
-            setDefaultValue(MIRROR_PREF_DEFAULT_VALUE)
+            key = MIRROR_PREF_KEY
+            title = "Preferred Mirror"
+            entries = mirrors
+            entryValues = Array(mirrors.size) { it.toString() }
             summary = "%s"
+            setDefaultValue("0")
         }
         val altChapterListPref = CheckBoxPreference(screen.context).apply {
             key = "${ALT_CHAPTER_LIST_PREF_KEY}_$lang"
@@ -138,44 +138,12 @@ open class BatoTo(
         screen.addPreference(removeCustomPref)
     }
 
-    private fun getMirrorPref(): String {
-        if (System.getenv("CI") == "true") {
-            return (MIRROR_PREF_ENTRY_VALUES.drop(1) + DEPRECATED_MIRRORS).joinToString("#, ")
-        }
-
-        return preferences.getString("${MIRROR_PREF_KEY}_$lang", MIRROR_PREF_DEFAULT_VALUE)
-            ?.takeUnless { it == MIRROR_PREF_DEFAULT_VALUE }
-            ?: let {
-                /* Semi-sticky mirror:
-                 * - Don't randomize on boot
-                 * - Don't randomize per language
-                 * - Fallback for non-Android platform
-                 */
-                val seed = runCatching {
-                    val pm = Injekt.get<Application>().packageManager
-                    pm.getPackageInfo(BuildConfig.APPLICATION_ID, 0).lastUpdateTime
-                }.getOrElse {
-                    BuildConfig.VERSION_NAME.hashCode().toLong()
-                }
-
-                MIRROR_PREF_ENTRY_VALUES.drop(1).random(Random(seed))
-            }
-    }
-
     private fun getAltChapterListPref(): Boolean = preferences.getBoolean("${ALT_CHAPTER_LIST_PREF_KEY}_$lang", ALT_CHAPTER_LIST_PREF_DEFAULT_VALUE)
     private fun isRemoveTitleVersion(): Boolean {
         return preferences.getBoolean("${REMOVE_TITLE_VERSION_PREF}_$lang", false)
     }
     private fun customRemoveTitle(): String =
         preferences.getString("${REMOVE_TITLE_CUSTOM_PREF}_$lang", "")!!
-
-    internal fun migrateMirrorPref() {
-        val selectedMirror = preferences.getString("${MIRROR_PREF_KEY}_$lang", MIRROR_PREF_DEFAULT_VALUE)!!
-
-        if (selectedMirror in DEPRECATED_MIRRORS) {
-            preferences.edit().putString("${MIRROR_PREF_KEY}_$lang", MIRROR_PREF_DEFAULT_VALUE).apply()
-        }
-    }
 
     override val supportsLatest = true
     private val json: Json by injectLazy()
@@ -390,7 +358,7 @@ open class BatoTo(
             // Check if trying to use a deprecated mirror, force current mirror
             val httpUrl = manga.url.toHttpUrl()
             if ("https://${httpUrl.host}" in DEPRECATED_MIRRORS) {
-                val newHttpUrl = httpUrl.newBuilder().host(getMirrorPref().toHttpUrl().host)
+                val newHttpUrl = httpUrl.newBuilder().host(baseUrl.toHttpUrl().host)
                 return GET(newHttpUrl.build(), headers)
             }
             return GET(manga.url, headers)
@@ -489,7 +457,7 @@ open class BatoTo(
             // Check if trying to use a deprecated mirror, force current mirror
             val httpUrl = manga.url.toHttpUrl()
             if ("https://${httpUrl.host}" in DEPRECATED_MIRRORS) {
-                val newHttpUrl = httpUrl.newBuilder().host(getMirrorPref().toHttpUrl().host)
+                val newHttpUrl = httpUrl.newBuilder().host(baseUrl.toHttpUrl().host)
                 return GET(newHttpUrl.build(), headers)
             }
             GET(manga.url, headers)
@@ -597,7 +565,7 @@ open class BatoTo(
             // Check if trying to use a deprecated mirror, force current mirror
             val httpUrl = chapter.url.toHttpUrl()
             if ("https://${httpUrl.host}" in DEPRECATED_MIRRORS) {
-                val newHttpUrl = httpUrl.newBuilder().host(getMirrorPref().toHttpUrl().host)
+                val newHttpUrl = httpUrl.newBuilder().host(baseUrl.toHttpUrl().host)
                 return GET(newHttpUrl.build(), headers)
             }
             return GET(chapter.url, headers)
@@ -1168,74 +1136,69 @@ open class BatoTo(
         private val chapterIdRegex = Regex("""/chapter/(\d+)""") // /chapter/4016325
         private val idRegex = Regex("""(\d+)""")
         private const val MIRROR_PREF_KEY = "MIRROR"
-        private const val MIRROR_PREF_TITLE = "Mirror"
         private const val REMOVE_TITLE_VERSION_PREF = "REMOVE_TITLE_VERSION"
         private const val REMOVE_TITLE_CUSTOM_PREF = "REMOVE_TITLE_CUSTOM"
-        private val MIRROR_PREF_ENTRIES = arrayOf(
-            "Auto",
-            // https://batotomirrors.pages.dev/
-            "ato.to",
-            "dto.to",
-            "fto.to",
-            "hto.to",
-            "jto.to",
-            "lto.to",
-            "mto.to",
-            "nto.to",
-            "vto.to",
-            "wto.to",
-            "xto.to",
-            "yto.to",
-            "vba.to",
-            "wba.to",
-            "xba.to",
-            "yba.to",
-            "zba.to",
-            "bato.ac",
-            "bato.bz",
-            "bato.cc",
-            "bato.cx",
-            "bato.id",
-            "bato.pw",
-            "bato.sh",
-            "bato.to",
-            "bato.vc",
-            "bato.day",
-            "bato.red",
-            "bato.run",
-            "batoto.in",
-            "batoto.tv",
-            "batotoo.com",
-            "batotwo.com",
-            "batpub.com",
-            "batread.com",
-            "battwo.com",
-            "xbato.com",
-            "xbato.net",
-            "xbato.org",
-            "zbato.com",
-            "zbato.net",
-            "zbato.org",
-            "comiko.net",
-            "comiko.org",
-            "mangatoto.com",
-            "mangatoto.net",
-            "mangatoto.org",
-            "batocomic.com",
-            "batocomic.net",
-            "batocomic.org",
-            "readtoto.com",
-            "readtoto.net",
-            "readtoto.org",
-            "kuku.to",
-            "okok.to",
-            "ruru.to",
-            "xdxd.to",
-            // "bato.si", // (v4)
-            // "bato.ing", // (v4)
+
+        // https://batotomirrors.pages.dev/
+        private val mirrors = arrayOf(
+            "https://ato.to",
+            "https://dto.to",
+            "https://fto.to",
+            "https://hto.to",
+            "https://jto.to",
+            "https://lto.to",
+            "https://mto.to",
+            "https://nto.to",
+            "https://vto.to",
+            "https://wto.to",
+            "https://xto.to",
+            "https://yto.to",
+            "https://vba.to",
+            "https://wba.to",
+            "https://xba.to",
+            "https://yba.to",
+            "https://zba.to",
+            "https://bato.ac",
+            "https://bato.bz",
+            "https://bato.cc",
+            "https://bato.cx",
+            "https://bato.id",
+            "https://bato.pw",
+            "https://bato.sh",
+            "https://bato.to",
+            "https://bato.vc",
+            "https://bato.day",
+            "https://bato.red",
+            "https://bato.run",
+            "https://batoto.in",
+            "https://batoto.tv",
+            "https://batotoo.com",
+            "https://batotwo.com",
+            "https://batpub.com",
+            "https://batread.com",
+            "https://battwo.com",
+            "https://xbato.com",
+            "https://xbato.net",
+            "https://xbato.org",
+            "https://zbato.com",
+            "https://zbato.net",
+            "https://zbato.org",
+            "https://comiko.net",
+            "https://comiko.org",
+            "https://mangatoto.com",
+            "https://mangatoto.net",
+            "https://mangatoto.org",
+            "https://batocomic.com",
+            "https://batocomic.net",
+            "https://batocomic.org",
+            "https://readtoto.com",
+            "https://readtoto.net",
+            "https://readtoto.org",
+            "https://kuku.to",
+            "https://okok.to",
+            "https://ruru.to",
+            "https://xdxd.to",
         )
-        private val MIRROR_PREF_ENTRY_VALUES = MIRROR_PREF_ENTRIES.map { "https://$it" }.toTypedArray()
-        private val MIRROR_PREF_DEFAULT_VALUE = MIRROR_PREF_ENTRY_VALUES[0]
 
         private val DEPRECATED_MIRRORS = listOf(
             "https://batocc.com", // parked

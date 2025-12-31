@@ -1,35 +1,33 @@
+@file:Suppress("unused")
+
 package eu.kanade.tachiyomi.extension.all.batotov4
 
-import eu.kanade.tachiyomi.source.model.SChapter
-import eu.kanade.tachiyomi.source.model.SManga
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class GraphQLPayload<T>(
-    val variables: T,
-    val query: String,
+class GraphQLPayload<T>(
+    private val variables: T,
+    private val query: String,
 )
 
-// ************ Comic Search ************ //
 @Serializable
-data class ApiComicSearchVariables(
-    val select: Select,
+class ApiComicSearchVariables(
+    private val select: Select,
 ) {
     @Serializable
-    data class Select(
-        val page: Int,
-        val size: Int,
-        val where: String,
-        val word: String,
-        val sortby: String,
-        val incGenres: List<String>,
-        val excGenres: List<String>,
-        val incOLangs: List<String>,
-        val incTLangs: List<String>,
-        val origStatus: String,
-        val siteStatus: String,
-        val chapCount: String,
+    class Select(
+        private val page: Int,
+        private val size: Int,
+        private val where: String,
+        private val word: String,
+        private val sortby: String,
+        private val incGenres: List<String>,
+        private val excGenres: List<String>,
+        private val incOLangs: List<String>,
+        private val incTLangs: List<String>,
+        private val origStatus: String,
+        private val siteStatus: String,
+        private val chapCount: String,
     )
 
     constructor(
@@ -64,228 +62,36 @@ data class ApiComicSearchVariables(
 }
 
 @Serializable
-data class ApiComicSearchResponse(
-    val data: SearchData,
-) {
-    @Serializable
-    data class SearchData(
-        @SerialName("get_comic_browse") val response: Comic_Browse_Result,
-    ) {
-        @Serializable
-        data class Comic_Browse_Result(
-            val paging: Paging,
-            val items: List<ComicNode>,
-        ) {
-            @Serializable
-            data class Paging(
-                val pages: Int,
-                val page: Int,
-                val next: Int,
-            )
-
-            @Serializable
-            data class ComicNode(
-                val data: ComicData,
-            ) {
-                @Serializable
-                data class ComicData(
-                    val id: String,
-                    val name: String,
-                    val urlPath: String,
-                    val urlCover300: String? = null,
-                    val urlCover600: String? = null,
-                    val urlCover900: String? = null,
-                    val urlCoverOri: String? = null,
-                ) {
-                    fun toSManga(baseUrl: String): SManga = SManga.create().apply {
-                        url = urlPath
-                        title = name
-                        thumbnail_url = "$baseUrl${urlCoverOri ?: urlCover600 ?: urlCover900 ?: urlCover300}"
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ************ Manga Details ************ //
-@Serializable
-data class ApiComicNodeVariables(
-    val id: String,
+class ApiComicNodeVariables(
+    private val id: String,
 )
 
 @Serializable
-data class ApiComicNodeResponse(
-    val data: ComicNodeData,
-) {
-    @Serializable
-    data class ComicNodeData(
-        @SerialName("get_comicNode") val response: ComicNode,
-    ) {
-        @Serializable
-        data class ComicNode(
-            val data: ComicData,
-        ) {
-            @Serializable
-            data class ComicData(
-                val id: String,
-                val name: String,
-                val altNames: List<String>? = null,
-                val authors: List<String>? = null,
-                val artists: List<String>? = null,
-                val originalStatus: String? = null,
-                val uploadStatus: String? = null,
-                val genres: List<String>? = null,
-                val summary: String? = null,
-                val extraInfo: String? = null,
-                val urlPath: String,
-                val urlCover300: String? = null,
-                val urlCover600: String? = null,
-                val urlCover900: String? = null,
-                val urlCoverOri: String? = null,
-            ) {
-                fun toSManga(baseUrl: String): SManga = SManga.create().apply {
-                    url = urlPath
-                    title = name
-                    author = authors?.joinToString()
-                    artist = artists?.joinToString()
-                    genre = genres?.joinToString { genre -> // Map to the canonical name
-                        GenreGroupFilter.options.find { it.value == genre }?.name ?: genre
-                    }
-                    status = run {
-                        val statusToCheck = originalStatus ?: uploadStatus
-                        when {
-                            statusToCheck == null -> SManga.UNKNOWN
-                            statusToCheck.contains("pending") -> SManga.UNKNOWN
-                            statusToCheck.contains("ongoing") -> SManga.ONGOING
-                            statusToCheck.contains("cancelled") -> SManga.CANCELLED
-                            statusToCheck.contains("hiatus") -> SManga.ON_HIATUS
-                            statusToCheck.contains("completed") -> when {
-                                uploadStatus?.contains("ongoing") == true -> SManga.PUBLISHING_FINISHED
-                                else -> SManga.COMPLETED
-                            }
-                            else -> SManga.UNKNOWN
-                        }
-                    }
-                    thumbnail_url = "$baseUrl${urlCoverOri ?: urlCover600 ?: urlCover900 ?: urlCover300}"
-                    description = buildString {
-                        if (!summary.isNullOrEmpty()) {
-                            append(summary)
-                        }
-                        if (!extraInfo.isNullOrEmpty()) {
-                            if (isNotEmpty()) append("\n\nExtra Info:\n")
-                            append(extraInfo)
-                        }
-                        if (!altNames.isNullOrEmpty()) {
-                            if (isNotEmpty()) append("\n\n")
-                            append("Alternative Titles:\n")
-                            append(altNames.joinToString("\n") { "• $it" })
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ************ Chapter List ************ //
-@Serializable
-data class ApiChapterListVariables(
-    val comicId: String,
-    val start: Int, // set to -1 to grab all chapters
+class ApiChapterListVariables(
+    private val comicId: String,
+    private val start: Int, // set to -1 to grab all chapters
 )
 
 @Serializable
-data class ApiChapterListResponse(
-    val data: ChapterListData,
-) {
-    @Serializable
-    data class ChapterListData(
-        @SerialName("get_comic_chapterList") val response: List<ChapterNode>,
-    ) {
-        @Serializable
-        data class ChapterNode(
-            val data: ChapterData,
-        ) {
-            @Serializable
-            data class ChapterData(
-                val id: String,
-                val dname: String? = null,
-                val title: String? = null,
-                val urlPath: String,
-                val dateCreate: Long? = null,
-                val dateModify: Long? = null,
-                val userNode: UserNode? = null,
-            ) {
-                @Serializable
-                data class UserNode(
-                    val data: UserData,
-                ) {
-                    @Serializable
-                    data class UserData(
-                        val name: String? = null,
-                    )
-                }
-                fun toSChapter(): SChapter = SChapter.create().apply {
-                    url = urlPath
-                    name = buildString {
-                        if (!dname.isNullOrEmpty()) {
-                            append(dname)
-                        }
-                        if (!title.isNullOrEmpty()) {
-                            if (isNotEmpty()) append(": ")
-                            append(title)
-                        }
-                    }.ifEmpty { "Unnamed Chapter: $id" }
-                    date_upload = dateModify ?: dateCreate ?: 0L
-                    scanlator = userNode?.data?.name
-                }
-            }
-        }
-    }
-}
-
-// ************ Chapter Pages ************ //
-@Serializable
-data class ApiChapterNodeVariables(
-    val id: String,
+class ApiChapterNodeVariables(
+    private val id: String,
 )
 
 @Serializable
-data class ApiChapterNodeResponse(
-    val data: ChapterNodeData,
-) {
-    @Serializable
-    data class ChapterNodeData(
-        @SerialName("get_chapterNode") val response: ChapterNode,
-    ) {
-        @Serializable
-        data class ChapterNode(
-            val data: ChapterData,
-        ) {
-            @Serializable
-            data class ChapterData(
-                val imageFile: ChapterImageFile,
-            ) {
-                @Serializable
-                data class ChapterImageFile(
-                    val urlList: List<String>,
-                )
-            }
-        }
-    }
-}
+class HistoryChapterAdd(
+    private val comicId: String,
+    private val chapterId: String,
+)
 
-// ************ My Updates ************ //
 @Serializable
-data class ApiMyUpdatesVariables(
-    val select: Select,
+class ApiMyUpdatesVariables(
+    private val select: Select,
 ) {
     @Serializable
-    data class Select(
-        val init: Int? = null,
-        val size: Int? = null,
-        val page: Int? = null,
+    class Select(
+        private val init: Int? = null,
+        private val size: Int? = null,
+        private val page: Int? = null,
     )
 
     constructor(
@@ -302,59 +108,13 @@ data class ApiMyUpdatesVariables(
 }
 
 @Serializable
-data class ApiMyUpdatesResponse(
-    val data: MyUpdatesData,
-) {
-    @Serializable
-    data class MyUpdatesData(
-        @SerialName("get_sser_myUpdates") val response: Sser_MyUpdates_Result,
-    ) {
-        @Serializable
-        data class Sser_MyUpdates_Result(
-            val paging: Paging,
-            val items: List<ComicNode>,
-        ) {
-            @Serializable
-            data class Paging(
-                val pages: Int,
-                val page: Int,
-                val next: Int,
-            )
-
-            @Serializable
-            data class ComicNode(
-                val data: ComicData,
-            ) {
-                @Serializable
-                data class ComicData(
-                    val id: String,
-                    val name: String,
-                    val urlPath: String,
-                    val urlCover300: String? = null,
-                    val urlCover600: String? = null,
-                    val urlCover900: String? = null,
-                    val urlCoverOri: String? = null,
-                ) {
-                    fun toSManga(baseUrl: String): SManga = SManga.create().apply {
-                        url = urlPath
-                        title = name
-                        thumbnail_url = "$baseUrl${urlCoverOri ?: urlCover600 ?: urlCover900 ?: urlCover300}"
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ************ My History ************ //
-@Serializable
-data class ApiMyHistoryVariables(
-    val select: Select,
+class ApiMyHistoryVariables(
+    private val select: Select,
 ) {
     @Serializable
     data class Select(
-        val start: String? = null,
-        val limit: Int? = null,
+        private val start: String? = null,
+        private val limit: Int? = null,
     )
 
     constructor(
@@ -369,66 +129,21 @@ data class ApiMyHistoryVariables(
 }
 
 @Serializable
-data class ApiMyHistoryResponse(
-    val data: MyHistoryData,
-) {
-    @Serializable
-    data class MyHistoryData(
-        @SerialName("get_sser_myHistory") val response: Sser_MyHistory_Result,
-    ) {
-        @Serializable
-        data class Sser_MyHistory_Result(
-            val reqLimit: Int? = null,
-            val newStart: String? = null,
-            val items: List<Sser_MyHistory_Item>,
-        ) {
-            @Serializable
-            data class Sser_MyHistory_Item(
-                val comicNode: ComicNode,
-            ) {
-                @Serializable
-                data class ComicNode(
-                    val data: ComicData,
-                ) {
-                    @Serializable
-                    data class ComicData(
-                        val id: String,
-                        val name: String,
-                        val urlPath: String,
-                        val urlCover300: String? = null,
-                        val urlCover600: String? = null,
-                        val urlCover900: String? = null,
-                        val urlCoverOri: String? = null,
-                    ) {
-                        fun toSManga(baseUrl: String): SManga = SManga.create().apply {
-                            url = urlPath
-                            title = name
-                            thumbnail_url = "$baseUrl${urlCoverOri ?: urlCover600 ?: urlCover900 ?: urlCover300}"
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ************ User's Publish Comic List ************ //
-@Serializable
-data class ApiUserComicListVariables(
-    val select: Select,
+class ApiUserComicListVariables(
+    private val select: Select,
 ) {
     @Serializable
     data class Select(
-        val userId: String,
-        val page: Int? = null,
-        val size: Int? = null,
-        val editor: String? = null,
-        val siteStatus: String? = null,
-        val dbStatus: String? = null,
-        val mod_lock: String? = null,
-        val mod_hide: String? = null,
-        val notUpdatedDays: Int? = null,
-        val scope: String? = null,
+        private val userId: String,
+        private val page: Int? = null,
+        private val size: Int? = null,
+        private val editor: String? = null,
+        private val siteStatus: String? = null,
+        private val dbStatus: String? = null,
+        private val mod_lock: String? = null,
+        private val mod_hide: String? = null,
+        private val notUpdatedDays: Int? = null,
+        private val scope: String? = null,
     )
 
     constructor(
@@ -456,49 +171,4 @@ data class ApiUserComicListVariables(
             scope = scope,
         ),
     )
-}
-
-@Serializable
-data class ApiUserComicListResponse(
-    val data: UserComicListData,
-) {
-    @Serializable
-    data class UserComicListData(
-        @SerialName("get_user_comicList") val response: User_ComicList_Result,
-    ) {
-        @Serializable
-        data class User_ComicList_Result(
-            val paging: Paging,
-            val items: List<ComicNode>,
-        ) {
-            @Serializable
-            data class Paging(
-                val pages: Int,
-                val page: Int,
-                val next: Int,
-            )
-
-            @Serializable
-            data class ComicNode(
-                val data: ComicData,
-            ) {
-                @Serializable
-                data class ComicData(
-                    val id: String,
-                    val name: String,
-                    val urlPath: String,
-                    val urlCover300: String? = null,
-                    val urlCover600: String? = null,
-                    val urlCover900: String? = null,
-                    val urlCoverOri: String? = null,
-                ) {
-                    fun toSManga(baseUrl: String): SManga = SManga.create().apply {
-                        url = urlPath
-                        title = name
-                        thumbnail_url = "$baseUrl${urlCoverOri ?: urlCover600 ?: urlCover900 ?: urlCover300}"
-                    }
-                }
-            }
-        }
-    }
 }

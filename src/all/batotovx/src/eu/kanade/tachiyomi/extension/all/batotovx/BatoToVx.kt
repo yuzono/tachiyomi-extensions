@@ -17,7 +17,7 @@ import kotlin.getValue
 
 open class BatoToVx(
     final override val lang: String,
-    private val siteLang: String,
+    siteLang: String = lang,
 ) : ConfigurableSource, HttpSource() {
 
     override val name: String = "Bato.to Vx"
@@ -30,8 +30,8 @@ open class BatoToVx(
 
     private val _delegate: HttpSource =
         when (siteVer()) {
-            "v4" -> BatoToV4(lang, siteLang, preferences).also { it.migrateMirrorPref() }
-            else -> BatoTo(lang, siteLang, preferences).also { it.migrateMirrorPref() }
+            "v4" -> BatoToV4(lang, siteLang, preferences)
+            else -> BatoTo(lang, siteLang, preferences)
         }
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
