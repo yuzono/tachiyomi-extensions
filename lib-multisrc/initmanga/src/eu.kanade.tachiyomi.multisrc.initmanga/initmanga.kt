@@ -37,7 +37,6 @@ abstract class initmanga(
     private val mangaUrlDirectory: String = "seri",
     private val dateFormatStr: String = "yyyy-MM-dd'T'HH:mm:ss",
     private val popularUrlSlug: String = mangaUrlDirectory,
-    // Yeni parametre: En son güncellenenler sayfası için slug (Varsayılan: Ragnar stili)
     private val latestUrlSlug: String = "son-guncellemeler",
 ) : ParsedHttpSource() {
 
@@ -45,15 +44,12 @@ abstract class initmanga(
 
     private val json: Json by injectLazy()
     private val dateFormat by lazy { SimpleDateFormat(dateFormatStr, Locale.getDefault()) }
-
-    // Statik Anahtar (Hız için)
     private val STATIC_AES_KEY = "3b16050a4d52ef1ccb28dc867b533abfc7fcb6bfaf6514b8676550b2f12454fa"
 
     override fun headersBuilder(): Headers.Builder = super.headersBuilder()
         .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .add("Referer", "$baseUrl/")
 
-    // ================= POPÜLER (GÖZAT) =================
     override fun popularMangaRequest(page: Int): Request {
         val url = if (page == 1) {
             "$baseUrl/$popularUrlSlug/"
@@ -79,15 +75,12 @@ abstract class initmanga(
 
     override fun popularMangaNextPageSelector() = "a:contains(Sonraki), a.next, #next-link a"
 
-    // ================= GÜNCEL (EN SON) =================
-    // Artık parametreden gelen slug'ı kullanıyor
     override fun latestUpdatesRequest(page: Int) = GET("$baseUrl/$latestUrlSlug/page/$page/", headers)
 
     override fun latestUpdatesSelector() = popularMangaSelector()
     override fun latestUpdatesFromElement(element: Element) = popularMangaFromElement(element)
     override fun latestUpdatesNextPageSelector() = popularMangaNextPageSelector()
 
-    // ================= ARAMA =================
     @Deprecated("Use getSearchManga instead")
     override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
         if (query.isNotBlank()) {
@@ -116,7 +109,6 @@ abstract class initmanga(
     override fun searchMangaFromElement(element: Element) = popularMangaFromElement(element)
     override fun searchMangaNextPageSelector() = popularMangaNextPageSelector()
 
-    // ================= DETAYLAR =================
     override fun mangaDetailsParse(document: Document) = SManga.create().apply {
         description = document.select("div#manga-description p").text()
         genre = document.select("div#genre-tags a").joinToString { it.text() }
@@ -127,7 +119,6 @@ abstract class initmanga(
         title = if (!h2.isNullOrBlank()) h2 else h1 ?: "Başlık Yok"
     }
 
-    // ================= BÖLÜMLER =================
     @Deprecated("Use getChapterList instead")
     override fun fetchChapterList(manga: SManga): Observable<List<SChapter>> = Observable.fromCallable {
         val chapters = mutableListOf<SChapter>()
@@ -162,7 +153,6 @@ abstract class initmanga(
         } catch (_: Exception) { 0L }
     }
 
-    // ================= SAYFALAR & ŞİFRE ÇÖZME =================
     @SuppressLint("NewApi")
     override fun pageListParse(document: Document): List<Page> {
         val html = document.html()
