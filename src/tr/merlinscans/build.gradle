@@ -1,8 +1,8 @@
 ext {
     extName = 'Merlin Scans'
     extClass = '.MerlinScans'
-    themePkg = 'mangathemesia'
-    baseUrl = 'https://merlinscans.com'
+    themePkg = 'initmanga'
+    baseUrl = 'https://merlintoon.com'
     overrideVersionCode = 1
     isNsfw = false
 }
