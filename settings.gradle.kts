@@ -2,22 +2,18 @@
  * Add or remove modules to load as needed for local development here.
  */
 loadAllIndividualExtensions()
+// loadIndividualExtension("all", "mangadex")
 
 /**
  * ===================================== COMMON CONFIGURATION ======================================
  */
 include(":core")
 
-// 1. "lib" klasörü altındaki kütüphaneleri otomatik yükle
-File(rootDir, "lib").eachDir {
-    include(":lib:${it.name}")
-}
+// Load all modules under /lib
+File(rootDir, "lib").eachDir { include("lib:${it.name}") }
 
-// 2. "lib-multisrc" klasörü altındaki temaları (initmanga dahil) otomatik yükle
-// Eğer klasör adınız "initmanga" ise, bu kod onu otomatik olarak ":lib-multisrc:initmanga" olarak ekler.
-File(rootDir, "lib-multisrc").eachDir {
-    include(":lib-multisrc:${it.name}")
-}
+// Load all modules under /lib-multisrc
+File(rootDir, "lib-multisrc").eachDir { include("lib-multisrc:${it.name}") }
 
 /**
  * ======================================== HELPER FUNCTION ========================================
@@ -25,20 +21,18 @@ File(rootDir, "lib-multisrc").eachDir {
 fun loadAllIndividualExtensions() {
     File(rootDir, "src").eachDir { dir ->
         dir.eachDir { subdir ->
-            // src/tr/merlinscans gibi uzantıları ekler
-            include(":src:${dir.name}:${subdir.name}")
+            include("src:${dir.name}:${subdir.name}")
         }
     }
 }
-
 fun loadIndividualExtension(lang: String, name: String) {
-    include(":src:${lang}:${name}")
+    include("src:${lang}:${name}")
 }
 
 fun File.eachDir(block: (File) -> Unit) {
     val files = listFiles() ?: return
     for (file in files) {
-        if (file.isDirectory && !file.name.startsWith(".") && file.name != "build") {
+        if (file.isDirectory && file.name != ".gradle" && file.name != "build") {
             block(file)
         }
     }
