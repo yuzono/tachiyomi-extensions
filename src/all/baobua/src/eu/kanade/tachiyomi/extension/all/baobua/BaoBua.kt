@@ -24,6 +24,7 @@ class BaoBua() : SimpleParsedHttpSource() {
     override val lang = "all"
     override val name = "BaoBua"
     override val supportsLatest = false
+    override val disableRelatedMangas = true
 
     override val client: OkHttpClient = network.cloudflareClient.newBuilder()
         .rateLimit(3)
