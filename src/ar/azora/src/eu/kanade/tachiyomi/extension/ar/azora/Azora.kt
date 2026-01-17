@@ -16,7 +16,9 @@ class Azora : Iken(
 
     val perPage = 18
     override fun popularMangaRequest(page: Int): Request {
-        val url = "$apiUrl/api/query".toHttpUrl().newBuilder().apply {
+        val url = apiUrl.toHttpUrl().newBuilder().apply {
+            addPathSegment("api")
+            addPathSegment("query")
             addQueryParameter("page", page.toString())
             addQueryParameter("perPage", perPage.toString())
             addQueryParameter("orderBy", "totalViews")
@@ -26,5 +28,9 @@ class Azora : Iken(
         return GET(url, headers)
     }
 
-    override fun popularMangaParse(response: Response): MangasPage = searchMangaParse(response)
+    override fun popularMangaParse(response: Response): MangasPage {
+        // Fetch genres
+        titleCache
+        return searchMangaParse(response)
+    }
 }
