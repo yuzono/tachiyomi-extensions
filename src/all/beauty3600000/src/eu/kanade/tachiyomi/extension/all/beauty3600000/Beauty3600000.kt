@@ -375,10 +375,8 @@ class Beauty3600000 : ParsedHttpSource() {
     /**
      * Parallel implementation of [Iterable.flatMap], but running
      * the transformation function inside a try-catch block.
-     *
-     * @since extensions-lib 14
      */
-    suspend inline fun <A, B> Iterable<A>.parallelCatchingFlatMap(crossinline f: suspend (A) -> Iterable<B>): List<B> =
+    private suspend inline fun <A, B> Iterable<A>.parallelCatchingFlatMap(crossinline f: suspend (A) -> Iterable<B>): List<B> =
         withContext(Dispatchers.IO) {
             map {
                 async {
