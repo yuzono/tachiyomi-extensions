@@ -9,9 +9,16 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import eu.kanade.tachiyomi.source.online.ParsedHttpSource
+import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.utils.tryParse
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.text.SimpleDateFormat
@@ -353,9 +360,33 @@ class Beauty3600000 : ParsedHttpSource() {
     // dirty hack to disable suggested mangas on Komikku
     // site doesn't support keyword search and too slow
     // https://github.com/komikku-app/komikku/blob/4323fd5841b390213aa4c4af77e07ad42eb423fc/source-api/src/commonMain/kotlin/eu/kanade/tachiyomi/source/CatalogueSource.kt#L176-L184
-    @Suppress("Unused")
-    @JvmName("getDisableRelatedMangasBySearch")
-    fun disableRelatedMangasBySearch() = true
+    override val disableRelatedMangasBySearch = true
+
+    override fun relatedMangaListParse(response: Response): List<SManga> {
+        val document = response.asJsoup()
+        val genres = getGenres(document).filter { it.isNotBlank() }.reversed()
+        return runBlocking {
+            genres.parallelCatchingFlatMap { tag ->
+                getSearchManga(1, tag, getFilterList()).mangas
+            }
+        }
+    }
+
+    /**
+     * Parallel implementation of [Iterable.flatMap], but running
+     * the transformation function inside a try-catch block.
+     */
+    private suspend inline fun <A, B> Iterable<A>.parallelCatchingFlatMap(crossinline f: suspend (A) -> Iterable<B>): List<B> =
+        withContext(Dispatchers.IO) {
+            map {
+                async {
+                    try { f(it) } catch (e: Throwable) {
+                        e.printStackTrace()
+                        emptyList()
+                    }
+                }
+            }.awaitAll().flatten()
+        }
 
     companion object {
         private val DATE_FORMAT by lazy {
