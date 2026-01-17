@@ -1,4 +1,5 @@
 ext {
+    kmkVersionCode = 1
     extName = '3600000 Beauty'
     extClass = '.Beauty3600000'
     extVersionCode = 2
