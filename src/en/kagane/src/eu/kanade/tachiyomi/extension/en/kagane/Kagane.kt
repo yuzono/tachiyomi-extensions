@@ -24,6 +24,7 @@ import eu.kanade.tachiyomi.extension.en.kagane.wv.parsePssh
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.network.await
+import eu.kanade.tachiyomi.network.interceptor.rateLimit
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -76,6 +77,7 @@ class Kagane : HttpSource(), ConfigurableSource {
     private val preferences by getPreferencesLazy()
 
     override val client = network.cloudflareClient.newBuilder()
+        .rateLimit(3)
         .addInterceptor(ImageInterceptor())
         .addInterceptor(::refreshTokenInterceptor)
         // fix disk cache
@@ -230,6 +232,8 @@ class Kagane : HttpSource(), ConfigurableSource {
     }
 
     // =========================== Manga Details ============================
+
+    override val supportsRelatedMangas = false
 
     override fun mangaDetailsParse(response: Response): SManga {
         val dto = response.parseAs<DetailsDto>()
