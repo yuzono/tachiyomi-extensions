@@ -216,8 +216,9 @@ class XBatCat(
     override fun searchMangaParse(response: Response): MangasPage {
         val data = response.parseAs<ApiComicSearchResponse>().data.response
 
+        val noCleanTitlesWhileBrowsing = noCleanTitlesWhileBrowsing()
         val mangas = data.items.map { item ->
-            item.data.toSManga(baseUrl, ::cleanTitleIfNeeded)
+            item.data.toSManga(baseUrl) { it.takeIf { noCleanTitlesWhileBrowsing } ?: cleanTitleIfNeeded(it) }
         }
 
         return MangasPage(mangas, data.hasNextPage())
@@ -545,12 +546,25 @@ class XBatCat(
             }
         }.also { screen.addPreference(it) }
 
+        val noRemoveTitleBrowsingPref = CheckBoxPreference(screen.context).apply {
+            key = NO_REMOVE_TITLE_BROWSING_PREF
+            title = "Don't apply title cleaning in browsing/search results"
+            summary = "Don't apply the 2 options above when browsing or searching for manga. Refresh manga details to apply."
+            setVisible(isRemoveTitleVersion() || customRemoveTitle().isNotEmpty())
+            setDefaultValue(false)
+        }
+
         CheckBoxPreference(screen.context).apply {
             key = REMOVE_TITLE_VERSION_PREF
             title = "Remove version information from entry titles"
             summary = "This removes version tags like '(Official)' or '(Yaoi)' from entry titles.\n" +
                 "To update existing entries, enable 'Update library manga titles' in advanced settings and refresh manually."
             setDefaultValue(false)
+            setOnPreferenceChangeListener { _, newValue ->
+                val enabled = newValue as Boolean
+                noRemoveTitleBrowsingPref.setVisible(enabled || customRemoveTitle().isNotEmpty())
+                true
+            }
         }.also(screen::addPreference)
 
         EditTextPreference(screen.context).apply {
@@ -586,12 +600,15 @@ class XBatCat(
                 val (isValid, message) = validate(newValue as String)
                 if (isValid) {
                     summary = newValue
+                    noRemoveTitleBrowsingPref.setVisible(isRemoveTitleVersion() || newValue.isNotEmpty())
                 } else {
                     Toast.makeText(screen.context, message, Toast.LENGTH_LONG).show()
                 }
                 isValid
             }
         }.also(screen::addPreference)
+
+        screen.addPreference(noRemoveTitleBrowsingPref)
 
         CheckBoxPreference(screen.context).apply {
             key = IGNORE_GENRE_BLOCKLIST_PREF
@@ -606,6 +623,9 @@ class XBatCat(
 
     private fun customRemoveTitle(): String =
         preferences.getString(REMOVE_TITLE_CUSTOM_PREF, "")!!
+
+    private fun noCleanTitlesWhileBrowsing(): Boolean =
+        preferences.getBoolean(NO_REMOVE_TITLE_BROWSING_PREF, false)
 
     private fun isIgnoreGenreBlocklist(): Boolean {
         return preferences.getBoolean(IGNORE_GENRE_BLOCKLIST_PREF, false)
@@ -626,6 +646,7 @@ class XBatCat(
 
         private const val REMOVE_TITLE_VERSION_PREF = "REMOVE_TITLE_VERSION"
         private const val REMOVE_TITLE_CUSTOM_PREF = "REMOVE_TITLE_CUSTOM"
+        private const val NO_REMOVE_TITLE_BROWSING_PREF = "NO_REMOVE_TITLE_BROWSING"
         private const val IGNORE_GENRE_BLOCKLIST_PREF = "IGNORE_GENRE_BLOCKLIST"
 
         private val idQueryRegex = Regex("^id\\s*:?\\s*(\\d+)\\s*$", RegexOption.IGNORE_CASE)

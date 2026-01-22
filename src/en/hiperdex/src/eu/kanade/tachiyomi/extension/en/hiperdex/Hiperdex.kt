@@ -17,6 +17,7 @@ import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.SManga
 import keiyoushi.utils.getPreferences
 import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -62,6 +63,14 @@ class Hiperdex :
             }
         }.also { screen.addPreference(it) }
 
+        val noRemoveTitleBrowsingPref = CheckBoxPreference(screen.context).apply {
+            key = NO_REMOVE_TITLE_BROWSING_PREF
+            title = "Don't apply title cleaning in browsing/search results"
+            summary = "Don't apply the 2 options above when browsing or searching for manga, but still apply them in manga details."
+            setVisible(isRemoveTitleVersion() || customRemoveTitle().isNotEmpty())
+            setDefaultValue(false)
+        }
+
         CheckBoxPreference(screen.context).apply {
             key = "${REMOVE_TITLE_VERSION_PREF}_$lang"
             title = "Remove version information from entry titles"
@@ -70,6 +79,11 @@ class Hiperdex :
                 "To update existing entries, remove them from your library (unfavorite) and refresh manually. " +
                 "You might also want to clear the database in advanced settings."
             setDefaultValue(false)
+            setOnPreferenceChangeListener { _, newValue ->
+                val enabled = newValue as Boolean
+                noRemoveTitleBrowsingPref.setVisible(enabled || customRemoveTitle().isNotEmpty())
+                true
+            }
         }.also { screen.addPreference(it) }
 
         EditTextPreference(screen.context).apply {
@@ -105,6 +119,7 @@ class Hiperdex :
                 val (isValid, message) = validate(newValue as String)
                 if (isValid) {
                     summary = newValue
+                    noRemoveTitleBrowsingPref.setVisible(isRemoveTitleVersion() || newValue.isNotEmpty())
                 } else {
                     Toast.makeText(screen.context, message, Toast.LENGTH_LONG).show()
                 }
@@ -112,7 +127,33 @@ class Hiperdex :
             }
         }.also { screen.addPreference(it) }
 
+        screen.addPreference(noRemoveTitleBrowsingPref)
+
         addRandomUAPreferenceToScreen(screen)
+    }
+
+    override fun popularMangaFromElement(element: Element): SManga {
+        return super.popularMangaFromElement(element).apply {
+            if (!noCleanTitlesWhileBrowsing()) {
+                title = title.cleanTitleIfNeeded()
+            }
+        }
+    }
+
+    override fun latestUpdatesFromElement(element: Element): SManga {
+        return super.latestUpdatesFromElement(element).apply {
+            if (!noCleanTitlesWhileBrowsing()) {
+                title = title.cleanTitleIfNeeded()
+            }
+        }
+    }
+
+    override fun searchMangaFromElement(element: Element): SManga {
+        return super.searchMangaFromElement(element).apply {
+            if (!noCleanTitlesWhileBrowsing()) {
+                title = title.cleanTitleIfNeeded()
+            }
+        }
     }
 
     override fun searchMangaSelector() = "#loop-content div.page-listing-item"
@@ -150,6 +191,9 @@ class Hiperdex :
     private fun customRemoveTitle(): String =
         preferences.getString("${REMOVE_TITLE_CUSTOM_PREF}_$lang", "")!!
 
+    private fun noCleanTitlesWhileBrowsing(): Boolean =
+        preferences.getBoolean(NO_REMOVE_TITLE_BROWSING_PREF, false)
+
     init {
         preferences.getString(DEFAULT_BASE_URL_PREF, null).let { defaultBaseUrl ->
             if (defaultBaseUrl != super.baseUrl) {
@@ -169,6 +213,7 @@ class Hiperdex :
         private const val RESTART_APP_MESSAGE = "Restart app to apply new setting."
         private const val REMOVE_TITLE_VERSION_PREF = "REMOVE_TITLE_VERSION"
         private const val REMOVE_TITLE_CUSTOM_PREF = "REMOVE_TITLE_CUSTOM"
+        private const val NO_REMOVE_TITLE_BROWSING_PREF = "NO_REMOVE_TITLE_BROWSING"
 
         private val titleRegex: Regex =
             Regex("\\([^()]*\\)|\\{[^{}]*\\}|\\[(?:(?!]).)*]|«[^»]*»|〘[^〙]*〙|「[^」]*」|『[^』]*』|≪[^≫]*≫|﹛[^﹜]*﹜|〖[^〖〗]*〗|\uD81A\uDD0D.+?\uD81A\uDD0D|《[^》]*》|⌜.+?⌝|⟨[^⟩]*⟩|/Official|/ Official", RegexOption.IGNORE_CASE)

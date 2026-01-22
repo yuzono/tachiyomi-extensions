@@ -52,7 +52,21 @@ class MangaDistrict :
         } catch (_: Exception) {}
     }
 
+    override fun popularMangaFromElement(element: Element): SManga {
+        return super.popularMangaFromElement(element).let {
+            it.takeIf { noCleanTitlesWhileBrowsing() }
+                ?: it.cleanTitleIfNeeded()
+        }
+    }
+
     override fun popularMangaNextPageSelector() = "div[role=navigation] span.current + a.page"
+
+    override fun latestUpdatesFromElement(element: Element): SManga {
+        return super.latestUpdatesFromElement(element).let {
+            it.takeIf { noCleanTitlesWhileBrowsing() }
+                ?: it.cleanTitleIfNeeded()
+        }
+    }
 
     override fun searchMangaSelector() = popularMangaSelector()
     override fun searchMangaNextPageSelector() = popularMangaNextPageSelector()
@@ -292,6 +306,8 @@ class MangaDistrict :
     private fun isRemoveTitleVersion() = preferences.getBoolean(REMOVE_TITLE_VERSION_PREF, false)
     private fun customRemoveTitle(): String =
         preferences.getString("${REMOVE_TITLE_CUSTOM_PREF}_$lang", "")!!
+    private fun noCleanTitlesWhileBrowsing(): Boolean =
+        preferences.getBoolean(NO_REMOVE_TITLE_BROWSING_PREF, false)
     private fun getImgRes() = preferences.getString(IMG_RES_PREF, IMG_RES_DEFAULT)!!
 
     private var SharedPreferences.dates: MutableMap<String, Long>
@@ -307,6 +323,14 @@ class MangaDistrict :
         }
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        val noRemoveTitleBrowsingPref = CheckBoxPreference(screen.context).apply {
+            key = NO_REMOVE_TITLE_BROWSING_PREF
+            title = "Don't apply title cleaning in browsing/search results"
+            summary = "Don't apply the 2 options above when browsing or searching for manga, but still apply them in manga details."
+            setVisible(isRemoveTitleVersion() || customRemoveTitle().isNotEmpty())
+            setDefaultValue(false)
+        }
+
         CheckBoxPreference(screen.context).apply {
             key = REMOVE_TITLE_VERSION_PREF
             title = "Remove version information from entry titles"
@@ -315,6 +339,11 @@ class MangaDistrict :
                 "To update existing entries, remove them from your library (unfavorite) and refresh manually. " +
                 "You might also want to clear the database in advanced settings."
             setDefaultValue(false)
+            setOnPreferenceChangeListener { _, newValue ->
+                val enabled = newValue as Boolean
+                noRemoveTitleBrowsingPref.setVisible(enabled || customRemoveTitle().isNotEmpty())
+                true
+            }
         }.let(screen::addPreference)
 
         EditTextPreference(screen.context).apply {
@@ -350,12 +379,15 @@ class MangaDistrict :
                 val (isValid, message) = validate(newValue as String)
                 if (isValid) {
                     summary = newValue
+                    noRemoveTitleBrowsingPref.setVisible(isRemoveTitleVersion() || newValue.isNotEmpty())
                 } else {
                     Toast.makeText(screen.context, message, Toast.LENGTH_LONG).show()
                 }
                 isValid
             }
         }.let(screen::addPreference)
+
+        screen.addPreference(noRemoveTitleBrowsingPref)
 
         ListPreference(screen.context).apply {
             key = IMG_RES_PREF
@@ -380,6 +412,7 @@ class MangaDistrict :
 
         private const val REMOVE_TITLE_VERSION_PREF = "REMOVE_TITLE_VERSION"
         private const val REMOVE_TITLE_CUSTOM_PREF = "REMOVE_TITLE_CUSTOM"
+        private const val NO_REMOVE_TITLE_BROWSING_PREF = "NO_REMOVE_TITLE_BROWSING"
         private const val TAG_LIST_PREF = "TAG_LIST"
 
         private const val IMG_RES_PREF = "IMG_RES"
