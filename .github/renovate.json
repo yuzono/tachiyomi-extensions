@@ -1,7 +1,7 @@
 {
   "labels": ["Dependencies"],
   "rebaseWhen": "conflicted",
-  "automerge": true,
+  "automerge": false,
   "semanticCommits": "enabled",
   "extends": [
     "config:best-practices"
