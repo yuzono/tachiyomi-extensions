@@ -56,7 +56,7 @@ var ExtensionAware.kmkBaseVersionCode: Int
     get() {
         return try {
             extra.get("kmkBaseVersionCode") as Int
-        } catch (e: MissingPropertyException) {
+        } catch (_: MissingPropertyException) {
             0
         }
     }

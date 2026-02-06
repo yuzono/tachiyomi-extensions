@@ -10,52 +10,54 @@ or fixing it directly by submitting a Pull Request.
 
 ## Table of Contents
 
-1. [Prerequisites](#prerequisites)
-   1. [Tools](#tools)
-   2. [Cloning the repository](#cloning-the-repository)
-2. [Getting help](#getting-help)
-3. [Writing an extension](#writing-an-extension)
-   1. [Setting up a new Gradle module](#setting-up-a-new-gradle-module)
-   2. [Loading a subset of Gradle modules](#loading-a-subset-of-gradle-modules)
-      1. [Extension file structure](#extension-file-structure)
-      2. [AndroidManifest.xml (optional)](#androidmanifestxml-optional)
-      3. [build.gradle](#buildgradle)
-   3. [Core dependencies](#core-dependencies)
-      1. [Extension API](#extension-api)
-      2. [DataImage library](#dataimage-library)
-      3. [i18n library](#i18n-library)
-      4. [Additional dependencies](#additional-dependencies)
-   4. [Extension main class](#extension-main-class)
-      1. [Main class key variables](#main-class-key-variables)
-   5. [Extension call flow](#extension-call-flow)
-      1. [Popular Manga](#popular-manga)
-      2. [Latest Manga](#latest-manga)
-      3. [Manga Search](#manga-search)
-         1. [Filters](#filters)
-      4. [Manga Details](#manga-details)
-      5. [Chapter](#chapter)
-      6. [Chapter Pages](#chapter-pages)
-   6. [Misc notes](#misc-notes)
-   7. [Advanced Extension features](#advanced-extension-features)
-      1. [URL intent filter](#url-intent-filter)
-      2. [Update strategy](#update-strategy)
-      3. [Renaming existing sources](#renaming-existing-sources)
-4. [Multi-source themes](#multi-source-themes)
-   1. [The directory structure](#the-directory-structure)
-   2. [Development workflow](#development-workflow)
-   3. [Scaffolding overrides](#scaffolding-overrides)
-   4. [Additional Notes](#additional-notes)
-5. [Running](#running)
-6. [Debugging](#debugging)
-   1. [Android Debugger](#android-debugger)
-   2. [Logs](#logs)
-   3. [Inspecting network calls](#inspecting-network-calls)
-   4. [Using external network inspecting tools](#using-external-network-inspecting-tools)
-      1. [Setup your proxy server](#setup-your-proxy-server)
-      2. [OkHttp proxy setup](#okhttp-proxy-setup)
-7. [Building](#building)
-8. [Submitting the changes](#submitting-the-changes)
-   1. [Pull Request checklist](#pull-request-checklist)
+- [Contributing](#contributing)
+  - [Table of Contents](#table-of-contents)
+  - [Prerequisites](#prerequisites)
+    - [Tools](#tools)
+    - [Cloning the repository](#cloning-the-repository)
+  - [Getting help](#getting-help)
+  - [Writing an extension](#writing-an-extension)
+    - [Setting up a new Gradle module](#setting-up-a-new-gradle-module)
+    - [Loading a subset of Gradle modules](#loading-a-subset-of-gradle-modules)
+      - [Extension file structure](#extension-file-structure)
+      - [AndroidManifest.xml (optional)](#androidmanifestxml-optional)
+      - [build.gradle](#buildgradle)
+    - [Core dependencies](#core-dependencies)
+      - [Extension API](#extension-api)
+      - [DataImage library](#dataimage-library)
+      - [i18n library](#i18n-library)
+      - [Additional dependencies](#additional-dependencies)
+    - [Extension main class](#extension-main-class)
+      - [Main class key variables](#main-class-key-variables)
+    - [Extension call flow](#extension-call-flow)
+      - [Popular Manga](#popular-manga)
+      - [Latest Manga](#latest-manga)
+      - [Manga Search](#manga-search)
+        - [Filters](#filters)
+      - [Manga Details](#manga-details)
+      - [Chapter](#chapter)
+      - [Chapter Pages](#chapter-pages)
+    - [Misc notes](#misc-notes)
+    - [Advanced Extension features](#advanced-extension-features)
+      - [URL intent filter](#url-intent-filter)
+      - [Update strategy](#update-strategy)
+      - [Renaming existing sources](#renaming-existing-sources)
+  - [Multi-source themes](#multi-source-themes)
+    - [The directory structure](#the-directory-structure)
+    - [Development workflow](#development-workflow)
+    - [Scaffolding overrides](#scaffolding-overrides)
+    - [Additional Notes](#additional-notes)
+  - [Running](#running)
+  - [Debugging](#debugging)
+    - [Android Debugger](#android-debugger)
+    - [Logs](#logs)
+    - [Inspecting network calls](#inspecting-network-calls)
+    - [Using external network inspecting tools](#using-external-network-inspecting-tools)
+      - [Setup your proxy server](#setup-your-proxy-server)
+      - [OkHttp proxy setup](#okhttp-proxy-setup)
+  - [Building](#building)
+  - [Submitting the changes](#submitting-the-changes)
+    - [Pull Request checklist](#pull-request-checklist)
 
 ## Prerequisites
 
@@ -79,22 +81,20 @@ that existing contributors will not actively teach them to you.
 
 ### Cloning the repository
 
-Some alternative steps can be followed to ignore "repo" branch and skip unrelated sources, which will make it faster to pull, navigate and build. This will also reduce disk usage and network traffic.
+Some alternative steps can be followed to skip unrelated sources, which will make it faster to pull,
+navigate and build. This will also reduce disk usage and network traffic.
 
-**These steps are only needed when the repo is huge and contains a lot of sources. If the repo is small, just do a normal full clone instead.**
+**These steps are only needed when the repo is huge and contains a lot of sources. If the repo is
+small, just do a normal full clone instead.**
 
 <details><summary>Steps</summary>
 
-1. Make sure to delete "repo" branch in your fork. You may also want to disable Actions in the repo settings.
-
-    **Also make sure you are using the latest version of Git as many commands used here are pretty new.**
-
-2. Do a partial clone.
+1. Do a partial clone.
     ```bash
     git clone --filter=blob:none --sparse <fork-repo-url>
     cd tachiyomi-extensions/
     ```
-3. Configure sparse checkout.
+2. Configure sparse checkout.
 
     There are two modes of pattern matching. The default is cone (🔺) mode.
     Cone mode enables significantly faster pattern matching for big monorepos
@@ -145,23 +145,20 @@ Some alternative steps can be followed to ignore "repo" branch and skip unrelate
     Explanation: the rules are like `gitignore`. We first exclude all sources
     while retaining project folders, then add the needed sources back manually.
 
-4. Configure remotes.
+3. Configure remotes.
     ```bash
     # add upstream
     git remote add upstream <yuzono-url>
     # optionally disable push to upstream
     git remote set-url --push upstream no_pushing
-    # ignore 'repo' branch of upstream
-    # option 1: use negative refspec
-    git config --add remote.upstream.fetch "^refs/heads/repo"
-    # option 2: fetch master only (ignore all other branches)
+    # optionally fetch master only (ignore all other branches)
     git config remote.upstream.fetch "+refs/heads/master:refs/remotes/upstream/master"
     # update remotes
     git remote update
     # track master of upstream instead of fork
     git branch master -u upstream/master
     ```
-5. Useful configurations. (optional)
+4. Useful configurations. (optional)
     ```bash
     # prune obsolete remote branches on fetch
     git config remote.origin.prune true
@@ -175,7 +172,7 @@ Some alternative steps can be followed to ignore "repo" branch and skip unrelate
     # on master branch, which is not a good practice.
     git config alias.sync-master '!git switch master && git fetch upstream && git reset --keep FETCH_HEAD'
     ```
-6. Later, if you change the sparse checkout filter, run `git sparse-checkout reapply`.
+5. Later, if you change the sparse checkout filter, run `git sparse-checkout reapply`.
 
 Read more on
 [Git's object model](https://github.blog/2020-12-17-commits-are-snapshots-not-diffs/),
@@ -187,6 +184,8 @@ and [negative refspecs](https://github.blog/2020-10-19-git-2-29-released/#user-c
 
 ## Getting help
 
+- Join [the Discord server](https://discord.gg/3FbCpdKbdY) for online help and to ask questions while
+developing your extension. When doing so, please ask it in the `#programming` channel.
 - There are some features and tricks that are not explored in this document. Refer to existing
 extension code for examples.
 
@@ -243,8 +242,8 @@ src/<lang>/<mysourcename>/
 13 directories, 9 files
 ```
 
-`<lang>` should be an ISO 639-1 compliant language code (two letters or `all`). `<mysourcename>` should be adapted from the site name, and can only contain lowercase ASCII letters and digits.
-
+`<lang>` should be an ISO 639-1 compliant language code (two letters or `all`). `<mysourcename>`
+should be adapted from the site name, and can only contain lowercase ASCII letters and digits.
 Your extension code must be placed in the package `eu.kanade.tachiyomi.extension.<lang>.<mysourcename>`.
 
 #### AndroidManifest.xml (optional)
@@ -265,13 +264,12 @@ ext {
 apply from: "$rootDir/common.gradle"
 ```
 
-| Field | Description |
-| ----- | ----------- |
-| `extName` | The name of the extension. |
-| `pkgNameSuffix` | A unique suffix added to `eu.kanade.tachiyomi.extension`. The language and the site name should be enough. Remember your extension code implementation must be placed in this package. |
-| `extClass` | Points to the class that implements `Source`. You can use a relative path starting with a dot (the package name is the base path). This is used to find and instantiate the source(s). |
-| `extVersionCode` | The extension version code. This must be a positive integer and incremented with any change to the code. |
-| `isNsfw` | (Optional, defaults to `false`) Flag to indicate that a source contains NSFW content. |
+| Field            | Description                                                                                                                                                                            |
+|------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `extName`        | The name of the extension. Should be romanized if site name is not in English.                                                                                                         |
+| `extClass`       | Points to the class that implements `Source`. You can use a relative path starting with a dot (the package name is the base path). This is used to find and instantiate the source(s). |
+| `extVersionCode` | The extension version code. This must be a positive integer and incremented with any change to the code.                                                                               |
+| `isNsfw`         | (Optional, defaults to `false`) Flag to indicate that a source contains NSFW content.                                                                                                  |
 
 The extension's version name is generated automatically by concatenating `1.4` and `extVersionCode`.
 With the example used above, the version would be `1.4.1`.
@@ -299,7 +297,9 @@ dependencies {
 
 #### i18n library
 
-[`lib-i18n`](https://github.com/yuzono/tachiyomi-extensions/tree/master/lib/i18n) is a library for handling internationalization in the sources. It allows loading `.properties` files with messages located under the `assets/i18n` folder of each extension, that can be used to translate strings under the source.
+[`lib-i18n`](https://github.com/yuzono/tachiyomi-extensions/tree/master/lib/i18n) is a library for handling
+internationalization in the sources. It allows loading `.properties` files with messages located under
+the `assets/i18n` folder of each extension, that can be used to translate strings under the source.
 
 ```groovy
 dependencies {
@@ -327,7 +327,8 @@ the main app has at the expense of app size.
 
 ### Extension main class
 
-The class which is referenced and defined by `extClass` in `build.gradle`. This class should implement either `SourceFactory` or extend one of the `Source` implementations: `HttpSource` or `ParsedHttpSource`.
+The class which is referenced and defined by `extClass` in `build.gradle`. This class should implement
+either `SourceFactory` or extend one of the `Source` implementations: `HttpSource` or `ParsedHttpSource`.
 
 | Class              | Description                                                                                                                      |
 |--------------------|----------------------------------------------------------------------------------------------------------------------------------|
@@ -381,18 +382,20 @@ can be iterated to create the request (by getting the `filter.state` value, wher
 depending on the `Filter` used). You can check the filter types available [here](https://github.com/komikku-app/komikku/blob/master/source-api/src/commonMain/kotlin/eu/kanade/tachiyomi/source/model/Filter.kt)
 and in the table below.
 
-| Filter | State type | Description |
-| ------ | ---------- | ----------- |
-| `Filter.Header` | None | A simple header. Useful for separating sections in the list or showing any note or warning to the user. |
-| `Filter.Separator` | None | A line separator. Useful for visual distinction between sections. |
-| `Filter.Select<V>` | `Int` | A select control, similar to HTML's `<select>`. Only one item can be selected, and the state is the index of the selected one. |
-| `Filter.Text` | `String` | A text control, similar to HTML's `<input type="text">`. |
-| `Filter.CheckBox` | `Boolean` | A checkbox control, similar to HTML's `<input type="checkbox">`. The state is `true` if it's checked. |
-| `Filter.TriState` | `Int` | A enhanced checkbox control that supports an excluding state. The state can be compared with `STATE_IGNORE`, `STATE_INCLUDE` and `STATE_EXCLUDE` constants of the class. |
-| `Filter.Group<V>` | `List<V>` | A group of filters (preferentially of the same type). The state will be a `List` with all the states. |
-| `Filter.Sort` | `Selection` | A control for sorting, with support for the ordering. The state indicates which item index is selected and if the sorting is `ascending`. |
+| Filter             | State type  | Description                                                                                                                                                              |
+|--------------------|-------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `Filter.Header`    | None        | A simple header. Useful for separating sections in the list or showing any note or warning to the user.                                                                  |
+| `Filter.Separator` | None        | A line separator. Useful for visual distinction between sections.                                                                                                        |
+| `Filter.Select<V>` | `Int`       | A select control, similar to HTML's `<select>`. Only one item can be selected, and the state is the index of the selected one.                                           |
+| `Filter.Text`      | `String`    | A text control, similar to HTML's `<input type="text">`.                                                                                                                 |
+| `Filter.CheckBox`  | `Boolean`   | A checkbox control, similar to HTML's `<input type="checkbox">`. The state is `true` if it's checked.                                                                    |
+| `Filter.TriState`  | `Int`       | A enhanced checkbox control that supports an excluding state. The state can be compared with `STATE_IGNORE`, `STATE_INCLUDE` and `STATE_EXCLUDE` constants of the class. |
+| `Filter.Group<V>`  | `List<V>`   | A group of filters (preferentially of the same type). The state will be a `List` with all the states.                                                                    |
+| `Filter.Sort`      | `Selection` | A control for sorting, with support for the ordering. The state indicates which item index is selected and if the sorting is `ascending`.                                |
 
-All control filters can have a default state set. It's usually recommended if the source have filters to make the initial state match the popular manga list, so when the user open the filter sheet, the state is equal and represents the current manga showing.
+All control filters can have a default state set. It's usually recommended if the source have filters
+to make the initial state match the popular manga list, so when the user open the filter sheet, the
+state is equal and represents the current manga showing.
 
 The `Filter` classes can also be extended, so you can create new custom filters like the `UriPartFilter`:
 
@@ -405,18 +408,23 @@ open class UriPartFilter(displayName: String, private val vals: Array<Pair<Strin
 
 #### Manga Details
 
-- When user taps on a manga, `getMangaDetails` and `getChapterList` will be called and the results will be cached.
+- When user taps on a manga, `getMangaDetails` and `getChapterList` will be called and the results
+will be cached.
     - A `SManga` entry is identified by it's `url`.
 - `getMangaDetails` is called to update a manga's details from when it was initialized earlier.
-    - `SManga.initialized` tells the app if it should call `getMangaDetails`. If you are overriding `getMangaDetails`, make sure to pass it as `true`.
+    - `SManga.initialized` tells the app if it should call `getMangaDetails`. If you are overriding
+    `getMangaDetails`, make sure to pass it as `true`.
     - `SManga.genre` is a string containing list of all genres separated with `", "`.
     - `SManga.status` is an "enum" value. Refer to [the values in the `SManga` companion object](https://github.com/komikku-app/extensions-lib/blob/master/library/src/main/java/eu/kanade/tachiyomi/source/model/SManga.kt#L24).
-    - During a backup, only `url` and `title` are stored. To restore the rest of the manga data, the app calls `getMangaDetails`, so all fields should be (re)filled in if possible.
-    - If a `SManga` is cached, `getMangaDetails` will be only called when the user does a manual update (Swipe-to-Refresh).
+    - During a backup, only `url` and `title` are stored. To restore the rest of the manga data, the
+    app calls `getMangaDetails`, so all fields should be (re)filled in if possible.
+    - If a `SManga` is cached, `getMangaDetails` will be only called when the user does a manual
+    update (Swipe-to-Refresh).
 - `getChapterList` is called to display the chapter list.
     - **The list should be sorted descending by the source order**.
 - `getMangaUrl` is called when the user taps "Open in WebView".
-  - If the source uses an API to fetch the data, consider overriding this method to return the manga absolute URL in the website instead.
+  - If the source uses an API to fetch the data, consider overriding this method to return the manga
+  absolute URL in the website instead.
   - It defaults to the URL provided to the request in `mangaDetailsRequest`.
 
 #### Chapter
@@ -453,8 +461,10 @@ open class UriPartFilter(displayName: String, private val vals: Array<Pair<Strin
 #### Chapter Pages
 
 - When user opens a chapter, `getPageList` will be called and it will return a list of `Page`s.
-- While a chapter is open in the reader or is being downloaded, `fetchImageUrl` will be called to get URLs for each page of the manga if the `Page.imageUrl` is empty.
-- If the source provides all the `Page.imageUrl`'s directly, you can fill them and let the `Page.url` empty, so the app will skip the `fetchImageUrl` source and call directly `fetchImage`.
+- While a chapter is open in the reader or is being downloaded, `fetchImageUrl` will be called to get
+URLs for each page of the manga if the `Page.imageUrl` is empty.
+- If the source provides all the `Page.imageUrl`'s directly, you can fill them and let the `Page.url`
+empty, so the app will skip the `fetchImageUrl` source and call directly `fetchImage`.
 - The `Page.url` and `Page.imageUrl` attributes **should be set as an absolute URL**.
 - Chapter pages numbers start from `0`.
 - The list of `Page`s should be returned already sorted, the `index` field is ignored.
@@ -476,7 +486,7 @@ them may cause you more headache than necessary.
 #### URL intent filter
 
 Extensions can define URL intent filters by defining it inside a custom `AndroidManifest.xml` file.
-For an example, refer to [the NHentai module's `AndroidManifest.xml` file](https://github.com/yuzono/tachiyomi-extensions/blob/master/src/all/nhentai/AndroidManifest.xml) and [its corresponding `NHUrlActivity` handler](https://github.com/yuzono/tachiyomi-extensions/blob/master/src/all/nhentai/src/eu/kanade/tachiyomi/extension/all/nhentai/NHUrlActivity.kt).
+(Example TBD.)
 
 To test if the URL intent filter is working as expected, you can try opening the website in a browser
 and navigating to the endpoint that was added as a filter or clicking a hyperlink. Alternatively,
@@ -496,7 +506,11 @@ $ adb shell am start -d "<your-link>" -a android.intent.action.VIEW
 
 #### Update strategy
 
-There is some cases where titles in a source will always only have the same chapter list (i.e. immutable), and don't need to be included in a global update of the app because of that, saving a lot of requests and preventing causing unnecessary damage to the source servers. To change the update strategy of a `SManga`, use the `update_strategy` field. You can find below a description of the current possible values.
+There is some cases where titles in a source will always only have the same chapter list
+(i.e. immutable), and don't need to be included in a global update of the app because of that, saving
+a lot of requests and preventing causing unnecessary damage to the source servers. To change the
+update strategy of a `SManga`, use the `update_strategy` field. You can find below a description of
+the current possible values.
 
 - `UpdateStrategy.ALWAYS_UPDATE`: Titles marked as always update will be included in the library
 update if they aren't excluded by additional restrictions.
@@ -508,15 +522,20 @@ If not set, it defaults to `ALWAYS_UPDATE`.
 
 #### Renaming existing sources
 
-There is some cases where existing sources changes their name on the website. To correctly reflect these changes in the extension, you need to explicity set the `id` to the same old value, otherwise it will get changed by the new `name` value and users will be forced to migrate back to the source.
+There is some cases where existing sources changes their name on the website. To correctly reflect
+these changes in the extension, you need to explicity set the `id` to the same old value, otherwise
+it will get changed by the new `name` value and users will be forced to migrate back to the source.
 
-To get the current `id` value before the name change, you can search the source name in the [repository JSON file](https://github.com/yuzono/tachiyomi-extensions/blob/repo/index.json) by looking into the `sources` attribute of the extension. When you have the `id` copied, you can override it in the source:
+To get the current `id` value before the name change, you can search the source name in the [repository JSON file](https://github.com/yuzono/manga-repo/blob/repo/index.json)
+by looking into the `sources` attribute of the extension. When you have the `id` copied, you can
+override it in the source:
 
 ```kotlin
 override val id: Long = <the-id>
 ```
 
-Then the class name and the `name` attribute value can be changed. Also don't forget to update the extension name and class name in the individual Gradle file if it is not a multisrc extension.
+Then the class name and the `name` attribute value can be changed. Also don't forget to update the
+extension name and class name in the individual Gradle file.
 
 > [!IMPORTANT]
 > The package name **needs** to be the same (even if it has the old name), otherwise users will not
@@ -597,15 +616,22 @@ multisrc
                 └── ThemeSourceGenerator.kt
 ```
 
-- `multisrc/src/main/java/eu/kanade/tachiyomi/multisrc/<themepkg>/<Theme>.kt` defines the the theme's default implementation.
-- `multisrc/src/main/java/eu/kanade/tachiyomi/multisrc/<theme>/<Theme>Generator.kt` defines the the theme's generator class, this is similar to a `SourceFactory` class.
-- `multisrc/overrides/<themepkg>/default/res` is the theme's default icons, if a source doesn't have overrides for `res`, then default icons will be used.
-- `multisrc/overrides/<themepkg>/default/additional.gradle` defines additional gradle code, this will be copied at the end of all generated sources from this theme.
-- `multisrc/overrides/<themepkg>/<sourcepkg>` contains overrides for a source that is defined inside the `<Theme>Generator.kt` class.
+- `multisrc/src/main/java/eu/kanade/tachiyomi/multisrc/<themepkg>/<Theme>.kt` defines the the theme's
+default implementation.
+- `multisrc/src/main/java/eu/kanade/tachiyomi/multisrc/<theme>/<Theme>Generator.kt` defines the the
+theme's generator class, this is similar to a `SourceFactory` class.
+- `multisrc/overrides/<themepkg>/default/res` is the theme's default icons, if a source doesn't have
+overrides for `res`, then default icons will be used.
+- `multisrc/overrides/<themepkg>/default/additional.gradle` defines additional gradle code, this will
+be copied at the end of all generated sources from this theme.
+- `multisrc/overrides/<themepkg>/<sourcepkg>` contains overrides for a source that is defined inside
+the `<Theme>Generator.kt` class.
 - `multisrc/overrides/<themepkg>/<sourcepkg>/src` contains source overrides.
 - `multisrc/overrides/<themepkg>/<sourcepkg>/res` contains override for icons.
-- `multisrc/overrides/<themepkg>/<sourcepkg>/additional.gradle` defines additional gradle code, this will be copied at the end of the generated gradle file below the theme's `additional.gradle`.
-- `multisrc/overrides/<themepkg>/<sourcepkg>/AndroidManifest.xml` is copied as an override to the default `AndroidManifest.xml` generation if it exists.
+- `multisrc/overrides/<themepkg>/<sourcepkg>/additional.gradle` defines additional gradle code, this
+will be copied at the end of the generated gradle file below the theme's `additional.gradle`.
+- `multisrc/overrides/<themepkg>/<sourcepkg>/AndroidManifest.xml` is copied as an override to the
+default `AndroidManifest.xml` generation if it exists.
 
 > [!NOTE]
 > Files ending with `Gen.kt` (i.e. `multisrc/src/main/java/eu/kanade/tachiyomi/multisrc/<theme>/XxxGen.kt`)
@@ -616,19 +642,27 @@ There are three steps in running and testing a theme source:
 
 1. Generate the sources
     - **Option 1: Only generate sources from one theme**
-        - **Method 1:** Find and run `<ThemeName>Generator` run configuration form the `Run/Debug Configuration` menu.
-        - **Method 2:** Directly run `<themepkg>.<ThemeName>Generator.main` by pressing the play button in front of the method shown inside Android Studio's Code Editor to generate sources from the said theme.
+        - **Method 1:** Find and run `<ThemeName>Generator` run configuration from the
+        `Run/Debug Configuration` menu.
+        - **Method 2:** Directly run `<themepkg>.<ThemeName>Generator.main` by pressing the play
+        button in front of the method shown inside Android Studio's Code Editor to generate sources
+        from the said theme.
     - **Option 2: Generate sources from all themes**
-        - **Method 1:** Run `./gradlew multisrc:generateExtensions` from a terminal window to generate all sources.
-        - **Method 2:** Directly run `Generator.GeneratorMain.main` by pressing the play button in front of the method shown inside Android Studio's Code Editor to generate all sources.
+        - **Method 1:** Run `./gradlew multisrc:generateExtensions` from a terminal window to
+        generate all sources.
+        - **Method 2:** Directly run `Generator.GeneratorMain.main` by pressing the play button
+        in front of the method shown inside Android Studio's Code Editor to generate all sources.
 2. Sync gradle to import the new generated sources inside `generated-src`
     - **Method 1:** Android Studio might prompt to sync the gradle. Click on `Sync Now`.
-    - **Method 2:** Manually re-sync by opening `File` -> `Sync Project with Gradle Files` or by pressing `Alt+f` then `g`.
+    - **Method 2:** Manually re-sync by opening `File` -> `Sync Project with Gradle Files` or by
+    pressing `Alt+f` then `g`.
 3. Build and test the generated Extention like normal `src` sources.
-    - It's recommended to make changes here to skip going through step 1 and 2 multiple times, and when you are done, copying the changes back to `multisrc`.
+    - It's recommended to make changes here to skip going through step 1 and 2 multiple times, and
+    when you are done, copying the changes back to `multisrc`.
 
 ### Scaffolding overrides
-You can use this python script to generate scaffolds for source overrides. Put it inside `multisrc/overrides/<themepkg>/` as `scaffold.py`.
+You can use this python script to generate scaffolds for source overrides.
+Put it inside `multisrc/overrides/<themepkg>/` as `scaffold.py`.
 ```python
 import os, sys
 from pathlib import Path
@@ -655,15 +689,21 @@ with open(f"{package}/src/{source}.kt", "w") as f:
 ```
 
 ### Additional Notes
-- Generated sources extension version code is calculated as `baseVersionCode + overrideVersionCode + multisrcLibraryVersion`.
+- Generated sources extension version code is calculated as
+`baseVersionCode + overrideVersionCode + multisrcLibraryVersion`.
     - Currently `multisrcLibraryVersion` is `0`
     - When a new source is added, it doesn't need to set `overrideVersionCode` as it's default is `0`.
-    - For each time a source changes in a way that should the version increase, `overrideVersionCode` should be increased by one.
-    - When a theme's default implementation changes, `baseVersionCode` should be increased, the initial value should be `1`.
+    - For each time a source changes in a way that should the version increase, `overrideVersionCode`
+    should be increased by one.
+    - When a theme's default implementation changes, `baseVersionCode` should be increased, the
+    initial value should be `1`.
     - For example, for a new theme with a new source, extention version code will be `0 + 0 + 1 = 1`.
 - `IntelijConfigurationGeneratorMainKt` should be run on creating or removing a multisrc theme.
-    - On removing a theme, you can manually remove the corresponding configuration in the `.run` folder instead.
-    - Be careful if you're using sparse checkout. If other configurations are accidentally removed, `git add` the file you want and `git restore` the others. Another choice is to allow `/multisrc/src/main/java/eu/kanade/tachiyomi/multisrc/*` before running the generator.
+    - On removing a theme, you can manually remove the corresponding configuration in the `.run`
+    folder instead.
+    - Be careful if you're using sparse checkout. If other configurations are accidentally removed,
+    `git add` the file you want and `git restore` the others. Another choice is to allow
+    `/multisrc/src/main/java/eu/kanade/tachiyomi/multisrc/*` before running the generator.
 
 </details>
 
@@ -681,7 +721,7 @@ Mihon:
 ```
 Komikku:
 ```
--W -S -n app.komikku.beta/eu.kanade.tachiyomi.ui.main.MainActivity -a eu.kanade.tachiyomi.SHOW_CATALOGUES
+-W -S -n app.komikku.dev/eu.kanade.tachiyomi.ui.main.MainActivity -a eu.kanade.tachiyomi.SHOW_CATALOGUES
 ```
 
 For other builds, replace  `app.mihon.dev` with the corresponding package IDs:
@@ -705,7 +745,8 @@ Follow the steps above for building and running locally if you haven't already. 
 
 You can leverage the Android Debugger to add breakpoints and step through your extension while debugging.
 
-You *cannot* simply use Android Studio's `Debug 'module.name'` -> this will most likely result in an error while launching.
+You *cannot* simply use Android Studio's `Debug 'module.name'` -> this will most likely result in an
+error while launching.
 
 Instead, once you've built and installed your extension on the target device, use
 `Attach Debugger to Android Process` to start debugging the app.
@@ -722,13 +763,17 @@ show up in the [`Logcat`](https://developer.android.com/studio/debug/am-logcat) 
 
 ### Inspecting network calls
 
-One of the easiest way to inspect network issues (such as HTTP errors 404, 429, no chapter found etc.) is to use the [`Logcat`](https://developer.android.com/studio/debug/am-logcat) panel of Android Studio and filtering by the `OkHttpClient` tag.
+One of the easiest way to inspect network issues (such as HTTP errors 404, 429, no chapter found etc.)
+is to use the [`Logcat`](https://developer.android.com/studio/debug/am-logcat) panel of Android Studio
+and filtering by the `OkHttpClient` tag.
 
 To be able to check the calls done by OkHttp, you need to enable verbose logging in the app, that is
 not enabled by default. To enable it, go to
 More -> Settings -> Advanced -> Verbose logging. After enabling it, don't forget to restart the app.
 
-Inspecting the Logcat allows you to get a good look at the call flow and it's more than enough in most cases where issues occurs. However, alternatively, you can also use an external tool like `mitm-proxy`. For that, refer to the subsequent sections.
+Inspecting the Logcat allows you to get a good look at the call flow and it's more than enough in most
+cases where issues occurs. However, alternatively, you can also use an external tool like `mitm-proxy`.
+For that, refer to the subsequent sections.
 
 On newer Android Studio versions, you can use its built-in Network Inspector inside the
 App Inspection tool window. This feature provides a nice GUI to inspect the requests made in the app.
@@ -737,10 +782,12 @@ To use it, follow the [official documentation](https://developer.android.com/stu
 and select the app's package name in the process list.
 
 ### Using external network inspecting tools
-If you want to take a deeper look into the network flow, such as taking a look into the request and response bodies, you can use an external tool like `mitm-proxy`.
+If you want to take a deeper look into the network flow, such as taking a look into the request and
+response bodies, you can use an external tool like `mitm-proxy`.
 
 #### Setup your proxy server
-We are going to use [mitm-proxy](https://mitmproxy.org/) but you can replace it with any other Web Debugger (i.e. Charles, Burp Suite, Fiddler etc). To install and execute, follow the commands bellow.
+We are going to use [mitm-proxy](https://mitmproxy.org/) but you can replace it with any other Web
+Debugger (i.e. Charles, Burp Suite, Fiddler etc). To install and execute, follow the commands below.
 
 ```console
 Install the tool.
@@ -761,14 +808,14 @@ $ docker run --rm -it -p 8080:8080 \
 After installing and running, open your browser and navigate to http://127.0.0.1:8081.
 
 #### OkHttp proxy setup
-Since most of the manga sources are going to use HTTPS, we need to disable SSL verification in order to use the web debugger. For that, add this code to inside your source class:
-
+Since most of the manga sources are going to use HTTPS, we need to disable SSL verification in order
+to use the web debugger. For that, add this code to inside your source class:
 
 ```kotlin
-package eu.kanade.tachiyomi.extension.en.mangasource
-import eu.kanade.tachiyomi.multisrc.mangatheme.mangasource
+package eu.kanade.tachiyomi.extension.en.mysource
 
 import android.annotation.SuppressLint
+import eu.kanade.tachiyomi.source.online.HttpSource
 import okhttp3.OkHttpClient
 import java.net.InetSocketAddress
 import java.net.Proxy
@@ -778,11 +825,7 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 
-class MangaSource : MangaTheme(
-    "MangaSource",
-    "https://example.com",
-    "en"
-) {
+class MySource : HttpSource() {
     private fun OkHttpClient.Builder.ignoreAllSSLErrors(): OkHttpClient.Builder {
         val naiveTrustManager = @SuppressLint("CustomX509TrustManager")
         object : X509TrustManager {
@@ -812,7 +855,8 @@ Note: `10.0.2.2` is usually the address of your loopback interface in the androi
 the app tells you that it's unable to connect to 10.0.2.2:8080 you will likely need to change it
 (the same if you are using hardware device).
 
-If all went well, you should see all requests and responses made by the source in the web interface of `mitmweb`.
+If all went well, you should see all requests and responses made by the source in the web interface
+of `mitmweb`.
 
 ## Building
 
@@ -830,7 +874,10 @@ $ ./gradlew src:<lang>:<source>:assembleDebug
 
 ## Submitting the changes
 
-When you feel confident about your changes, submit a new Pull Request so your code can be reviewed and merged if it's approved. We encourage following a [GitHub Standard Fork & Pull Request Workflow](https://gist.github.com/Chaser324/ce0505fbed06b947d962) and following the good practices of the workflow, such as not commiting directly to `master`: always create a new branch for your changes.
+When you feel confident about your changes, submit a new Pull Request so your code can be reviewed
+and merged if it's approved. We encourage following a [GitHub Standard Fork & Pull Request Workflow](https://gist.github.com/Chaser324/ce0505fbed06b947d962)
+and following the good practices of the workflow, such as not commiting directly to `master`: always
+create a new branch for your changes.
 
 If you are more comfortable about using Git GUI-based tools, you can refer to [this guide](https://learntodroid.com/how-to-use-git-and-github-in-android-studio/)
 about the Git integration inside Android Studio, specifically the "How to Contribute to an to Existing
@@ -841,14 +888,18 @@ Git Repository in Android Studio" section of the guide.
 > section. The icon **must follow the pattern** adopted by all other extensions: a square with rounded
 > corners. Make sure to remove the generated `web_hi_res_512.png`.
 
-Please **do test your changes by compiling it through Android Studio** before submitting it. Obvious untested PRs will not be merged, such as ones created with the GitHub web interface. Also make sure to follow the PR checklist available in the PR body field when creating a new PR. As a reference, you can find it below.
+Please **do test your changes by compiling it through Android Studio** before submitting it. Obvious
+untested PRs will not be merged, such as ones created with the GitHub web interface. Also make sure
+to follow the PR checklist available in the PR body field when creating a new PR. As a reference, you
+can find it below.
 
 ### Pull Request checklist
 
-- Update `extVersionCode` value in `build.gradle` for individual extensions
-- Update `overrideVersionCode` or `baseVersionCode` as needed for all multisrc extensions
-- Reference all related issues in the PR body (e.g. "Closes #xyz")
-- Add the `isNsfw = true` flag in `build.gradle` when appropriate
-- Explicitly kept the `id` if a source's name or language were changed
-- Test the modifications by compiling and running the extension through Android Studio
+- Updated `extVersionCode` value in `build.gradle` for individual extensions
+- Updated `overrideVersionCode` or `baseVersionCode` as needed for all multisrc extensions
+- Referenced all related issues in the PR body (e.g. "Closes #xyz")
+- Added the `isNsfw = true` flag in `build.gradle` when appropriate
+- Have not changed source names
+- Have explicitly kept the `id` if a source's name or language were changed
+- Have tested the modifications by compiling and running the extension through Android Studio
 - Have removed `web_hi_res_512.png` when adding a new extension
