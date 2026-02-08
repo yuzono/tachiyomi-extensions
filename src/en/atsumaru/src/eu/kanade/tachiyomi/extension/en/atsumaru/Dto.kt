@@ -97,9 +97,7 @@ class MangaDto(
         }
     }
 
-    fun recommendations(baseUrl: String): List<SManga> {
-        return recommendations?.map { it.toSManga(baseUrl) } ?: emptyList()
-    }
+    fun recommendations(baseUrl: String) = recommendations?.map { it.toSManga(baseUrl) } ?: emptyList()
 
     @Serializable
     class TagDto(
