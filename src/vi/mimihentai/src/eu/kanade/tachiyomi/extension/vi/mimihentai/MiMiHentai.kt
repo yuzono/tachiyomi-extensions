@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.extension.vi.mimihentai
 
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.asObservableSuccess
+import eu.kanade.tachiyomi.network.await
 import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -218,15 +219,17 @@ class MiMiHentai : HttpSource() {
 
     // =============================== Related ================================
 
-    override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> = coroutineScope {
-        async {
-            rateLimitClient.newCall(relatedMangaListRequest(manga))
-                .execute()
-                .let { response ->
-                    relatedMangaListParse(response)
-                }
-        }.await()
-    }
+    override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> = rateLimitClient
+        .newCall(relatedMangaListRequest(manga))
+        .await().also {
+            if (!it.isSuccessful) {
+                it.close()
+                throw Exception("HTTP Error ${it.code}")
+            }
+        }
+        .use { response ->
+            relatedMangaListParse(response)
+        }
 
     override val disableRelatedMangasBySearch = true
 
