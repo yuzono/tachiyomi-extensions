@@ -2,7 +2,7 @@ ext {
     kmkVersionCode = 1
     extName = 'Kagane'
     extClass = '.Kagane'
-    extVersionCode = 17
+    extVersionCode = 18
     isNsfw = true
 }
 
