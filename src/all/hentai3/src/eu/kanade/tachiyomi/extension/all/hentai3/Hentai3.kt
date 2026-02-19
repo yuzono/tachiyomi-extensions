@@ -34,7 +34,7 @@ import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import uy.kohesive.injekt.api.get
 
-class Hentai3(
+open class Hentai3(
     override val lang: String = "all",
     private val searchLang: String = "",
     private val flagLang: String = "",
