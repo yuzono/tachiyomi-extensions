@@ -9,15 +9,13 @@ class AllPornComic : Madara("AllPornComic", "https://allporncomic.com", "en") {
 
     override fun relatedMangaListSelector() = ".crp_related a.crp_link"
 
-    override fun relatedMangaFromElement(element: Element): SManga {
-        return SManga.create().apply {
-            setUrlWithoutDomain(element.attr("abs:href"))
-            element.selectFirst(".crp_title")!!.let {
-                title = it.ownText()
-            }
-            element.selectFirst("img")?.let {
-                thumbnail_url = imageFromElement(it)
-            }
+    override fun relatedMangaFromElement(element: Element): SManga = SManga.create().apply {
+        setUrlWithoutDomain(element.attr("abs:href"))
+        element.selectFirst(".crp_title")!!.let {
+            title = it.ownText()
+        }
+        element.selectFirst("img")?.let {
+            thumbnail_url = imageFromElement(it)
         }
     }
 }

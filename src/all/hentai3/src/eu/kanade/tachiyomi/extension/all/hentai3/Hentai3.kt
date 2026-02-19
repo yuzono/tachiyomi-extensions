@@ -38,7 +38,8 @@ class Hentai3(
     override val lang: String = "all",
     private val searchLang: String = "",
     private val flagLang: String = "",
-) : ConfigurableSource, ParsedHttpSource() {
+) : ParsedHttpSource(),
+    ConfigurableSource {
 
     override val name = "3Hentai"
 
@@ -116,13 +117,11 @@ class Hentai3(
 
     override fun popularMangaNextPageSelector() = "#main-content nav .pagination .page-item .page-link[rel=next]"
 
-    override fun relatedMangaListSelector(): String =
-        popularMangaSelector() + if (flagLang.isNotEmpty()) ":has(.flag-$flagLang)" else ""
+    override fun relatedMangaListSelector(): String = popularMangaSelector() + if (flagLang.isNotEmpty()) ":has(.flag-$flagLang)" else ""
 
     /* Latest */
 
-    override fun latestUpdatesRequest(page: Int) =
-        GET(if (searchLang.isBlank()) "$baseUrl/search?q=pages%3A>0&pages=$page" else "$baseUrl/language/$searchLang/$page", headers)
+    override fun latestUpdatesRequest(page: Int) = GET(if (searchLang.isBlank()) "$baseUrl/search?q=pages%3A>0&pages=$page" else "$baseUrl/language/$searchLang/$page", headers)
 
     override fun latestUpdatesSelector() = popularMangaSelector()
 
@@ -280,10 +279,8 @@ class Hentai3(
 
     /* Pages */
 
-    override fun pageListParse(document: Document): List<Page> {
-        return document.select("#thumbnail-gallery .single-thumb a > img").mapIndexed { idx, img ->
-            Page(idx, imageUrl = img.attr("abs:data-src").replace("t.", "."))
-        }
+    override fun pageListParse(document: Document): List<Page> = document.select("#thumbnail-gallery .single-thumb a > img").mapIndexed { idx, img ->
+        Page(idx, imageUrl = img.attr("abs:data-src").replace("t.", "."))
     }
 
     override fun imageUrlParse(document: Document) = throw UnsupportedOperationException()

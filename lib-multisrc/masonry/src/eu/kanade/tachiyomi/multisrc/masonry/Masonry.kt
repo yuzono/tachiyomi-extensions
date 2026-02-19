@@ -63,8 +63,7 @@ abstract class Masonry(
     override fun popularMangaSelector() = "$galleryListSelector $gallerySelector"
 
     // Add fake selector for updates/sort/popular because it only has 1 page
-    override fun popularMangaNextPageSelector() =
-        ".pagination-a li.next, main#content .link-btn a.overlay-a[href='/updates/sort/popular/']"
+    override fun popularMangaNextPageSelector() = ".pagination-a li.next, main#content .link-btn a.overlay-a[href='/updates/sort/popular/']"
 
     override fun popularMangaFromElement(element: Element) = SManga.create().apply {
         element.selectFirst(".img-overlay > p > a")!!.run {
@@ -90,15 +89,13 @@ abstract class Masonry(
      *   => /archive/page/2/
      *   => /updates/sort/filter/ord/newest/content/0/quality/0/tags/0/mpage/2/
      */
-    override fun latestUpdatesRequest(page: Int) =
-        if (useAlternativeLatestRequest) {
-            alternativeLatestRequest(page)
-        } else {
-            defaultLatestRequest(page)
-        }
+    override fun latestUpdatesRequest(page: Int) = if (useAlternativeLatestRequest) {
+        alternativeLatestRequest(page)
+    } else {
+        defaultLatestRequest(page)
+    }
 
-    private fun defaultLatestRequest(page: Int) =
-        GET("$baseUrl/archive/page/$page/", headers)
+    private fun defaultLatestRequest(page: Int) = GET("$baseUrl/archive/page/$page/", headers)
 
     /**
      * Some sites doesn't support page for /updates/sort/newest/
@@ -106,8 +103,7 @@ abstract class Masonry(
      *  - XArt (doesn't have any content at all)
      * This URL is often not showing consistent contents
      */
-    private fun alternativeLatestRequest(page: Int) =
-        GET("$baseUrl/updates/sort/newest/mpage/$page/", headers)
+    private fun alternativeLatestRequest(page: Int) = GET("$baseUrl/updates/sort/newest/mpage/$page/", headers)
 
     override fun latestUpdatesParse(response: Response) = popularMangaParse(response)
     override fun latestUpdatesSelector() = popularMangaSelector()
@@ -359,14 +355,12 @@ abstract class Masonry(
         update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
     }
 
-    override fun mangaDetailsParse(response: Response): SManga {
-        return when {
-            response.request.url.toString().contains("/model/") ->
-                modelMangaDetailsParse(response.asJsoup())
+    override fun mangaDetailsParse(response: Response): SManga = when {
+        response.request.url.toString().contains("/model/") ->
+            modelMangaDetailsParse(response.asJsoup())
 
-            else ->
-                mangaDetailsParse(response.asJsoup())
-        }
+        else ->
+            mangaDetailsParse(response.asJsoup())
     }
 
     override fun chapterListRequest(manga: SManga) = when {
@@ -440,21 +434,19 @@ abstract class Masonry(
         return GET(url, headers)
     }
 
-    protected open fun modelMangaFromElement(element: Element): SManga {
-        return SManga.create().apply {
-            element.selectFirst(".img-overlay > p > a")!!.run {
-                val model = text()
-                artist = model
-                author = name
-                title = "$model @$name"
-                setUrlWithoutDomain(absUrl("href"))
-            }
-            element.selectFirst("a > img")?.run {
-                thumbnail_url = imgAttr()
-            }
-            status = SManga.ONGOING
-            update_strategy = UpdateStrategy.ALWAYS_UPDATE
+    protected open fun modelMangaFromElement(element: Element): SManga = SManga.create().apply {
+        element.selectFirst(".img-overlay > p > a")!!.run {
+            val model = text()
+            artist = model
+            author = name
+            title = "$model @$name"
+            setUrlWithoutDomain(absUrl("href"))
         }
+        element.selectFirst("a > img")?.run {
+            thumbnail_url = imgAttr()
+        }
+        status = SManga.ONGOING
+        update_strategy = UpdateStrategy.ALWAYS_UPDATE
     }
 
     protected open fun modelMangaDetailsParse(document: Document) = SManga.create().apply {
@@ -493,31 +485,27 @@ abstract class Masonry(
 
     override fun chapterListSelector() = throw UnsupportedOperationException()
 
-    override fun pageListParse(document: Document): List<Page> {
-        return document.select(".list-gallery a[href^=https://cdn.], $videoSelector")
-            .mapIndexed { idx, img ->
-                Page(
-                    idx,
-                    imageUrl = with(img) {
-                        when {
-                            hasAttr("href") -> absUrl("href")
-                            hasAttr("poster") -> absUrl("poster")
-                            else -> imgAttr()
-                        }
-                    },
-                )
-            }
-    }
+    override fun pageListParse(document: Document): List<Page> = document.select(".list-gallery a[href^=https://cdn.], $videoSelector")
+        .mapIndexed { idx, img ->
+            Page(
+                idx,
+                imageUrl = with(img) {
+                    when {
+                        hasAttr("href") -> absUrl("href")
+                        hasAttr("poster") -> absUrl("poster")
+                        else -> imgAttr()
+                    }
+                },
+            )
+        }
 
     override fun imageUrlParse(document: Document) = throw UnsupportedOperationException()
 
-    protected fun Element.imgAttr(): String {
-        return when {
-            hasAttr("srcset") -> attr("abs:srcset").substringBefore(" ")
-            hasAttr("data-cfsrc") -> attr("abs:data-cfsrc")
-            hasAttr("data-src") -> attr("abs:data-src")
-            hasAttr("data-lazy-src") -> attr("abs:data-lazy-src")
-            else -> attr("abs:src")
-        }
+    protected fun Element.imgAttr(): String = when {
+        hasAttr("srcset") -> attr("abs:srcset").substringBefore(" ")
+        hasAttr("data-cfsrc") -> attr("abs:data-cfsrc")
+        hasAttr("data-src") -> attr("abs:data-src")
+        hasAttr("data-lazy-src") -> attr("abs:data-lazy-src")
+        else -> attr("abs:src")
     }
 }

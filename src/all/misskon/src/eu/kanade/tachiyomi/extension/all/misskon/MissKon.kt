@@ -33,7 +33,9 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-class MissKon : ConfigurableSource, ParsedHttpSource() {
+class MissKon :
+    ParsedHttpSource(),
+    ConfigurableSource {
     override val name = "MissKon (MrCong)"
     override val lang = "all"
     override val supportsLatest = true
@@ -77,17 +79,16 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
 
     override fun latestUpdatesSelector() = "div#main-content div.post-listing article.item-list"
 
-    override fun latestUpdatesFromElement(element: Element) =
-        SManga.create().apply {
-            val post = element.select("h2.post-box-title a").first()!!
-            setUrlWithoutDomain(post.absUrl("href"))
-            title = post.text()
-            thumbnail_url = element.selectFirst("div.post-thumbnail img")?.imgAttr()
-            val meta = element.selectFirst("p.post-meta")
-            description = "View: ${meta?.select("span.post-views")?.text() ?: "---"}"
-            genre = meta?.parseTags()
-            update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
-        }
+    override fun latestUpdatesFromElement(element: Element) = SManga.create().apply {
+        val post = element.select("h2.post-box-title a").first()!!
+        setUrlWithoutDomain(post.absUrl("href"))
+        title = post.text()
+        thumbnail_url = element.selectFirst("div.post-thumbnail img")?.imgAttr()
+        val meta = element.selectFirst("p.post-meta")
+        description = "View: ${meta?.select("span.post-views")?.text() ?: "---"}"
+        genre = meta?.parseTags()
+        update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
+    }
 
     override fun popularMangaRequest(page: Int): Request {
         val topDays = (preferences.topDays?.toInt() ?: 0) + 1
@@ -148,28 +149,26 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
     override fun searchMangaFromElement(element: Element) = latestUpdatesFromElement(element)
 
     /* Details */
-    override fun mangaDetailsParse(document: Document): SManga {
-        return SManga.create().apply {
-            title = document.select(".post-title span").text()
-            val view = document.select("p.post-meta span.post-views").text()
-            val info = document.select("div.info div.box-inner-block")
+    override fun mangaDetailsParse(document: Document): SManga = SManga.create().apply {
+        title = document.select(".post-title span").text()
+        val view = document.select("p.post-meta span.post-views").text()
+        val info = document.select("div.info div.box-inner-block")
 
-            val password = info.select("input").attr("value")
-            val downloadAvailable = document.select("div.post-inner > div.entry > p > a[href]:has(i.fa-download)")
-            val downloadLinks = downloadAvailable.joinToString("\n") { element ->
-                val serviceText = element.text()
-                val link = element.attr("href")
-                "[$serviceText]($link)"
-            }
-
-            description = "View: $view\n" +
-                "${info.html()
-                    .replace("<input.*?>".toRegex(), password)
-                    .replace("<.+?>".toRegex(), "")}\n" +
-                downloadLinks
-            genre = document.parseTags()
-            status = SManga.COMPLETED
+        val password = info.select("input").attr("value")
+        val downloadAvailable = document.select("div.post-inner > div.entry > p > a[href]:has(i.fa-download)")
+        val downloadLinks = downloadAvailable.joinToString("\n") { element ->
+            val serviceText = element.text()
+            val link = element.attr("href")
+            "[$serviceText]($link)"
         }
+
+        description = "View: $view\n" +
+            "${info.html()
+                .replace("<input.*?>".toRegex(), password)
+                .replace("<.+?>".toRegex(), "")}\n" +
+            downloadLinks
+        genre = document.parseTags()
+        status = SManga.COMPLETED
     }
 
     override fun chapterListSelector() = throw UnsupportedOperationException()
@@ -216,14 +215,11 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
     }
 
     private val imageListSelector = "div.post-inner > div.entry > p > img"
-    private fun parseImageList(document: Document): List<String> =
-        document.select(imageListSelector)
-            .map { it.imgAttr() }
+    private fun parseImageList(document: Document): List<String> = document.select(imageListSelector)
+        .map { it.imgAttr() }
 
-    override fun pageListParse(document: Document): List<Page> {
-        return document.select(imageListSelector)
-            .mapIndexed { i, img -> Page(i, imageUrl = img.imgAttr()) }
-    }
+    override fun pageListParse(document: Document): List<Page> = document.select(imageListSelector)
+        .mapIndexed { i, img -> Page(i, imageUrl = img.imgAttr()) }
 
     private suspend fun pageListMerge(document: Document): List<Page> {
         val pages = document
@@ -306,30 +302,27 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
             field = value
         }
 
-    private fun loadTagListFromPreferences(): Set<Pair<String, String>> =
-        preferences.getString(TAG_LIST_PREF, "")
-            ?.let {
-                it.split('%').mapNotNull { tag ->
-                    tag.split('|')
-                        .let { splits ->
-                            if (splits.size == 2) Pair(splits[0], splits[1]) else null
-                        }
-                }
+    private fun loadTagListFromPreferences(): Set<Pair<String, String>> = preferences.getString(TAG_LIST_PREF, "")
+        ?.let {
+            it.split('%').mapNotNull { tag ->
+                tag.split('|')
+                    .let { splits ->
+                        if (splits.size == 2) Pair(splits[0], splits[1]) else null
+                    }
             }
-            ?.toSet()
-            // Load default tags
-            .let { if (it.isNullOrEmpty()) TagList else it }
+        }
+        ?.toSet()
+        // Load default tags
+        .let { if (it.isNullOrEmpty()) TagList else it }
 
-    private fun Element.parseTags(selector: String = ".post-tag a, .post-cats a"): String {
-        return select(selector)
-            .onEach {
-                val uri = it.attr("href")
-                    .removeSuffix("/")
-                    .substringAfterLast('/')
-                tagList = tagList.plus(it.text() to uri)
-            }
-            .joinToString { it.text() }
-    }
+    private fun Element.parseTags(selector: String = ".post-tag a, .post-cats a"): String = select(selector)
+        .onEach {
+            val uri = it.attr("href")
+                .removeSuffix("/")
+                .substringAfterLast('/')
+            tagList = tagList.plus(it.text() to uri)
+        }
+        .joinToString { it.text() }
 
     /* Related titles */
     override fun relatedMangaListParse(response: Response): List<SManga> {
@@ -343,15 +336,13 @@ class MissKon : ConfigurableSource, ParsedHttpSource() {
         }
     }
 
-    private fun Element.imgAttr(): String {
-        return when {
-            hasAttr("data-original") -> absUrl("data-original")
-            hasAttr("data-src") -> absUrl("data-src")
-            hasAttr("data-bg") -> absUrl("data-bg")
-            hasAttr("data-srcset") -> absUrl("data-srcset")
-            hasAttr("data-srcset") -> absUrl("data-srcset")
-            else -> absUrl("src")
-        }
+    private fun Element.imgAttr(): String = when {
+        hasAttr("data-original") -> absUrl("data-original")
+        hasAttr("data-src") -> absUrl("data-src")
+        hasAttr("data-bg") -> absUrl("data-bg")
+        hasAttr("data-srcset") -> absUrl("data-srcset")
+        hasAttr("data-srcset") -> absUrl("data-srcset")
+        else -> absUrl("src")
     }
 
     companion object {

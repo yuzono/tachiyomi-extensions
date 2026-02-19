@@ -78,8 +78,7 @@ class EliteBabes : Masonry("Elite Babes", "https://www.elitebabes.com", "all") {
             else -> "https://www.elitebabes.com"
         }
 
-    private class HighlightsFilter(highlights: List<Pair<String, String>>) :
-        SelectFilter("Highlights", highlights)
+    private class HighlightsFilter(highlights: List<Pair<String, String>>) : SelectFilter("Highlights", highlights)
 
     class ChannelFilter(channels: List<Pair<String, String>>) : SelectFilter("Channels", channels)
 
@@ -277,37 +276,32 @@ class EliteBabes : Masonry("Elite Babes", "https://www.elitebabes.com", "all") {
         update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
     }
 
-    private fun collectionMangaFromElement(element: Element) =
-        super.popularMangaFromElement(element).apply {
-            status = SManga.ONGOING
-            update_strategy = UpdateStrategy.ALWAYS_UPDATE
-        }
-
-    private fun pinMangaFromElement(element: Element): SManga {
-        return SManga.create().apply {
-            element.selectFirst("figure > a:has(img)")!!.apply {
-                setUrlWithoutDomain(absUrl("href"))
-            }.selectFirst("img")!!.run {
-                title = attr("alt")
-                thumbnail_url = imgAttr()
-            }
-            genre = element.select(".img-overlay > p > a[href*='/e/']").text().removePrefix("@")
-            author = element.select(".img-overlay > p:contains(Brought By) > a").text()
-            artist = element.select("ul > li > a[href*='/model/'] > img").attr("alt").trim()
-            status = SManga.COMPLETED
-            update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
-        }
+    private fun collectionMangaFromElement(element: Element) = super.popularMangaFromElement(element).apply {
+        status = SManga.ONGOING
+        update_strategy = UpdateStrategy.ALWAYS_UPDATE
     }
 
-    override fun mangaDetailsParse(response: Response): SManga {
-        return when {
-            response.request.url.toString().contains("/collection/nr/") ->
-                collectionMangaDetailsParse(response.asJsoup())
-            response.request.url.toString().contains("/pin/") ->
-                pinMangaDetailsParse(response.asJsoup())
-            else ->
-                super.mangaDetailsParse(response)
+    private fun pinMangaFromElement(element: Element): SManga = SManga.create().apply {
+        element.selectFirst("figure > a:has(img)")!!.apply {
+            setUrlWithoutDomain(absUrl("href"))
+        }.selectFirst("img")!!.run {
+            title = attr("alt")
+            thumbnail_url = imgAttr()
         }
+        genre = element.select(".img-overlay > p > a[href*='/e/']").text().removePrefix("@")
+        author = element.select(".img-overlay > p:contains(Brought By) > a").text()
+        artist = element.select("ul > li > a[href*='/model/'] > img").attr("alt").trim()
+        status = SManga.COMPLETED
+        update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
+    }
+
+    override fun mangaDetailsParse(response: Response): SManga = when {
+        response.request.url.toString().contains("/collection/nr/") ->
+            collectionMangaDetailsParse(response.asJsoup())
+        response.request.url.toString().contains("/pin/") ->
+            pinMangaDetailsParse(response.asJsoup())
+        else ->
+            super.mangaDetailsParse(response)
     }
 
     private fun collectionMangaDetailsParse(document: Document) = SManga.create().apply {
@@ -323,29 +317,25 @@ class EliteBabes : Masonry("Elite Babes", "https://www.elitebabes.com", "all") {
         status = SManga.ONGOING
     }
 
-    private fun pinMangaDetailsParse(document: Document): SManga {
-        return SManga.create().apply {
-            thumbnail_url = document.selectFirst("figure > img")?.imgAttr()
-            title = document.select("figure .img-overlay > h1").text()
-            genre = document.select("figure .img-overlay > p > a[href*='/e/']").text().removePrefix("@")
-            author = document.select("figure .img-overlay > p:contains(Brought By) > a").text()
-            artist = document.select("ul > li > a[href*='/model/'] > img").attr("alt").trim()
-            status = SManga.COMPLETED
-        }
+    private fun pinMangaDetailsParse(document: Document): SManga = SManga.create().apply {
+        thumbnail_url = document.selectFirst("figure > img")?.imgAttr()
+        title = document.select("figure .img-overlay > h1").text()
+        genre = document.select("figure .img-overlay > p > a[href*='/e/']").text().removePrefix("@")
+        author = document.select("figure .img-overlay > p:contains(Brought By) > a").text()
+        artist = document.select("ul > li > a[href*='/model/'] > img").attr("alt").trim()
+        status = SManga.COMPLETED
     }
 
-    override fun chapterListParse(response: Response): List<SChapter> {
-        return when {
-            response.request.url.toString().contains("/pin/") ->
-                listOf(
-                    SChapter.create().apply {
-                        name = "Photo"
-                        setUrlWithoutDomain(response.request.url.toString())
-                    },
-                )
-            else ->
-                super.chapterListParse(response)
-        }
+    override fun chapterListParse(response: Response): List<SChapter> = when {
+        response.request.url.toString().contains("/pin/") ->
+            listOf(
+                SChapter.create().apply {
+                    name = "Photo"
+                    setUrlWithoutDomain(response.request.url.toString())
+                },
+            )
+        else ->
+            super.chapterListParse(response)
     }
 
     override fun pageListParse(document: Document): List<Page> {

@@ -33,18 +33,18 @@ class OffsetPageFilter : Filter.Text("Offset results by # pages")
 
 internal class FavoriteFilter : Filter.CheckBox("Favorites only", false)
 
-internal class SortFilter : UriPartFilter(
-    "Sort By",
-    arrayOf(
-        Pair("Recent", ""),
-        Pair("Popular: All Time", "popular"),
-        Pair("Popular: Week", "popular-7d"),
-        Pair("Popular: Today", "popular-24h"),
-    ),
-)
+internal class SortFilter :
+    UriPartFilter(
+        "Sort By",
+        arrayOf(
+            Pair("Recent", ""),
+            Pair("Popular: All Time", "popular"),
+            Pair("Popular: Week", "popular-7d"),
+            Pair("Popular: Today", "popular-24h"),
+        ),
+    )
 
-internal open class UriPartFilter(displayName: String, val pairs: Array<Pair<String, String>>) :
-    Filter.Select<String>(displayName, pairs.map { it.first }.toTypedArray()) {
+internal open class UriPartFilter(displayName: String, val pairs: Array<Pair<String, String>>) : Filter.Select<String>(displayName, pairs.map { it.first }.toTypedArray()) {
     fun toUriPart() = pairs[state].second
 }
 

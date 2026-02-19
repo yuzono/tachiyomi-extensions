@@ -78,14 +78,12 @@ class Xinmeitulu : ParsedHttpSource() {
         return GET(url.toString(), headers)
     }
 
-    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
-        return if (query.startsWith("SLUG:")) {
-            val slug = query.removePrefix("SLUG:")
-            client.newCall(GET("$baseUrl/photo/$slug", headers)).asObservableSuccess()
-                .map { response -> MangasPage(listOf(mangaDetailsParse(response.asJsoup())), false) }
-        } else {
-            super.fetchSearchManga(page, query, filters)
-        }
+    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> = if (query.startsWith("SLUG:")) {
+        val slug = query.removePrefix("SLUG:")
+        client.newCall(GET("$baseUrl/photo/$slug", headers)).asObservableSuccess()
+            .map { response -> MangasPage(listOf(mangaDetailsParse(response.asJsoup())), false) }
+    } else {
+        super.fetchSearchManga(page, query, filters)
     }
 
     // Details
@@ -126,34 +124,29 @@ class Xinmeitulu : ParsedHttpSource() {
         name = "Gallery" // Recheck how it affect download
     }
 
-    override fun pageListParse(document: Document) =
-        document.select(".container > div > figure img").mapIndexed { index, element ->
-            Page(index, imageUrl = element.attr("abs:data-original"))
-        }
+    override fun pageListParse(document: Document) = document.select(".container > div > figure img").mapIndexed { index, element ->
+        Page(index, imageUrl = element.attr("abs:data-original"))
+    }
 
     override fun imageUrlParse(document: Document): String = throw UnsupportedOperationException()
 
     // Filters
 
-    override fun getFilterList(): FilterList {
-        return FilterList(
-            RegionFilter(getRegionList()),
-        )
-    }
+    override fun getFilterList(): FilterList = FilterList(
+        RegionFilter(getRegionList()),
+    )
 
     private class RegionFilter(vals: Array<Pair<String?, String>>) : UriPartFilter("Region", vals)
 
-    private fun getRegionList(): Array<Pair<String?, String>> {
-        return arrayOf(
-            null to translate("全部"),
-            "zhongguodalumeinyu" to translate("中国大陆美女"),
-            "taiguomeinyu" to translate("泰国美女"),
-            "ribenmeinyu" to translate("日本美女"),
-            "hanguomeinyu" to translate("韩国美女"),
-            "taiwanmeinyu" to translate("台湾美女"),
-            "oumeimeinyu" to translate("欧美美女"),
-        )
-    }
+    private fun getRegionList(): Array<Pair<String?, String>> = arrayOf(
+        null to translate("全部"),
+        "zhongguodalumeinyu" to translate("中国大陆美女"),
+        "taiguomeinyu" to translate("泰国美女"),
+        "ribenmeinyu" to translate("日本美女"),
+        "hanguomeinyu" to translate("韩国美女"),
+        "taiwanmeinyu" to translate("台湾美女"),
+        "oumeimeinyu" to translate("欧美美女"),
+    )
 
     private fun translate(it: String): String {
         if (Locale.getDefault().language == "zh") return it
@@ -179,12 +172,13 @@ class Xinmeitulu : ParsedHttpSource() {
             "罩杯" -> "Cup size"
             "杯" -> "cup"
             "匿名" -> "Unknown"
-            else -> { it }
+            else -> {
+                it
+            }
         }
     }
 
-    private open class UriPartFilter(displayName: String, val vals: Array<Pair<String?, String>>) :
-        Filter.Select<String>(displayName, vals.map { it.second }.toTypedArray()) {
+    private open class UriPartFilter(displayName: String, val vals: Array<Pair<String?, String>>) : Filter.Select<String>(displayName, vals.map { it.second }.toTypedArray()) {
         fun toUriPart() = vals[state].first
     }
 

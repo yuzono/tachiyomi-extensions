@@ -24,30 +24,26 @@ class ManhwaRaw : Madara("ManhwaRaw", "https://manhwaraw.com", "ko") {
 
     override fun popularMangaNextPageSelector() = ".wp-pagenavi a.next"
 
-    override fun mangaDetailsParse(document: Document): SManga {
-        return super.mangaDetailsParse(document)
-            .also {
-                with(document) {
-                    select(mangaDetailsSelectorAuthor)
-                        .map { it.extractURI() }
-                        .filter { it.first.notUpdating() }
-                        .let { authorList += it.toSet() }
-                    select(mangaDetailsSelectorArtist)
-                        .map { it.extractURI() }
-                        .filter { it.first.notUpdating() }
-                        .let { artistList += it.toSet() }
-                }
+    override fun mangaDetailsParse(document: Document): SManga = super.mangaDetailsParse(document)
+        .also {
+            with(document) {
+                select(mangaDetailsSelectorAuthor)
+                    .map { it.extractURI() }
+                    .filter { it.first.notUpdating() }
+                    .let { authorList += it.toSet() }
+                select(mangaDetailsSelectorArtist)
+                    .map { it.extractURI() }
+                    .filter { it.first.notUpdating() }
+                    .let { artistList += it.toSet() }
             }
-    }
+        }
 
-    private fun Element.extractURI(): Pair<String, String> {
-        return Pair(
-            ownText(),
-            attr("href")
-                .removeSuffix("/")
-                .substringAfterLast('/'),
-        )
-    }
+    private fun Element.extractURI(): Pair<String, String> = Pair(
+        ownText(),
+        attr("href")
+            .removeSuffix("/")
+            .substringAfterLast('/'),
+    )
 
     override fun searchMangaFromElement(element: Element): SManga {
         val manga = SManga.create()
@@ -72,9 +68,11 @@ class ManhwaRaw : Madara("ManhwaRaw", "https://manhwaraw.com", "ko") {
         val artistFilter = filters.filterIsInstance<ArtistList>().firstOrNull()
             ?: ArtistList("", emptyList())
         if (query.isNotBlank() ||
-            genreFilter.state == 0 &&
-            authorFilter.state == 0 &&
-            artistFilter.state == 0
+            (
+                genreFilter.state == 0 &&
+                    authorFilter.state == 0 &&
+                    artistFilter.state == 0
+                )
         ) {
             return super.getSearchManga(page, query, filters)
         } else {
@@ -137,14 +135,11 @@ class ManhwaRaw : Madara("ManhwaRaw", "https://manhwaraw.com", "ko") {
         return FilterList(filters)
     }
 
-    private class GenreList(title: String, options: List<Genre>, state: Int = 0) :
-        UriPartFilter(title, options.map { it.name to it.id }.toTypedArray(), state)
+    private class GenreList(title: String, options: List<Genre>, state: Int = 0) : UriPartFilter(title, options.map { it.name to it.id }.toTypedArray(), state)
 
-    private class AuthorList(title: String, options: List<Pair<String, String>>, state: Int = 0) :
-        UriPartFilter(title, options.toTypedArray(), state)
+    private class AuthorList(title: String, options: List<Pair<String, String>>, state: Int = 0) : UriPartFilter(title, options.toTypedArray(), state)
 
-    private class ArtistList(title: String, options: List<Pair<String, String>>, state: Int = 0) :
-        UriPartFilter(title, options.toTypedArray(), state)
+    private class ArtistList(title: String, options: List<Pair<String, String>>, state: Int = 0) : UriPartFilter(title, options.toTypedArray(), state)
 
     private var authorList: Set<Pair<String, String>> = emptySet()
     private var artistList: Set<Pair<String, String>> = emptySet()

@@ -30,25 +30,22 @@ class HentaiZap(
     override val supportsLatest = true
     override val supportSpeechless: Boolean = true
 
-    override fun Element.mangaLang() =
-        select("a:has(.th_lg)").attr("href")
-            .removeSuffix("/").substringAfterLast("/")
-            .let {
-                // Include Speechless in search results
-                if (it == LANGUAGE_SPEECHLESS) mangaLang else it
-            }
+    override fun Element.mangaLang() = select("a:has(.th_lg)").attr("href")
+        .removeSuffix("/").substringAfterLast("/")
+        .let {
+            // Include Speechless in search results
+            if (it == LANGUAGE_SPEECHLESS) mangaLang else it
+        }
 
     /* Popular */
-    override fun popularMangaRequest(page: Int): Request {
-        return if (mangaLang.isBlank()) {
-            val url = baseUrl.toHttpUrl().newBuilder().apply {
-                addPathSegments("popular")
-                addPageUri(page)
-            }
-            GET(url.build(), headers)
-        } else {
-            super.popularMangaRequest(page)
+    override fun popularMangaRequest(page: Int): Request = if (mangaLang.isBlank()) {
+        val url = baseUrl.toHttpUrl().newBuilder().apply {
+            addPathSegments("popular")
+            addPageUri(page)
         }
+        GET(url.build(), headers)
+    } else {
+        super.popularMangaRequest(page)
     }
 
     /* Search */
@@ -113,40 +110,35 @@ class HentaiZap(
     /* Details */
     override val mangaDetailInfoSelector = ".gp_top"
 
-    override fun Element.getCover() =
-        selectFirst(".gp_cover img")?.imgAttr()
+    override fun Element.getCover() = selectFirst(".gp_cover img")?.imgAttr()
 
-    override fun Element.getInfo(tag: String): String {
-        return select(".info_txt:contains($tag:) ~ li a.gp_btn_tag")
-            .joinToString {
-                val name = it.ownText()
-                if (tag.contains(regexTag)) {
-                    genres[name] = it.attr("href")
-                        .removeSuffix("/").substringAfterLast('/')
-                }
-                listOf(
-                    name,
-                    it.select(".split_tag").text()
-                        .removePrefix("| ")
-                        .trim(),
-                )
-                    .filter { s -> s.isNotBlank() }
-                    .joinToString()
+    override fun Element.getInfo(tag: String): String = select(".info_txt:contains($tag:) ~ li a.gp_btn_tag")
+        .joinToString {
+            val name = it.ownText()
+            if (tag.contains(regexTag)) {
+                genres[name] = it.attr("href")
+                    .removeSuffix("/").substringAfterLast('/')
             }
-    }
+            listOf(
+                name,
+                it.select(".split_tag").text()
+                    .removePrefix("| ")
+                    .trim(),
+            )
+                .filter { s -> s.isNotBlank() }
+                .joinToString()
+        }
 
     override val thumbnailSelector = ".gp_th"
 
-    override fun tagsParser(document: Document): List<Genre> {
-        return document.select("a.btn:has(.list_tag)")
-            .mapNotNull {
-                Genre(
-                    it.select(".list_tag").text(),
-                    it.attr("href")
-                        .removeSuffix("/").substringAfterLast('/'),
-                )
-            }
-    }
+    override fun tagsParser(document: Document): List<Genre> = document.select("a.btn:has(.list_tag)")
+        .mapNotNull {
+            Genre(
+                it.select(".list_tag").text(),
+                it.attr("href")
+                    .removeSuffix("/").substringAfterLast('/'),
+            )
+        }
 
     override fun getFilterList(): FilterList {
         requestTags()

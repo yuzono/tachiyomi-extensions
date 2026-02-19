@@ -19,7 +19,6 @@ import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.tryParse
 import kotlinx.serialization.SerializationException
-import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -36,7 +35,9 @@ import org.jsoup.parser.Parser
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-class DeviantArt : HttpSource(), ConfigurableSource {
+class DeviantArt :
+    HttpSource(),
+    ConfigurableSource {
     override val name = "DeviantArt"
     override val baseUrl = "https://www.deviantart.com"
     override val lang = "all"
@@ -176,11 +177,10 @@ class DeviantArt : HttpSource(), ConfigurableSource {
             val gallery = document.selectFirst("#sub-folder-gallery")
 
             // If manga is sub-gallery then use sub-gallery name, else use gallery name
-            val galleryName =
-                gallery?.selectFirst("._2vMZg + ._2vMZg")?.text()?.substringBeforeLast(" ")
-                    ?: gallery?.selectFirst("[aria-haspopup=listbox] > div")!!.ownText()
-            val artistInTitle = preferences.artistInTitle == ArtistInTitle.ALWAYS.name ||
-                preferences.artistInTitle == ArtistInTitle.ONLY_ALL_GALLERIES.name && galleryName == "All"
+            val galleryName = gallery?.selectFirst("._2vMZg + ._2vMZg")?.text()?.substringBeforeLast(" ")
+                ?: gallery?.selectFirst("[aria-haspopup=listbox] > div")!!.ownText()
+            val artistInTitle = (preferences.artistInTitle == ArtistInTitle.ALWAYS.name) ||
+                ((preferences.artistInTitle == ArtistInTitle.ONLY_ALL_GALLERIES.name) && (galleryName == "All"))
 
             return SManga.create().apply {
                 setUrlWithoutDomain(link)
@@ -189,10 +189,10 @@ class DeviantArt : HttpSource(), ConfigurableSource {
                     artistInTitle -> "$author - $galleryName"
                     else -> galleryName
                 }
-                description = gallery?.selectFirst(".legacy-journal")?.wholeText()
+                description = gallery.selectFirst(".legacy-journal")?.wholeText()
                     ?.let { "$it\n\nClick tag to show artist's gallery" }
                     ?: "Click tag to show artist's gallery"
-                thumbnail_url = gallery?.selectFirst("img[property=contentUrl]")?.getImgAttr()
+                thumbnail_url = gallery.selectFirst("img[property=contentUrl]")?.getImgAttr()
                     ?: document.selectFirst("#background-container + div a[data-icon]")?.attr("abs:data-icon")
                 author?.let { genre = "gallery:$author, by:$author" }
                 status = SManga.ONGOING
@@ -266,14 +266,14 @@ class DeviantArt : HttpSource(), ConfigurableSource {
             val galleries = document.select("#background-container + div #content section._1olSA")
             return galleries.mapNotNull { gallery ->
                 val link = gallery.selectFirst("a")
-                    ?.absUrl("href")?.toString() ?: return@mapNotNull null
+                    ?.absUrl("href") ?: return@mapNotNull null
                 val matchResult = Regex("""(.+gallery/[\w-]+)(?:/[\w-]+)?""").matchEntire(link)?.groupValues
                     ?: return@mapNotNull null
                 if (matchResult.size < 2) return@mapNotNull null
                 val galleryLink = matchResult[1]
                 val galleryName = gallery.selectFirst("[title]")?.ownText() ?: return@mapNotNull null
                 val artistInTitle = preferences.artistInTitle == ArtistInTitle.ALWAYS.name ||
-                    preferences.artistInTitle == ArtistInTitle.ONLY_ALL_GALLERIES.name && galleryName == "All"
+                    (preferences.artistInTitle == ArtistInTitle.ONLY_ALL_GALLERIES.name && galleryName == "All")
 
                 SManga.create().apply {
                     setUrlWithoutDomain(galleryLink)
@@ -359,24 +359,22 @@ class DeviantArt : HttpSource(), ConfigurableSource {
         }
     }
 
-    private fun parseToChapterList(document: Document): List<SChapter> {
-        return document.select("item").map {
-            val artName = it.selectFirst("title")!!.text()
-            val link = it.selectFirst("link")!!.text()
-            val id = link.removeSuffix("/")
-                .substringAfterLast('/')
-                .substringAfterLast('-')
+    private fun parseToChapterList(document: Document): List<SChapter> = document.select("item").map {
+        val artName = it.selectFirst("title")!!.text()
+        val link = it.selectFirst("link")!!.text()
+        val id = link.removeSuffix("/")
+            .substringAfterLast('/')
+            .substringAfterLast('-')
 
-            SChapter.create().apply {
-                setUrlWithoutDomain(link)
-                name = if (preferences.includeArtIdInChapterName) {
-                    "$artName [$id]"
-                } else {
-                    artName
-                }
-                date_upload = dateFormat.tryParse(it.selectFirst("pubDate")?.text())
-                // scanlator = it.selectFirst("media|credit")?.text()
+        SChapter.create().apply {
+            setUrlWithoutDomain(link)
+            name = if (preferences.includeArtIdInChapterName) {
+                "$artName [$id]"
+            } else {
+                artName
             }
+            date_upload = dateFormat.tryParse(it.selectFirst("pubDate")?.text())
+            // scanlator = it.selectFirst("media|credit")?.text()
         }
     }
 
@@ -409,29 +407,23 @@ class DeviantArt : HttpSource(), ConfigurableSource {
         }
     }
 
-    override fun imageUrlParse(response: Response): String {
-        throw UnsupportedOperationException()
-    }
+    override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
 
-    private fun Response.asJsoupXml(): Document {
-        return Jsoup.parse(body.string(), request.url.toString(), Parser.xmlParser())
-    }
+    private fun Response.asJsoupXml(): Document = Jsoup.parse(body.string(), request.url.toString(), Parser.xmlParser())
 
-    private fun Element.getImgAttr(): String? {
-        return when {
-            hasAttr("url") -> attr("abs:url")
-            hasAttr("src") -> attr("abs:src")
-            hasAttr("srcset") -> attr("abs:srcset").substringBefore(" ")
-            else -> null
-        }
+    private fun Element.getImgAttr(): String? = when {
+        hasAttr("url") -> attr("abs:url")
+        hasAttr("src") -> attr("abs:src")
+        hasAttr("srcset") -> attr("abs:srcset").substringBefore(" ")
+        else -> null
     }
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         val artistInTitlePref = ListPreference(screen.context).apply {
             key = ArtistInTitle.PREF_KEY
             title = "Artist name in manga title"
-            entries = ArtistInTitle.values().map { it.text }.toTypedArray()
-            entryValues = ArtistInTitle.values().map { it.name }.toTypedArray()
+            entries = ArtistInTitle.entries.map { it.text }.toTypedArray()
+            entryValues = ArtistInTitle.entries.map { it.name }.toTypedArray()
             summary = "Current: %s\n\n" +
                 "Changing this preference will not automatically apply to manga in Library " +
                 "and History, so refresh all DeviantArt manga and/or clear database in Settings " +
@@ -482,15 +474,13 @@ class DeviantArt : HttpSource(), ConfigurableSource {
         }
     }
 
-    override fun getFilterList(): FilterList {
-        return FilterList(
-            SortFilter(),
-            Filter.Header(FILTER_CATEGORY),
-            CategoryFilter("Category"),
-            Filter.Separator(),
-            Filter.Header(SEARCH_FORMAT_MSG),
-        )
-    }
+    override fun getFilterList(): FilterList = FilterList(
+        SortFilter(),
+        Filter.Header(FILTER_CATEGORY),
+        CategoryFilter("Category"),
+        Filter.Separator(),
+        Filter.Header(SEARCH_FORMAT_MSG),
+    )
 
     class SortFilter : SelectFilter("Sort By", sort) {
         companion object {

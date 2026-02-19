@@ -35,28 +35,24 @@ class NHentaiXXX(
         else -> "other"
     }
 
-    override fun Element.mangaUrl() =
-        selectFirst(".gallery_item a")?.attr("abs:href")
+    override fun Element.mangaUrl() = selectFirst(".gallery_item a")?.attr("abs:href")
 
-    override fun Element.mangaThumbnail() =
-        selectFirst(".gallery_item img")?.imgAttr()
+    override fun Element.mangaThumbnail() = selectFirst(".gallery_item img")?.imgAttr()
 
-    override fun popularMangaRequest(page: Int): Request {
-        return if (mangaLang.isBlank()) {
-            // Popular browsing for LANGUAGE_MULTI
-            val popularFilter = SortOrderFilter(getSortOrderURIs())
-                .apply {
-                    state = 0
-                }
-            if (useBasicSearch) {
-                basicSearchRequest(page, "", FilterList(popularFilter))
-            } else {
-                searchMangaRequest(page, "", FilterList(popularFilter))
+    override fun popularMangaRequest(page: Int): Request = if (mangaLang.isBlank()) {
+        // Popular browsing for LANGUAGE_MULTI
+        val popularFilter = SortOrderFilter(getSortOrderURIs())
+            .apply {
+                state = 0
             }
+        if (useBasicSearch) {
+            basicSearchRequest(page, "", FilterList(popularFilter))
         } else {
-            // Popular browsing for other languages: using source's popular page
-            super.popularMangaRequest(page)
+            searchMangaRequest(page, "", FilterList(popularFilter))
         }
+    } else {
+        // Popular browsing for other languages: using source's popular page
+        super.popularMangaRequest(page)
     }
 
     override fun popularMangaSelector() = ".galleries_box .gallery_item"
@@ -67,31 +63,27 @@ class NHentaiXXX(
 
     override val idPrefixUri = "g"
 
-    override fun loginRequired(document: Document, url: String): Boolean {
-        return (
-            url.contains("/$favoritePath/") &&
-                document.select("a[href='/login/']:contains(Sign in)").isNotEmpty()
-            )
-    }
+    override fun loginRequired(document: Document, url: String): Boolean = (
+        url.contains("/$favoritePath/") &&
+            document.select("a[href='/login/']:contains(Sign in)").isNotEmpty()
+        )
 
-    override fun Element.getInfo(tag: String): String {
-        return select(".tags:contains($tag:) a.tag_btn")
-            .joinToString {
-                val name = it.selectFirst(".tag_name")?.ownText() ?: ""
-                if (tag.contains(regexTag)) {
-                    genres[name] = it.attr("href")
-                        .removeSuffix("/").substringAfterLast('/')
-                }
-                listOf(
-                    name,
-                    it.select(".split_tag").text()
-                        .removePrefix("| ")
-                        .trim(),
-                )
-                    .filter { s -> s.isNotBlank() }
-                    .joinToString()
+    override fun Element.getInfo(tag: String): String = select(".tags:contains($tag:) a.tag_btn")
+        .joinToString {
+            val name = it.selectFirst(".tag_name")?.ownText() ?: ""
+            if (tag.contains(regexTag)) {
+                genres[name] = it.attr("href")
+                    .removeSuffix("/").substringAfterLast('/')
             }
-    }
+            listOf(
+                name,
+                it.select(".split_tag").text()
+                    .removePrefix("| ")
+                    .trim(),
+            )
+                .filter { s -> s.isNotBlank() }
+                .joinToString()
+        }
 
     override fun pageRequestForm(document: Document, totalPages: String, loadedPages: Int): FormBody {
         val token = document.select("[name=csrf-token]").attr("content")
@@ -118,8 +110,7 @@ class NHentaiXXX(
             ?: getCover()!!.toHttpUrl().host
     }
 
-    override fun Element.parseJson() =
-        selectFirst("script:containsData(parseJSON)")?.data()
-            ?.substringAfter("$.parseJSON('{\"fl\":")
-            ?.substringBefore(",\"th\":")?.trim()
+    override fun Element.parseJson() = selectFirst("script:containsData(parseJSON)")?.data()
+        ?.substringAfter("$.parseJSON('{\"fl\":")
+        ?.substringBefore(",\"th\":")?.trim()
 }

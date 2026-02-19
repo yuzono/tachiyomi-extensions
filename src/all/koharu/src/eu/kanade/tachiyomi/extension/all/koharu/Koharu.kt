@@ -39,7 +39,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -57,7 +56,8 @@ import java.util.concurrent.TimeUnit
 class Koharu(
     override val lang: String = "all",
     private val searchLang: String = "",
-) : HttpSource(), ConfigurableSource {
+) : HttpSource(),
+    ConfigurableSource {
 
     private val preferences: SharedPreferences by getPreferencesLazy()
 
@@ -92,12 +92,12 @@ class Koharu(
 
     private fun alwaysExcludeTags() = preferences.getString(PREF_EXCLUDE_TAGS, "")
 
-    private var _domainUrl: String? = null
+    private var domainUrlCache: String? = null
     private val domainUrl: String
         get() {
-            return _domainUrl ?: run {
+            return domainUrlCache ?: run {
                 val domain = getDomain()
-                _domainUrl = domain
+                domainUrlCache = domain
                 domain
             }
         }
@@ -197,12 +197,10 @@ class Koharu(
             alt2: DataKey?,
             alt3: DataKey?,
             alt4: DataKey?,
-        ): Pair<Int?, String?> {
-            return Pair(
-                ori?.id ?: alt1?.id ?: alt2?.id ?: alt3?.id ?: alt4?.id,
-                ori?.key ?: alt1?.key ?: alt2?.key ?: alt3?.key ?: alt4?.key,
-            )
-        }
+        ): Pair<Int?, String?> = Pair(
+            ori?.id ?: alt1?.id ?: alt2?.id ?: alt3?.id ?: alt4?.id,
+            ori?.key ?: alt1?.key ?: alt2?.key ?: alt3?.key ?: alt4?.key,
+        )
         val (id, public_key) = when (quality()) {
             "1600" -> getIPK(data.`1600`, data.`1280`, data.`0`, data.`980`, data.`780`)
             "1280" -> getIPK(data.`1280`, data.`1600`, data.`0`, data.`980`, data.`780`)
@@ -274,17 +272,16 @@ class Koharu(
 
     // Search
 
-    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
-        return when {
-            query.startsWith(PREFIX_ID_KEY_SEARCH) -> {
-                val ipk = query.removePrefix(PREFIX_ID_KEY_SEARCH)
-                val response = client.newCall(GET("$apiBooksUrl/detail/$ipk", lazyHeaders)).execute()
-                Observable.just(
-                    MangasPage(listOf(mangaDetailsParse(response)), false),
-                )
-            }
-            else -> super.fetchSearchManga(page, query, filters)
+    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> = when {
+        query.startsWith(PREFIX_ID_KEY_SEARCH) -> {
+            val ipk = query.removePrefix(PREFIX_ID_KEY_SEARCH)
+            val response = client.newCall(GET("$apiBooksUrl/detail/$ipk", lazyHeaders)).execute()
+            Observable.just(
+                MangasPage(listOf(mangaDetailsParse(response)), false),
+            )
         }
+
+        else -> super.fetchSearchManga(page, query, filters)
     }
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
@@ -334,6 +331,7 @@ class Koharu(
                             }
                         }
                     }
+
                     else -> {}
                 }
             }
@@ -399,9 +397,7 @@ class Koharu(
 
     // Details
 
-    override fun mangaDetailsRequest(manga: SManga): Request {
-        return GET("$apiBooksUrl/detail/${manga.url}", lazyHeaders)
-    }
+    override fun mangaDetailsRequest(manga: SManga): Request = GET("$apiBooksUrl/detail/${manga.url}", lazyHeaders)
 
     override fun mangaDetailsParse(response: Response): SManga {
         val mangaDetail = response.parseAs<MangaDetail>()
@@ -415,9 +411,7 @@ class Koharu(
 
     // Chapter
 
-    override fun chapterListRequest(manga: SManga): Request {
-        return GET("$apiBooksUrl/detail/${manga.url}", lazyHeaders)
-    }
+    override fun chapterListRequest(manga: SManga): Request = GET("$apiBooksUrl/detail/${manga.url}", lazyHeaders)
 
     override fun chapterListParse(response: Response): List<SChapter> {
         val manga = response.parseAs<MangaDetail>()
@@ -434,17 +428,13 @@ class Koharu(
 
     // Page List
 
-    override suspend fun getPageList(chapter: SChapter): List<Page> {
-        return clearanceClient.newCall(pageListRequest(chapter))
-            .execute()
-            .let { response ->
-                pageListParse(response)
-            }
-    }
+    override suspend fun getPageList(chapter: SChapter): List<Page> = clearanceClient.newCall(pageListRequest(chapter))
+        .execute()
+        .use { response ->
+            pageListParse(response)
+        }
 
-    override fun pageListRequest(chapter: SChapter): Request {
-        return POST("$apiBooksUrl/detail/${chapter.url}", lazyHeaders)
-    }
+    override fun pageListRequest(chapter: SChapter): Request = POST("$apiBooksUrl/detail/${chapter.url}", lazyHeaders)
 
     override fun pageListParse(response: Response): List<Page> {
         val mangaData = response.parseAs<MangaData>()
@@ -458,9 +448,7 @@ class Koharu(
         }
     }
 
-    override fun imageRequest(page: Page): Request {
-        return GET(page.imageUrl!!, lazyHeaders)
-    }
+    override fun imageRequest(page: Page): Request = GET(page.imageUrl!!, lazyHeaders)
 
     override fun imageUrlParse(response: Response) = throw UnsupportedOperationException()
 
@@ -474,8 +462,7 @@ class Koharu(
         }.await()
     }
 
-    override fun relatedMangaListRequest(manga: SManga) =
-        POST("$apiBooksUrl/detail/${manga.url}", lazyHeaders)
+    override fun relatedMangaListRequest(manga: SManga) = POST("$apiBooksUrl/detail/${manga.url}", lazyHeaders)
 
     override fun relatedMangaListParse(response: Response): List<SManga> {
         val data = response.parseAs<MangaData>()
@@ -524,9 +511,7 @@ class Koharu(
         }.also(screen::addPreference)
     }
 
-    private inline fun <reified T> Response.parseAs(): T {
-        return json.decodeFromString(body.string())
-    }
+    private inline fun <reified T> Response.parseAs(): T = json.decodeFromString(body.string())
 
     companion object {
         const val PREFIX_ID_KEY_SEARCH = "id:"

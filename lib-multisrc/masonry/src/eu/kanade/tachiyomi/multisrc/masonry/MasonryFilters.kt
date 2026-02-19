@@ -13,22 +13,21 @@ abstract class SelectFilter(
 }
 
 class SortFilter : SelectFilter("Sort by", sortFilterOptions) {
-    fun getUriPartIfNeeded(channel: String) =
-        when (channel) {
-            "updates" -> {
-                when (selected) {
-                    "trending" -> "" // Trending
-                    else -> selected
-                }
-            }
-            // tag & channel
-            else -> {
-                when (selected) {
-                    "popular" -> "" // Popular
-                    else -> selected
-                }
+    fun getUriPartIfNeeded(channel: String) = when (channel) {
+        "updates" -> {
+            when (selected) {
+                "trending" -> "" // Trending
+                else -> selected
             }
         }
+        // tag & channel
+        else -> {
+            when (selected) {
+                "popular" -> "" // Popular
+                else -> selected
+            }
+        }
+    }
 }
 
 private val sortFilterOptions = listOf(
@@ -43,18 +42,15 @@ class Tag(val name: String, val uriPart: String)
 
 class TagCheckBox(name: String, val uriPart: String) : Filter.CheckBox(name)
 
-class TagsFilter(tags: List<Tag>) :
-    Filter.Group<TagCheckBox>("Tags", tags.map { TagCheckBox(it.name, it.uriPart) })
+class TagsFilter(tags: List<Tag>) : Filter.Group<TagCheckBox>("Tags", tags.map { TagCheckBox(it.name, it.uriPart) })
 
-class ModelTagsFilter(tags: List<Tag>) :
-    Filter.Group<TagCheckBox>("Model Tags", tags.map { TagCheckBox(it.name, it.uriPart) })
+class ModelTagsFilter(tags: List<Tag>) : Filter.Group<TagCheckBox>("Model Tags", tags.map { TagCheckBox(it.name, it.uriPart) })
 
 class Country(val name: String, val uriPart: String)
 
 class CountryCheckBox(name: String, val uriPart: String) : Filter.CheckBox(name)
 
-class ModelCountriesFilter(countries: List<Country>) :
-    Filter.Group<CountryCheckBox>("Countries", countries.map { CountryCheckBox(it.name, it.uriPart) })
+class ModelCountriesFilter(countries: List<Country>) : Filter.Group<CountryCheckBox>("Countries", countries.map { CountryCheckBox(it.name, it.uriPart) })
 
 class AgesFilter : SelectFilter("Age", ageFilterOptions)
 

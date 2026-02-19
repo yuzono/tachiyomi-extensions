@@ -26,18 +26,16 @@ class HentaiRox(
     override val supportsLatest = true
     override val supportSpeechless: Boolean = true
 
-    override fun Element.mangaLang() =
-        select("a:has(.thumb_flag)").attr("href")
-            .removeSuffix("/").substringAfterLast("/")
-            .let {
-                // Include Speechless in search results
-                if (it == LANGUAGE_SPEECHLESS) mangaLang else it
-            }
-
-    override fun Element.mangaTitle(selector: String): String? =
-        mangaFullTitle(selector.takeIf { it != ".caption" } ?: ".gallery_title").let {
-            if (preferences.shortTitle) it?.shortenTitle() else it
+    override fun Element.mangaLang() = select("a:has(.thumb_flag)").attr("href")
+        .removeSuffix("/").substringAfterLast("/")
+        .let {
+            // Include Speechless in search results
+            if (it == LANGUAGE_SPEECHLESS) mangaLang else it
         }
+
+    override fun Element.mangaTitle(selector: String): String? = mangaFullTitle(selector.takeIf { it != ".caption" } ?: ".gallery_title").let {
+        if (preferences.shortTitle) it?.shortenTitle() else it
+    }
 
     override fun popularMangaRequest(page: Int): Request {
         return if (mangaLang.isBlank()) {
@@ -117,27 +115,24 @@ class HentaiRox(
     }
 
     /* Details */
-    override fun Element.getInfo(tag: String): String {
-        return select("li:has(.tags_text:contains($tag)) a.tag")
-            .joinToString {
-                val name = it.selectFirst(".item_name")?.ownText() ?: ""
-                if (tag.contains(regexTag)) {
-                    genres[name] = it.attr("href")
-                        .removeSuffix("/").substringAfterLast('/')
-                }
-                listOf(
-                    name,
-                    it.select(".split_tag").text()
-                        .removePrefix("| ")
-                        .trim(),
-                )
-                    .filter { s -> s.isNotBlank() }
-                    .joinToString()
+    override fun Element.getInfo(tag: String): String = select("li:has(.tags_text:contains($tag)) a.tag")
+        .joinToString {
+            val name = it.selectFirst(".item_name")?.ownText() ?: ""
+            if (tag.contains(regexTag)) {
+                genres[name] = it.attr("href")
+                    .removeSuffix("/").substringAfterLast('/')
             }
-    }
+            listOf(
+                name,
+                it.select(".split_tag").text()
+                    .removePrefix("| ")
+                    .trim(),
+            )
+                .filter { s -> s.isNotBlank() }
+                .joinToString()
+        }
 
-    override fun Element.getCover() =
-        selectFirst(".left_cover img")?.imgAttr()
+    override fun Element.getCover() = selectFirst(".left_cover img")?.imgAttr()
 
     override val mangaDetailInfoSelector = ".gallery_first"
 
@@ -146,14 +141,12 @@ class HentaiRox(
     override val pageUri = "view"
 
     /* Filters */
-    override fun tagsParser(document: Document): List<Genre> {
-        return document.select(".galleries .gallery_title a")
-            .mapNotNull {
-                Genre(
-                    it.ownText(),
-                    it.attr("href")
-                        .removeSuffix("/").substringAfterLast('/'),
-                )
-            }
-    }
+    override fun tagsParser(document: Document): List<Genre> = document.select(".galleries .gallery_title a")
+        .mapNotNull {
+            Genre(
+                it.ownText(),
+                it.attr("href")
+                    .removeSuffix("/").substringAfterLast('/'),
+            )
+        }
 }

@@ -4,8 +4,7 @@ import eu.kanade.tachiyomi.source.model.Filter
 
 class TopDays(val name: String, val uri: String)
 
-class TopDaysFilter(displayName: String, private val days: Array<TopDays>) :
-    Filter.Select<String>(displayName, days.map { it.name }.toTypedArray()) {
+class TopDaysFilter(displayName: String, private val days: Array<TopDays>) : Filter.Select<String>(displayName, days.map { it.name }.toTypedArray()) {
     fun toUriPart() = days[state].uri
 }
 
@@ -20,8 +19,7 @@ fun topDaysList() = arrayOf(
     TopDays("Top 2 months", "top60"),
 )
 
-class TagsFilter(displayName: String, private val tags: List<Pair<String, String>>) :
-    Filter.Select<String>(displayName, tags.map { it.first }.toTypedArray()) {
+class TagsFilter(displayName: String, private val tags: List<Pair<String, String>>) : Filter.Select<String>(displayName, tags.map { it.first }.toTypedArray()) {
     fun toUriPart() = tags[state].second
 }
 

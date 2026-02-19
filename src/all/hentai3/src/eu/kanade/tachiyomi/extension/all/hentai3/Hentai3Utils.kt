@@ -70,9 +70,7 @@ internal object Hentai3Utils {
         return tags.map { it.cleanTag() }.sorted().joinToString()
     }
 
-    fun getNumPages(document: Document): String {
-        return document.selectFirst("#main-info > div.tag-container:contains(Pages) > span")!!.cleanTag()
-    }
+    fun getNumPages(document: Document): String = document.selectFirst("#main-info > div.tag-container:contains(Pages) > span")!!.cleanTag()
 
     fun getTime(document: Document): Long {
         val timeString = document.selectFirst("#main-info > div.tag-container > time")

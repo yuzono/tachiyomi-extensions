@@ -23,7 +23,9 @@ import okhttp3.Response
 import org.jsoup.nodes.Document
 import java.net.URLDecoder
 
-class Photos18 : HttpSource(), ConfigurableSource {
+class Photos18 :
+    HttpSource(),
+    ConfigurableSource {
     override val name = "Photos18"
     override val lang = "all"
     override val supportsLatest = true
@@ -86,9 +88,7 @@ class Photos18 : HttpSource(), ConfigurableSource {
 
     override fun searchMangaParse(response: Response) = popularMangaParse(response)
 
-    override fun mangaDetailsRequest(manga: SManga): Request {
-        return GET("$baseUrlWithLang${manga.url}", headers)
-    }
+    override fun mangaDetailsRequest(manga: SManga): Request = GET("$baseUrlWithLang${manga.url}", headers)
 
     override fun mangaDetailsParse(response: Response): SManga {
         val document = response.asJsoup()
@@ -152,28 +152,29 @@ class Photos18 : HttpSource(), ConfigurableSource {
         private val queryValues: Array<String>,
         state: Int = 0,
     ) : Filter.Select<String>(name, values, state) {
-        fun addQueryTo(builder: HttpUrl.Builder) =
-            builder.addQueryParameter(queryName, queryValues[state])
+        fun addQueryTo(builder: HttpUrl.Builder) = builder.addQueryParameter(queryName, queryValues[state])
     }
 
-    private class SortFilter : QueryFilter(
-        "Sort by",
-        arrayOf("Latest", "Popular", "Trend", "Recommended", "Best"),
-        "sort",
-        arrayOf("created", "hits", "views", "score", "likes"),
-        state = 0,
-    )
+    private class SortFilter :
+        QueryFilter(
+            "Sort by",
+            arrayOf("Latest", "Popular", "Trend", "Recommended", "Best"),
+            "sort",
+            arrayOf("created", "hits", "views", "score", "likes"),
+            state = 0,
+        )
 
     class Category(val name: String, val value: String)
 
     private var categoryList: List<Category> = emptyList()
 
-    private class CategoryFilter(categories: List<Category>) : QueryFilter(
-        "Category",
-        categories.map { it.name }.toTypedArray(),
-        "category_id",
-        categories.map { it.value }.toTypedArray(),
-    )
+    private class CategoryFilter(categories: List<Category>) :
+        QueryFilter(
+            "Category",
+            categories.map { it.name }.toTypedArray(),
+            "category_id",
+            categories.map { it.value }.toTypedArray(),
+        )
 
     /**
      * Inner variable to control how much tries the categories request was called.
@@ -202,9 +203,7 @@ class Photos18 : HttpSource(), ConfigurableSource {
     /**
      * The request to the search page (or another one) that have the categories list.
      */
-    private fun categoriesRequest(): Request {
-        return GET("$baseUrlWithLang/node/keywords", headers)
-    }
+    private fun categoriesRequest(): Request = GET("$baseUrlWithLang/node/keywords", headers)
 
     /**
      * Get the categories from the search page document.
@@ -227,12 +226,13 @@ class Photos18 : HttpSource(), ConfigurableSource {
 
     private var keywordList: List<Keyword> = emptyList()
 
-    private class KeywordFilter(keywords: List<Keyword>) : QueryFilter(
-        "Keyword",
-        keywords.map { it.name }.toTypedArray(),
-        "q",
-        keywords.map { it.value }.toTypedArray(),
-    )
+    private class KeywordFilter(keywords: List<Keyword>) :
+        QueryFilter(
+            "Keyword",
+            keywords.map { it.name }.toTypedArray(),
+            "q",
+            keywords.map { it.value }.toTypedArray(),
+        )
 
     /**
      * Get the keywords from the search page document.
