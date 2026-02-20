@@ -2,7 +2,7 @@ ext {
     kmkVersionCode = 1
     extName = 'Mangago'
     extClass = '.Mangago'
-    extVersionCode = 26
+    extVersionCode = 27
     isNsfw = true
 }
 
