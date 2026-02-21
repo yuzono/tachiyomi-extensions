@@ -3,8 +3,6 @@ package eu.kanade.tachiyomi.extension.all.buondua
 import android.content.SharedPreferences
 import androidx.preference.PreferenceScreen
 import androidx.preference.SwitchPreferenceCompat
-import eu.kanade.tachiyomi.lib.randomua.UserAgentType
-import eu.kanade.tachiyomi.lib.randomua.setRandomUserAgent
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.await
 import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
@@ -16,6 +14,8 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.ParsedHttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.lib.randomua.UserAgentType
+import keiyoushi.lib.randomua.setRandomUserAgent
 import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.tryParse
 import kotlinx.coroutines.Dispatchers

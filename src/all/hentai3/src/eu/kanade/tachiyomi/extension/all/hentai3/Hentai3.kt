@@ -9,10 +9,6 @@ import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getNumPages
 import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getTagDescription
 import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getTags
 import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getTime
-import eu.kanade.tachiyomi.lib.randomua.addRandomUAPreferenceToScreen
-import eu.kanade.tachiyomi.lib.randomua.getPrefCustomUA
-import eu.kanade.tachiyomi.lib.randomua.getPrefUAType
-import eu.kanade.tachiyomi.lib.randomua.setRandomUserAgent
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -23,6 +19,10 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import eu.kanade.tachiyomi.source.online.ParsedHttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.lib.randomua.addRandomUAPreferenceToScreen
+import keiyoushi.lib.randomua.getPrefCustomUA
+import keiyoushi.lib.randomua.getPrefUAType
+import keiyoushi.lib.randomua.setRandomUserAgent
 import keiyoushi.utils.getPreferencesLazy
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
