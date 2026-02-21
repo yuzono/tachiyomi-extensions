@@ -52,11 +52,11 @@ body:
       label: Acknowledgements
       description: Your issue will be closed if you haven't done these steps.
       options:
-        - label: I have updated the extension to the latest version (as listed on the [extensions listing](https://keiyoushi.github.io/extensions/) page).
+        - label: I have updated the extension to the latest version (as listed on the [extensions listing](https://yuzono.github.io/extensions/) page).
           required: true
         - label: I have opened WebView to check that the source website is down.
           required: true
-        - label: I have searched [existing issues](https://github.com/keiyoushi/extensions-source/issues) both open & closed, and confirm that this is a new unreported issue.
+        - label: I have searched [existing issues](https://github.com/yuzono/tachiyomi-extensions/issues) both open & closed, and confirm that this is a new unreported issue.
           required: true
         - label: I have written a meaningful title with the source name.
           required: true
