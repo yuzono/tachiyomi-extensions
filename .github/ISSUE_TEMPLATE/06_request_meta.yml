@@ -27,7 +27,7 @@ body:
       label: Acknowledgements
       description: Your issue will be closed if you haven't done these steps.
       options:
-        - label: I have searched [existing issues](https://github.com/yuzono/tachiyomi-extensions/issues) both open & closed, and confirm that this is a new unreported issue.
+        - label: I have searched the existing issues and this is a new ticket, **NOT** a duplicate or related to another open or closed issue.
           required: true
         - label: I have written a short but informative title.
           required: true
@@ -35,9 +35,9 @@ body:
           required: true
         - label: I have updated the app to **[latest version](https://github.com/komikku-app/komikku/releases/latest)**.
           required: true
-        - label: I have updated the extension to the latest version (as listed on the [extensions listing](https://yuzono.github.io/extensions/) page).
+        - label: I have updated all installed extensions.
           required: true
-        - label: I will correctly fill out all of the requested information in this form.
+        - label: I will fill out all of the requested information in this form.
           required: true
 
   - type: textarea
