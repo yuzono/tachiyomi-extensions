@@ -771,6 +771,7 @@ class Kagane :
             ContentRatingFilter(
                 preferences.contentRating.toSet(),
             ),
+            FormatFilter(),
             Filter.Separator(),
         )
 
