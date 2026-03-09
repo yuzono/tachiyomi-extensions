@@ -65,11 +65,7 @@ class WestManga : HttpSource() {
     )
 
     override fun searchMangaParse(response: Response): MangasPage {
-        val responseBody = response.body.string()
-        if (responseBody.isBlank() || !responseBody.trimStart().startsWith('{')) {
-            throw IOException("Invalid JSON response from server. The website may have changed.")
-        }
-        val data = responseBody.parseAs<PaginatedData<BrowseManga>>()
+        val data = response.parseAsValidated<PaginatedData<BrowseManga>>()
 
         val entries = data.data.map {
             SManga.create().apply {
