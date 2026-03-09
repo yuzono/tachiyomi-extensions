@@ -13,6 +13,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.Jsoup
+import java.io.IOException
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -64,7 +65,11 @@ class WestManga : HttpSource() {
     )
 
     override fun searchMangaParse(response: Response): MangasPage {
-        val data = response.parseAs<PaginatedData<BrowseManga>>()
+        val responseBody = response.body.string()
+        if (responseBody.isBlank() || !responseBody.trimStart().startsWith('{')) {
+            throw IOException("Invalid JSON response from server. The website may have changed.")
+        }
+        val data = responseBody.parseAs<PaginatedData<BrowseManga>>()
 
         val entries = data.data.map {
             SManga.create().apply {
@@ -109,7 +114,11 @@ class WestManga : HttpSource() {
     }
 
     override fun mangaDetailsParse(response: Response): SManga {
-        val data = response.parseAs<Data<Manga>>().data
+        val responseBody = response.body.string()
+        if (responseBody.isBlank() || !responseBody.trimStart().startsWith('{')) {
+            throw IOException("Invalid JSON response from server. The website may have changed.")
+        }
+        val data = responseBody.parseAs<Data<Manga>>().data
 
         return SManga.create().apply {
             // old urls compatibility
@@ -158,7 +167,11 @@ class WestManga : HttpSource() {
     override fun chapterListRequest(manga: SManga) = mangaDetailsRequest(manga)
 
     override fun chapterListParse(response: Response): List<SChapter> {
-        val data = response.parseAs<Data<Manga>>().data
+        val responseBody = response.body.string()
+        if (responseBody.isBlank() || !responseBody.trimStart().startsWith('{')) {
+            throw IOException("Invalid JSON response from server. The website may have changed.")
+        }
+        val data = responseBody.parseAs<Data<Manga>>().data
 
         return data.chapters.map {
             SChapter.create().apply {
@@ -198,7 +211,11 @@ class WestManga : HttpSource() {
     }
 
     override fun pageListParse(response: Response): List<Page> {
-        val data = response.parseAs<Data<ImageList>>().data
+        val responseBody = response.body.string()
+        if (responseBody.isBlank() || !responseBody.trimStart().startsWith('{')) {
+            throw IOException("Invalid JSON response from server. The website may have changed.")
+        }
+        val data = responseBody.parseAs<Data<ImageList>>().data
 
         return data.images.mapIndexed { idx, img ->
             Page(idx, imageUrl = img)
