@@ -1,7 +1,7 @@
 package eu.kanade.tachiyomi.extension.all.hentai3
 
-import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
+import androidx.preference.SwitchPreferenceCompat
 import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getArtists
 import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getCodes
 import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getGroups
@@ -10,6 +10,7 @@ import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getTagDescription
 import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getTags
 import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getTime
 import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.network.await
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -21,6 +22,7 @@ import eu.kanade.tachiyomi.source.online.ParsedHttpSource
 import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.lib.randomua.addRandomUAPreference
 import keiyoushi.lib.randomua.setRandomUserAgent
+import keiyoushi.utils.firstInstanceOrNull
 import keiyoushi.utils.getPreferencesLazy
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -52,28 +54,17 @@ open class Hentai3(
 
     private val preferences by getPreferencesLazy()
 
-    private var displayFullTitle: Boolean = when (preferences.getString(TITLE_PREF, "full")) {
-        "full" -> true
-        else -> false
-    }
+    private var displayFullTitle: Boolean = preferences.getBoolean("full_title", false)
 
     private val shortenTitleRegex = Regex("""(\[[^]]*]|[({][^)}]*[)}])""")
     private fun String.shortenTitle() = this.replace(shortenTitleRegex, "").trim()
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
-        ListPreference(screen.context).apply {
-            key = TITLE_PREF
-            title = TITLE_PREF
-            entries = arrayOf("Full Title", "Short Title")
-            entryValues = arrayOf("full", "short")
-            summary = "%s"
-            setDefaultValue("full")
-
+        SwitchPreferenceCompat(screen.context).apply {
+            key = "full_title"
+            title = "Display full title"
             setOnPreferenceChangeListener { _, newValue ->
-                displayFullTitle = when (newValue) {
-                    "full" -> true
-                    else -> false
-                }
+                displayFullTitle = newValue as Boolean
                 true
             }
         }.also(screen::addPreference)
@@ -97,7 +88,7 @@ open class Hentai3(
         title = element.selectFirst("a > .title")!!.text().replace("\"", "").let {
             if (displayFullTitle) it.trim() else it.shortenTitle()
         }
-        thumbnail_url = element.selectFirst(".cover img")!!.let { img ->
+        thumbnail_url = element.selectFirst(".cover img")!!.let { img: Element ->
             if (img.hasAttr("data-src")) img.attr("abs:data-src") else img.attr("abs:src")
         }
     }
@@ -110,7 +101,7 @@ open class Hentai3(
 
     /* Latest */
 
-    override fun latestUpdatesRequest(page: Int) = GET(if (searchLang.isBlank()) "$baseUrl/search?q=pages%3A>0&pages=$page" else "$baseUrl/language/$searchLang/$page", headers)
+    override fun latestUpdatesRequest(page: Int) = GET(if (searchLang.isBlank()) "$baseUrl/search?q=pages%3A>0&page=$page" else "$baseUrl/language/$searchLang/$page", headers)
 
     override fun latestUpdatesSelector() = popularMangaSelector()
 
@@ -126,13 +117,13 @@ open class Hentai3(
                 query.startsWith(PREFIX_ID_SEARCH) -> {
                     val id = query.removePrefix(PREFIX_ID_SEARCH)
                     client.newCall(searchMangaByIdRequest(id))
-                        .execute()
-                        .let { response -> searchMangaByIdParse(response, id) }
+                        .await()
+                        .use { response -> searchMangaByIdParse(response, id) }
                 }
                 query.toIntOrNull() != null -> {
                     client.newCall(searchMangaByIdRequest(query))
-                        .execute()
-                        .let { response -> searchMangaByIdParse(response, query) }
+                        .await()
+                        .use { response -> searchMangaByIdParse(response, query) }
                 }
                 else -> super.getSearchManga(page, query, filters)
             }
@@ -152,15 +143,16 @@ open class Hentai3(
         val queries = (
             listOfNotNull(
                 query.replace("♀", "female").replace("♂", "male"),
-                if (searchLang.isNotEmpty()) "lang:$searchLang" else null,
-            ) + combineQuery(filterList).filterNotNull()
+                if (searchLang.isNotEmpty()) "language:$searchLang" else null,
+            ) +
+                combineQuery(filterList)
             )
             .joinToString(" ") { it.trim() }
             .trim()
 
-        val favoriteFilter = filterList.findInstance<FavoriteFilter>()
+        val favoriteFilter = filterList.firstInstanceOrNull<FavoriteFilter>()
         val offsetPage =
-            filterList.findInstance<OffsetPageFilter>()?.state?.toIntOrNull()?.plus(page) ?: page
+            filterList.firstInstanceOrNull<OffsetPageFilter>()?.state?.toIntOrNull()?.plus(page) ?: page
 
         val searchURL = if (favoriteFilter?.state == true) {
             "$baseUrl/user/panel/favorites"
@@ -171,7 +163,7 @@ open class Hentai3(
         val url = searchURL.toHttpUrl().newBuilder().apply {
             addQueryParameter("q", queries.ifEmpty { "pages:>0" })
             addQueryParameter("page", offsetPage.toString())
-            filterList.findInstance<SortFilter>()?.let { f ->
+            filterList.firstInstanceOrNull<SortFilter>()?.let { f ->
                 addQueryParameter("sort", f.toUriPart())
             }
         }
@@ -179,31 +171,35 @@ open class Hentai3(
         return GET(url.build(), headers)
     }
 
-    private fun combineQuery(filters: FilterList): List<String?> {
+    private fun combineQuery(filters: FilterList): List<String> {
         val advSearch = filters.filterIsInstance<AdvSearchEntryFilter>().flatMap { filter ->
-            val splits = filter.state.split(",").map(String::trim).filterNot(String::isBlank)
-            splits.map {
+            val splits = filter.state.split(",")
+                .map(String::trim)
+                .filter(String::isNotBlank)
+            splits.map { rawTag ->
+                val tag = rawTag.lowercase()
                 AdvSearchEntry(
                     type = filter.type,
-                    text = it.removePrefix("-"),
-                    exclude = it.startsWith("-"),
+                    text = tag.removePrefix("-"),
+                    exclude = tag.startsWith("-"),
                     specific = filter.specific,
                 )
             }
         }
 
-        return advSearch.mapNotNull { tag ->
-            if (tag.text.isNotBlank()) {
+        return advSearch
+            .filter { tag -> tag.text.isNotBlank() }
+            .map { tag ->
                 buildString {
                     if (tag.exclude) append("-")
                     append(tag.type, ":'")
                     append(tag.text)
-                    append(if (tag.specific.isNotBlank()) " (${tag.specific})'" else "'")
+                    if (tag.specific.isNotBlank()) {
+                        append(" (${tag.specific})")
+                    }
+                    append("'")
                 }
-            } else {
-                null
             }
-        }
     }
 
     data class AdvSearchEntry(val type: String, val text: String, val exclude: Boolean, val specific: String)
@@ -228,12 +224,18 @@ open class Hentai3(
     override fun getMangaUrl(manga: SManga) = "$baseUrl${manga.url}"
 
     override fun mangaDetailsParse(document: Document): SManga {
-        val fullTitle = document.select("#main-info > h1").text().replace("\"", "").trim()
+        val fullTitle = document.select("#main-info > h1").text()
+            .replace("\"", "").trim()
         val artists = getArtists(document)
         val authors = getGroups(document)
 
         return SManga.create().apply {
-            title = if (displayFullTitle) fullTitle else fullTitle.shortenTitle()
+            title = if (displayFullTitle) {
+                fullTitle
+            } else {
+                document.select("#main-info > h1 > span").text()
+                    .replace("\"", "").trim()
+            }
             thumbnail_url = document.select("#main-cover img").attr("data-src")
             status = SManga.COMPLETED
             artist = artists?.ifEmpty { authors }
@@ -279,6 +281,5 @@ open class Hentai3(
 
     companion object {
         const val PREFIX_ID_SEARCH = "id:"
-        private const val TITLE_PREF = "Display manga title as:"
     }
 }
