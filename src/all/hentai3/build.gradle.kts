@@ -4,7 +4,7 @@ plugins {
 
 keiyoushi {
     name = "3Hentai"
-    versionCode = 2
+    versionCode = 3
     contentWarning = ContentWarning.NSFW
     libVersion = "1.4"
     kmkVersionCode = 3

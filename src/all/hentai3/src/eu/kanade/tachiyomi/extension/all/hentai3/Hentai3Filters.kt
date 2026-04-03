@@ -47,5 +47,3 @@ internal class SortFilter :
 internal open class UriPartFilter(displayName: String, val pairs: Array<Pair<String, String>>) : Filter.Select<String>(displayName, pairs.map { it.first }.toTypedArray()) {
     fun toUriPart() = pairs[state].second
 }
-
-internal inline fun <reified T> Iterable<*>.findInstance() = find { it is T } as? T
