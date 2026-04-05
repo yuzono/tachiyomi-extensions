@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.extension.all.hentai3
 
+import android.webkit.CookieManager
 import androidx.preference.PreferenceScreen
 import androidx.preference.SwitchPreferenceCompat
 import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getArtists
@@ -21,16 +22,18 @@ import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import eu.kanade.tachiyomi.source.online.ParsedHttpSource
 import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.lib.randomua.addRandomUAPreference
-import keiyoushi.lib.randomua.setRandomUserAgent
 import keiyoushi.utils.firstInstanceOrNull
 import keiyoushi.utils.getPreferencesLazy
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.Interceptor
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import java.io.IOException
 
 open class Hentai3(
     override val lang: String = "all",
@@ -45,12 +48,44 @@ open class Hentai3(
 
     override val supportsLatest = true
 
+    private val webViewCookieManager: CookieManager by lazy { CookieManager.getInstance() }
+
+    val cookies
+        get() = webViewCookieManager.getCookie(baseUrl)
+            ?.split("; ")
+            ?.filter {
+                val name = it.substringBefore("=")
+                name.length >= 40 ||
+                    name in listOf(
+                        "XSRF-TOKEN",
+                        "hornysess2",
+                        "show_modal_warn_adult",
+                    )
+            }
+            ?: emptyList()
+
+    override val client: OkHttpClient by lazy {
+        network.cloudflareClient.newBuilder()
+            .addNetworkInterceptor(::authorizationInterceptor)
+            .build()
+    }
+
     override fun headersBuilder() = super.headersBuilder()
-        .set("referer", "$baseUrl/")
-        .set("origin", baseUrl)
-        .setRandomUserAgent(
-            filterInclude = listOf("chrome"),
-        )
+        .set("Referer", "$baseUrl/")
+        .set("Origin", baseUrl)
+
+    fun authorizationInterceptor(chain: Interceptor.Chain): Response {
+        val request = chain.request().newBuilder()
+            .removeHeader("Cookie")
+            .addHeader("Cookie", cookies.joinToString("; "))
+            .build()
+        val response = chain.proceed(request)
+        if (response.code == 302) {
+            response.close()
+            throw IOException("Log in via WebView to view favorites")
+        }
+        return response
+    }
 
     private val preferences by getPreferencesLazy()
 
