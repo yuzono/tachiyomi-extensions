@@ -289,8 +289,9 @@ class YuriNeko : HttpSource() {
     override val disableRelatedMangasBySearch = true
 
     override fun relatedMangaListRequest(manga: SManga): Request {
-        val mangaId = UUID_REGEX.find(manga.url)!!
-            .groupValues[0]
+        val mangaId = "$baseUrl${manga.url}"
+            .toHttpUrl()
+            .mangaId()
         return GET("$apiUrl/mangas/$mangaId/related", headers)
     }
 
