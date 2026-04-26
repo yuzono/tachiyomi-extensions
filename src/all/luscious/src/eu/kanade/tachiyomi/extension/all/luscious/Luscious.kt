@@ -26,6 +26,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.asResponseBody
 import rx.Observable
+import kotlin.math.ceil
 
 abstract class Luscious(
     final override val lang: String,
@@ -84,6 +85,7 @@ abstract class Luscious(
             Input(
                 display = sortByFilter.selected,
                 page = page,
+                itemsPerPage = 50,
                 filters = mutableListOf<Filter>().apply {
                     if (contentTypeFilter.selected != FILTER_VALUE_IGNORE) {
                         add(contentTypeFilter.toJsonObject("content_id"))
@@ -217,25 +219,6 @@ abstract class Luscious(
         return GET(url, headers)
     }
 
-    private fun parseAlbumListRelatedResponse(response: Response): List<SManga> {
-        val data = response.parseAs<AlbumRelatedResponse>()
-        with(data.data.album.listRelated) {
-            return listOfNotNull(
-                moreLikeThis,
-                itemsLikedLikeThis,
-                itemsCreatedByThisUser,
-            ).flatMap { relatedItems ->
-                relatedItems.map {
-                    SManga.create().apply {
-                        url = it.url
-                        title = it.title
-                        thumbnail_url = it.cover.url
-                    }
-                }
-            }
-        }
-    }
-
     // Latest
 
     override fun latestUpdatesRequest(page: Int): Request = buildAlbumListRequest(page, getSortFilters(LATEST_DEFAULT_SORT_STATE, lusLang))
@@ -247,9 +230,60 @@ abstract class Luscious(
     override fun fetchChapterList(manga: SManga): Observable<List<SChapter>> {
         val id = manga.url.substringAfterLast("_").removeSuffix("/")
 
-        return client.newCall(GET(buildAlbumPicturesPageUrl(id, 1)))
+        return client.newCall(buildAlbumInfoRequest(id))
             .asObservableSuccess()
-            .map { parseAlbumPicturesResponse(it, manga.url) }
+            .map { response ->
+                val album = response.parseAs<AlbumGetResponse>().data.album.get
+                val totalPictures = album.numberOfPictures
+
+                if (getMergeChapterPref()) {
+                    val chapters = mutableListOf<SChapter>()
+                    val chunkCount = ceil(totalPictures / 1000.0).toInt().coerceAtLeast(1)
+
+                    for (i in 1..chunkCount) {
+                        val chapter = SChapter.create()
+                        chapter.url = "${manga.url}?chunk=$i"
+                        chapter.name = if (chunkCount == 1) "Merged Chapter" else "Merged Chapter (Part $i)"
+                        chapter.chapter_number = i.toFloat()
+                        chapter.date_upload = (album.created?.toLong() ?: 0L) * 1000L
+                        chapters.add(chapter)
+                    }
+                    chapters.reversed()
+                } else {
+                    val chapters = mutableListOf<SChapter>()
+                    var page = 1
+                    var hasMore = true
+
+                    while (hasMore) {
+                        val newPage = client.newCall(GET(buildAlbumPicturesPageUrl(id, page))).execute()
+                        val data = newPage.parseAs<AlbumListOwnPicturesResponse>()
+                        val pictureItems = parsePictures(data)
+
+                        if (pictureItems.isEmpty()) {
+                            hasMore = false
+                        } else {
+                            pictureItems.forEach {
+                                val chapter = SChapter.create().apply {
+                                    chapter_number = it.index.toFloat()
+                                    name = "${it.index} - ${it.title}"
+                                    date_upload = (it.created ?: 0L) * 1000L
+                                }
+                                chapter.setUrlWithoutDomain(it.url)
+                                chapters.add(chapter)
+                            }
+
+                            // API natively caps `total_items` tracking to 1000 so we override that by
+                            // directly tracking standard math iteration against the true `numberOfPictures`
+                            if (page * 50 >= totalPictures || data.data.picture.list.items.isEmpty()) {
+                                hasMore = false
+                            } else {
+                                page++
+                            }
+                        }
+                    }
+                    chapters.reversed()
+                }
+            }
     }
 
     private fun getPictureUrl(picture: Picture) = when {
@@ -285,65 +319,6 @@ abstract class Luscious(
         return items
     }
 
-    private fun parseAlbumPicturesResponse(response: Response, mangaUrl: String): List<SChapter> {
-        val chapters = mutableListOf<SChapter>()
-
-        val id = response.request.url.queryParameter("variables").toString().parseAs<Variables>().input.filters
-            .first { it.name == "album_id" }.value
-
-        val data = response.parseAs<AlbumListOwnPicturesResponse>()
-
-        when (getMergeChapterPref()) {
-            true -> {
-                var imageCnt = 0
-                parseAlbumPages(id, data) {
-                    imageCnt += it.size
-                }
-
-                val chapter = SChapter.create()
-                // Add images count to URL just so chapter's URL changes and hence giving a new chapter
-                chapter.url = "$mangaUrl#$imageCnt"
-                chapter.name = "Merged Chapter ($imageCnt images)"
-                chapter.date_upload = data.data.picture.list.items[0].created.toLong()
-                chapter.chapter_number = 1F
-                chapters.add(chapter)
-            }
-
-            false -> {
-                parseAlbumPages(id, data) { pictureItems ->
-                    pictureItems.forEach {
-                        val chapter = SChapter.create().apply {
-                            chapter_number = it.index.toFloat()
-                            name = "${it.index} - ${it.title}"
-                            date_upload = (it.created ?: 0) * 1000
-                        }
-                        chapter.setUrlWithoutDomain(it.url)
-                        chapters.add(chapter)
-                    }
-                }
-            }
-        }
-
-        return chapters.reversed()
-    }
-
-    private fun parseAlbumPages(id: String, dataDto: AlbumListOwnPicturesResponse, action: (List<PictureItem>) -> Unit) {
-        var data = dataDto
-        var nextPage = true
-        var page = 2
-
-        while (nextPage) {
-            nextPage = data.data.picture.list.info.hasNextPage
-            val pictureItems = parsePictures(data)
-            action(pictureItems)
-            if (nextPage) {
-                val newPage = client.newCall(GET(buildAlbumPicturesPageUrl(id, page))).execute()
-                data = newPage.parseAs<AlbumListOwnPicturesResponse>()
-            }
-            page++
-        }
-    }
-
     override fun chapterListParse(response: Response): List<SChapter> = throw UnsupportedOperationException()
 
     // Pages
@@ -355,6 +330,7 @@ abstract class Luscious(
             ),
             display = getSortPref(),
             page = page,
+            itemsPerPage = 50,
         ),
     )
 
@@ -367,42 +343,32 @@ abstract class Luscious(
             .build()
     }
 
-    private fun parseAlbumPicturesResponseMergeChapter(response: Response): List<Page> {
-        val pages = mutableListOf<Page>()
-        var nextPage = true
-        var page = 2
-        val id = response.request.url.queryParameter("variables").toString().parseAs<Variables>().input.filters
-            .first { it.name == "album_id" }.value
+    override fun fetchPageList(chapter: SChapter): Observable<List<Page>> = if (chapter.url.startsWith("/albums/")) {
+        val chunk = chapter.url.substringAfter("?chunk=", "1").substringBefore("#").toIntOrNull() ?: 1
+        val id = chapter.url.substringBefore("?").substringAfterLast("_").removeSuffix("/")
 
-        var data = response.parseAs<AlbumListOwnPicturesResponse>()
+        Observable.fromCallable {
+            val pages = mutableListOf<Page>()
+            val startPage = (chunk - 1) * 20 + 1
+            val endPage = chunk * 20
 
-        while (nextPage) {
-            nextPage = data.data.picture.list.info.hasNextPage
-            val pictureItems = parsePictures(data)
-            pages.addAll(pictureItems.map { Page(it.index, "", it.url.toHttpUrl().newBuilder().host(cdnHost).build().toString()) })
-            if (nextPage) {
-                val newPage = client.newCall(GET(buildAlbumPicturesPageUrl(id, page))).execute()
-                data = newPage.parseAs<AlbumListOwnPicturesResponse>()
+            for (page in startPage..endPage) {
+                val response = client.newCall(GET(buildAlbumPicturesPageUrl(id, page))).execute()
+                val data = response.parseAs<AlbumListOwnPicturesResponse>()
+                val pictureItems = parsePictures(data)
+
+                if (pictureItems.isEmpty()) break
+
+                pictureItems.forEach {
+                    pages.add(Page(pages.size, imageUrl = it.url.toHttpUrl().newBuilder().host(cdnHost).build().toString()))
+                }
+
+                if (pictureItems.size < 50) break
             }
-            page++
+            pages
         }
-        return pages
-    }
-
-    override fun fetchPageList(chapter: SChapter): Observable<List<Page>> = when (getMergeChapterPref()) {
-        true -> {
-            val id = chapter.url
-                .substringBeforeLast("#") // Remove the images count from the URL
-                .substringAfterLast("_").removeSuffix("/")
-
-            client.newCall(GET(buildAlbumPicturesPageUrl(id, 1)))
-                .asObservableSuccess()
-                .map { parseAlbumPicturesResponseMergeChapter(it) }
-        }
-
-        false -> {
-            Observable.just(listOf(Page(0, "", "https://$cdnHost${chapter.url}")))
-        }
+    } else {
+        Observable.just(listOf(Page(0, imageUrl = "https://$cdnHost${chapter.url}")))
     }
 
     override fun pageListParse(response: Response): List<Page> = throw UnsupportedOperationException()
@@ -411,14 +377,10 @@ abstract class Luscious(
 
     override fun fetchImageUrl(page: Page): Observable<String> = throw UnsupportedOperationException()
 
-    override fun getChapterUrl(chapter: SChapter): String = when (getMergeChapterPref()) {
-        true -> {
-            "$baseUrl${chapter.url}"
-        }
-
-        else -> {
-            "https://$cdnHost${chapter.url}"
-        }
+    override fun getChapterUrl(chapter: SChapter): String = if (chapter.url.startsWith("/albums/")) {
+        "$baseUrl${chapter.url.substringBefore("?")}"
+    } else {
+        "https://$cdnHost${chapter.url}"
     }
 
     // Details
@@ -465,7 +427,24 @@ abstract class Luscious(
         return buildAlbumListRelatedRequest(id)
     }
 
-    override fun relatedMangaListParse(response: Response): List<SManga> = parseAlbumListRelatedResponse(response)
+    override fun relatedMangaListParse(response: Response): List<SManga> {
+        val data = response.parseAs<AlbumRelatedResponse>()
+        with(data.data.album.listRelated) {
+            return listOfNotNull(
+                moreLikeThis,
+                itemsLikedLikeThis,
+                itemsCreatedByThisUser,
+            ).flatMap { relatedItems ->
+                relatedItems.map {
+                    SManga.create().apply {
+                        url = it.url
+                        title = it.title
+                        thumbnail_url = it.cover.url
+                    }
+                }
+            }
+        }
+    }
 
     // Popular
 
