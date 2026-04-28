@@ -197,7 +197,7 @@ def get_all_modules() -> tuple[list[str], list[str]]:
             deleted.append(f"{lang.name}.{extension.name}")
     return modules, deleted
 
-def main() -> NoReturn:
+def main() -> None:
     _, ref, build_type = sys.argv
     modules, deleted = get_module_list(ref)
 
