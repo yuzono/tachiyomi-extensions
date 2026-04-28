@@ -172,5 +172,5 @@ class HentaiZap(
         Pair("Top Rated", "tr"),
     )
 
-    override fun relatedMangaListSelector() = ".rl_th ${popularMangaSelector()}"
+    override fun relatedMangaSelector() = ".rl_th ${popularMangaSelector()}"
 }

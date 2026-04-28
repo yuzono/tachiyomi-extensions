@@ -97,6 +97,4 @@ class AsmHentai(
             Filter.Header("String query search doesn't support Sort"),
         ) + super.getFilterList().list,
     )
-
-    override fun relatedMangaListSelector() = ".related + .ov_item ${popularMangaSelector()}"
 }

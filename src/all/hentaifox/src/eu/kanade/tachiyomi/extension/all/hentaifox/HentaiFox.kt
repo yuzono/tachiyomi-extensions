@@ -206,6 +206,4 @@ class HentaiFox(
             "Most Downloaded" to "top_downloaded",
         ).withDefault { "top_rated" }
     }
-
-    override fun relatedMangaListSelector() = ".rel_div ${popularMangaSelector()}"
 }
