@@ -25,6 +25,8 @@ import eu.kanade.tachiyomi.extension.all.koharu.KoharuFilters.tagsFetchAttempts
 import eu.kanade.tachiyomi.extension.all.koharu.KoharuFilters.tagsFetched
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
+import eu.kanade.tachiyomi.network.asObservableSuccess
+import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.network.interceptor.rateLimit
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -36,8 +38,6 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import keiyoushi.utils.getPreferencesLazy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -428,9 +428,9 @@ class Koharu(
 
     // Page List
 
-    override suspend fun getPageList(chapter: SChapter): List<Page> = clearanceClient.newCall(pageListRequest(chapter))
-        .execute()
-        .use { response ->
+    override fun fetchPageList(chapter: SChapter): Observable<List<Page>> = clearanceClient.newCall(pageListRequest(chapter))
+        .asObservableSuccess()
+        .map { response ->
             pageListParse(response)
         }
 
@@ -452,22 +452,14 @@ class Koharu(
 
     override fun imageUrlParse(response: Response) = throw UnsupportedOperationException()
 
-    override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> = coroutineScope {
-        async {
-            clearanceClient.newCall(relatedMangaListRequest(manga))
-                .execute()
-                .let { response ->
-                    relatedMangaListParse(response)
-                }
-        }.await()
-    }
-
     override fun relatedMangaListRequest(manga: SManga) = POST("$apiBooksUrl/detail/${manga.url}", lazyHeaders)
 
-    override fun relatedMangaListParse(response: Response): List<SManga> {
-        val data = response.parseAs<MangaData>()
-        return data.similar.map(::getManga)
-    }
+    override suspend fun fetchRelatedMangaList(manga: SManga) = clearanceClient.newCall(relatedMangaListRequest(manga))
+        .awaitSuccess()
+        .use { response ->
+            val data = response.parseAs<MangaData>()
+            data.similar.map(::getManga)
+        }
 
     // Settings
 
