@@ -26,6 +26,8 @@ class HentaiRox(
     override val supportsLatest = true
     override val supportSpeechless: Boolean = true
 
+    override val basicSearchKey = "key"
+
     override fun Element.mangaLang() = select("a:has(.thumb_flag)").attr("href")
         .removeSuffix("/").substringAfterLast("/")
         .let {
@@ -37,18 +39,16 @@ class HentaiRox(
         if (preferences.shortTitle) it?.shortenTitle() else it
     }
 
-    override fun popularMangaRequest(page: Int): Request {
-        return if (mangaLang.isBlank()) {
-            // Popular browsing for LANGUAGE_MULTI
-            val url = baseUrl.toHttpUrl().newBuilder().apply {
-                addPathSegments("top-rated")
-                addPageUri(page)
-            }
-            return GET(url.build(), headers)
-        } else {
-            // Popular browsing for other languages: using source's popular page
-            super.popularMangaRequest(page)
+    override fun popularMangaRequest(page: Int): Request = if (mangaLang.isBlank()) {
+        // Popular browsing for LANGUAGE_MULTI
+        val url = baseUrl.toHttpUrl().newBuilder().apply {
+            addPathSegments("top-rated")
+            addPageUri(page)
         }
+        GET(url.build(), headers)
+    } else {
+        // Popular browsing for other languages: using source's popular page
+        super.popularMangaRequest(page)
     }
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
@@ -141,7 +141,7 @@ class HentaiRox(
     override val pageUri = "view"
 
     /* Filters */
-    override fun tagsParser(document: Document): List<Genre> = document.select(".galleries .gallery_title a")
+    override fun tagsParser(document: Document): List<Genre> = document.select(".gtags .gallery_title a")
         .mapNotNull {
             Genre(
                 it.ownText(),
