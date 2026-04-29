@@ -1,8 +1,7 @@
 ext {
-    kmkVersionCode = 1
     extName = 'YuriNeko'
     extClass = '.YuriNeko'
-    extVersionCode = 4
+    extVersionCode = 5
     isNsfw = true
 }
 
