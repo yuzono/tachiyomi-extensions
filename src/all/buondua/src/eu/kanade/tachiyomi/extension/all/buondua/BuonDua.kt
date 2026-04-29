@@ -1,7 +1,12 @@
 package eu.kanade.tachiyomi.extension.all.buondua
 
+import android.content.SharedPreferences
+import androidx.preference.PreferenceScreen
+import androidx.preference.SwitchPreferenceCompat
 import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
+import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -13,16 +18,25 @@ import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.lib.randomua.UserAgentType
 import keiyoushi.lib.randomua.setRandomUserAgent
 import keiyoushi.utils.firstInstanceOrNull
+import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.tryParse
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import okhttp3.Response
+import org.jsoup.nodes.Document
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-class BuonDua : HttpSource() {
+class BuonDua :
+    HttpSource(),
+    ConfigurableSource {
     override val baseUrl = "https://buondua.com"
     override val lang = "all"
     override val name = "Buon Dua"
@@ -35,6 +49,8 @@ class BuonDua : HttpSource() {
     override fun headersBuilder() = super.headersBuilder()
         .add("Referer", "$baseUrl/")
         .setRandomUserAgent(UserAgentType.MOBILE)
+
+    private val preferences by getPreferencesLazy()
 
     // Latest
     override fun latestUpdatesRequest(page: Int): Request = GET("$baseUrl/?start=${20 * (page - 1)}", headers)
@@ -78,10 +94,36 @@ class BuonDua : HttpSource() {
     override fun mangaDetailsParse(response: Response): SManga {
         val document = response.asJsoup()
         return SManga.create().apply {
-            title = document.selectFirst(".article-header")?.text() ?: ""
-            description = document.selectFirst(".article-info > strong")?.text()
+            document.selectFirst(".article-header")?.text()
+                ?.replace(titlePageRegex, "")?.trim()
+                ?.let { title = it }
+
+            val articleInfo = document.select(".article-info > strong").text()
+                .replace("Buondua", "").trim()
+
+            val password = document.select("code").text()
+            val downloadAvailable = document.select(".article-links a[href]")
+            val downloadLinks = downloadAvailable.joinToString("\n") { element ->
+                val serviceText = element.text()
+                val link = element.attr("href")
+                "[$serviceText]($link)"
+            }
+
+            description = StringBuilder().apply {
+                if (articleInfo.isNotBlank()) {
+                    append(articleInfo).append("\n")
+                }
+                if (downloadLinks.isNotBlank()) {
+                    append("\n").append(downloadLinks).append("\n")
+                }
+                if (password.isNotBlank()) {
+                    append("\n").append(password)
+                }
+            }.toString()
+
             genre = document.selectFirst(".article-tags")?.select(".tags > .tag")
-                ?.joinToString(", ") { it.text().substringAfter("#") }
+                ?.joinToString { it.text().substringAfter("#") }
+                ?.takeIf { it.isNotBlank() }
         }
     }
 
@@ -91,30 +133,83 @@ class BuonDua : HttpSource() {
         val dateUploadStr = doc.selectFirst(".article-info > small")?.text()
         val dateUpload = DATE_FORMAT.tryParse(dateUploadStr)
 
-        val maxPage = doc.select("nav.pagination:first-of-type a.pagination-next").last()
-            ?.attr("abs:href")
-            ?.takeIf { it.startsWith("http") }
-            ?.toHttpUrlOrNull()
-            ?.queryParameter("page")?.toIntOrNull() ?: 1
-
         val basePageUrl = response.request.url.toString()
 
-        return (maxPage downTo 1).map { page ->
-            SChapter.create().apply {
-                setUrlWithoutDomain("$basePageUrl?page=$page")
-                name = "Page $page"
-                date_upload = dateUpload
+        return if (preferences.splitPages) {
+            val maxPage = doc.getLastPageNum()
+            (maxPage downTo 1).mapNotNull { page ->
+                SChapter.create().apply {
+                    setUrlWithoutDomain(
+                        basePageUrl.toHttpUrlOrNull()?.newBuilder()
+                            ?.setQueryParameter("page", page.toString())
+                            ?.build()
+                            ?.toString()
+                            ?: return@mapNotNull null,
+                    )
+                    name = "Page $page"
+                    chapter_number = page.toFloat()
+                    date_upload = dateUpload
+                }
             }
+        } else {
+            listOf(
+                SChapter.create().apply {
+                    chapter_number = 0F
+                    setUrlWithoutDomain(basePageUrl)
+                    name = "Gallery"
+                    date_upload = dateUpload
+                },
+            )
         }
     }
 
     // Pages
+    private val pageListSelector = ".article-fulltext img"
+
     override fun pageListParse(response: Response): List<Page> {
         val document = response.asJsoup()
-        return document.select(".article-fulltext img").mapIndexed { i, imgEl ->
+        return if (preferences.splitPages) {
+            pageListParse(document)
+        } else {
+            runBlocking { pageListMerge(document) }
+        }
+    }
+
+    private fun pageListParse(document: Document): List<Page> {
+        return document.select(pageListSelector).mapIndexed { i, imgEl ->
             Page(i, imageUrl = imgEl.attr("abs:src"))
         }
     }
+
+    private suspend fun pageListMerge(document: Document): List<Page> {
+        val basePageUrl = document.location()
+        val maxPage = document.getLastPageNum()
+
+        return (1..maxPage).parallelCatchingFlatMap { page ->
+            val doc = when (page) {
+                1 -> document
+                else -> {
+                    val pageUrl = basePageUrl.toHttpUrl().newBuilder()
+                        .setQueryParameter("page", page.toString())
+                        .build()
+                        .toString()
+                    client.newCall(GET(pageUrl)).awaitSuccess()
+                        .use { it.asJsoup() }
+                }
+            }
+            doc.select(pageListSelector).map { imgEl ->
+                imgEl.absUrl("src")
+            }
+        }.mapIndexed { index, url ->
+            Page(index, imageUrl = url)
+        }
+    }
+
+    private fun Document.getLastPageNum(): Int = select("nav.pagination:first-of-type a.pagination-next").last()
+        ?.attr("abs:href")
+        ?.takeIf { it.startsWith("http") }
+        ?.toHttpUrlOrNull()
+        ?.queryParameter("page")?.toIntOrNull() ?: 1
 
     override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
 
@@ -125,7 +220,43 @@ class BuonDua : HttpSource() {
         object : Filter.Text("Tag ID") {},
     )
 
+    // Settings
+    private val SharedPreferences.splitPages
+        get() = getBoolean(PREF_SPLIT_PAGES, DEFAULT_SPLIT_PAGES)
+
+    override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        SwitchPreferenceCompat(screen.context).apply {
+            key = PREF_SPLIT_PAGES
+            title = "Split into multiple pages"
+            summaryOff = "Single gallery"
+            summaryOn = "Multiple pages"
+            setDefaultValue(DEFAULT_SPLIT_PAGES)
+        }.also(screen::addPreference)
+    }
+
+    /**
+     * Parallel implementation of [Iterable.flatMap], but running
+     * the transformation function inside a try-catch block.
+     */
+    private suspend inline fun <A, B> Iterable<A>.parallelCatchingFlatMap(crossinline f: suspend (A) -> Iterable<B>): List<B> = withContext(Dispatchers.IO) {
+        map {
+            async {
+                try {
+                    f(it)
+                } catch (e: Throwable) {
+                    e.printStackTrace()
+                    emptyList()
+                }
+            }
+        }.awaitAll().flatten()
+    }
+
     companion object {
         private val DATE_FORMAT = SimpleDateFormat("HH:mm dd-MM-yyyy", Locale.US)
+
+        private val titlePageRegex by lazy { Regex(""" - \( Page \d+ / \d+ \)""") }
+
+        private const val PREF_SPLIT_PAGES = "pref_split_pages"
+        private const val DEFAULT_SPLIT_PAGES = true
     }
 }
