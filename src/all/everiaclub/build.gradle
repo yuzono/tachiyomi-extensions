@@ -1,8 +1,7 @@
 ext {
-    kmkVersionCode = 1
     extName = 'Everia.club'
     extClass = '.EveriaClub'
-    extVersionCode = 9
+    extVersionCode = 11
     isNsfw = true
 }
 
