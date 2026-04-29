@@ -16,7 +16,6 @@ import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.Inet4Address
-import java.net.InetAddress
 
 class AComics : ParsedHttpSource() {
 
@@ -27,12 +26,9 @@ class AComics : ParsedHttpSource() {
     override val lang = "ru"
 
     override val client = network.cloudflareClient.newBuilder()
-        .dns(object : Dns {
-            override fun lookup(hostname: String): List<InetAddress> {
-                return Dns.SYSTEM.lookup(hostname)
-                    .sortedBy { if (it is Inet4Address) 0 else 1 }
-            }
-        })
+        .dns { hostname ->
+            Dns.SYSTEM.lookup(hostname).sortedByDescending { it is Inet4Address }
+        }
         .addNetworkInterceptor { chain ->
             val newReq = chain
                 .request()
