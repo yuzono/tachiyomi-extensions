@@ -45,7 +45,7 @@ class Dilar :
             entries = MIRROR_PREF_ENTRY_VALUES
             entryValues = MIRROR_PREF_ENTRY_VALUES
             setDefaultValue(MIRROR_PREF_DEFAULT_VALUE)
-            summary = "%s\nقد تحتاج إلى إزالة الإدخالات من المكتبة و\"مسح قاعدة البيانات\""
+            summary = "%s"
 
             setOnPreferenceChangeListener { _, _ ->
                 Toast.makeText(screen.context, RESTART_TACHIYOMI, Toast.LENGTH_LONG).show()
