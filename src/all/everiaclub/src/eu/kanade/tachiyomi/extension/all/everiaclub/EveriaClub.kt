@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.extension.all.everiaclub
 
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.asObservableSuccess
+import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -15,7 +16,10 @@ import keiyoushi.utils.parseAs
 import keiyoushi.utils.tryParse
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import okhttp3.Response
@@ -161,6 +165,40 @@ class EveriaClub : HttpSource() {
         initialized = true
     }
 
+    override val disableRelatedMangasBySearch = true
+
+    // TODO: After converting the whole extension to use API, we can request list of tags' ID directly then use them to build queries.
+    override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> {
+        val genres = manga.genre?.split(",")?.map { it.trim() } ?: return emptyList()
+        return genres.parallelCatchingFlatMap { genre ->
+            val tag = tags.firstOrNull { it.name.equals(genre, ignoreCase = true) }
+            val request = if (tag != null) {
+                searchMangaRequest(
+                    1,
+                    "",
+                    FilterList(
+                        listOf(
+                            TagGroup(
+                                listOf(
+                                    TagFilter(tag.name, tag.id).apply { state = Filter.TriState.STATE_INCLUDE },
+                                ),
+                            ),
+                        ),
+                    ),
+                )
+            } else {
+                searchMangaRequest(
+                    1,
+                    genre,
+                    FilterList(Filter.Header("Avoid running `launchFilters()`")),
+                )
+            }
+            client.newCall(request).awaitSuccess().use { response ->
+                searchMangaParse(response).mangas
+            }
+        }
+    }
+
     // ========================= Chapters =========================
     override fun chapterListParse(response: Response): List<SChapter> {
         val document = response.asJsoup()
@@ -233,23 +271,21 @@ class EveriaClub : HttpSource() {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val categoriesResponse = client.newCall(GET("$baseUrl/wp-json/wp/v2/categories?per_page=100&hide_empty=true", headers)).execute()
-                val tagsResponse = client.newCall(GET("$baseUrl/wp-json/wp/v2/tags?per_page=100&hide_empty=true&orderby=count&order=desc", headers)).execute()
-
-                if (categoriesResponse.isSuccessful) {
-                    val catDtos = categoriesResponse.parseAs<List<WPCategoryDto>>()
-                    if (catDtos.isNotEmpty()) {
+                client.newCall(GET("$baseUrl/wp-json/wp/v2/categories?per_page=100&hide_empty=true", headers))
+                    .awaitSuccess()
+                    .parseAs<List<WPCategoryDto>>()
+                    .let { catDtos ->
                         categories = arrayOf("Any" to "") + catDtos.map { it.name to it.id.toString() }.toTypedArray()
                     }
-                }
-
-                if (tagsResponse.isSuccessful) {
-                    val tagDtos = tagsResponse.parseAs<List<WPTagDto>>()
-                    tags = tagDtos.map { TagFilter(it.name, it.id) }
-                }
+                client.newCall(GET("$baseUrl/wp-json/wp/v2/tags?per_page=100&hide_empty=true&orderby=count&order=desc", headers))
+                    .awaitSuccess()
+                    .parseAs<List<WPTagDto>>()
+                    .let { tagDtos ->
+                        tags = tagDtos.map { TagFilter(it.name, it.id) }
+                    }
 
                 filtersState = FilterState.Fetched
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 filtersState = FilterState.Unfetched
             }
         }
@@ -267,6 +303,23 @@ class EveriaClub : HttpSource() {
         }
         val hasNextPage = document.selectFirst(".next") != null
         return MangasPage(mangas, hasNextPage)
+    }
+
+    /**
+     * Parallel implementation of [Iterable.flatMap], but running
+     * the transformation function inside a try-catch block.
+     */
+    private suspend inline fun <A, B> Iterable<A>.parallelCatchingFlatMap(crossinline f: suspend (A) -> Iterable<B>): List<B> = withContext(Dispatchers.IO) {
+        map {
+            async {
+                try {
+                    f(it)
+                } catch (e: Throwable) {
+                    e.printStackTrace()
+                    emptyList()
+                }
+            }
+        }.awaitAll().flatten()
     }
 
     private fun getDate(str: String): Long {
