@@ -44,8 +44,11 @@ class Xinmeitulu : HttpSource() {
                 setUrlWithoutDomain(element.select("figure > a").attr("abs:href"))
                 title = element.select("figcaption").text()
                 thumbnail_url = element.select("img").attr("abs:data-original-")
-                genre = element.select("a[rel='tag category']").last()?.text()
-                    ?.removeSuffix("写真")?.translate()
+                genre = element.select("a[rel='tag category']")
+                    .joinToString {
+                        it.text().removeSuffix("写真")
+                            .translate()
+                    }
             }
         }
         val hasNextPage = document.selectFirst(".next") != null
