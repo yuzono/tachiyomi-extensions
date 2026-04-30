@@ -3,7 +3,7 @@ ext {
     extClass = '.KomikDewasaArt'
     themePkg = 'mangathemesia'
     baseUrl = 'https://komikdewasa.art'
-    overrideVersionCode = 0
+    overrideVersionCode = 31
     isNsfw = true
 }
 
