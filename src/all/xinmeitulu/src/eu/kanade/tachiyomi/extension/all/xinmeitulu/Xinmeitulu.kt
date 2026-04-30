@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.extension.all.xinmeitulu
 
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.asObservableSuccess
+import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -9,11 +10,15 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.utils.firstInstanceOrNull
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.asResponseBody
 import rx.Observable
+import java.util.Locale
 
 class Xinmeitulu : HttpSource() {
     override val baseUrl = "https://www.xinmeitulu.com"
@@ -39,7 +44,8 @@ class Xinmeitulu : HttpSource() {
                 setUrlWithoutDomain(element.select("figure > a").attr("abs:href"))
                 title = element.select("figcaption").text()
                 thumbnail_url = element.select("img").attr("abs:data-original-")
-                genre = element.select("a.tag").joinToString(", ") { it.text() }
+                genre = element.select("a[rel='tag category']").last()?.text()
+                    ?.removeSuffix("写真")?.translate()
             }
         }
         val hasNextPage = document.selectFirst(".next") != null
@@ -48,7 +54,22 @@ class Xinmeitulu : HttpSource() {
 
     // Search
 
-    override fun searchMangaRequest(page: Int, query: String, filters: FilterList) = GET("$baseUrl/page/$page?s=$query", headers)
+    override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
+        val filterList = filters.ifEmpty { getFilterList() }
+        val regionFilter = filterList.firstInstanceOrNull<RegionFilter>()
+
+        val url = baseUrl.toHttpUrl().newBuilder().apply {
+            regionFilter?.toUriPart()?.let {
+                addPathSegment("area")
+                addPathSegment(it)
+            }
+            addPathSegment("page")
+            addPathSegment(page.toString())
+            addQueryParameter("s", query)
+        }.toString()
+
+        return GET(url, headers)
+    }
 
     override fun searchMangaParse(response: Response) = popularMangaParse(response)
 
@@ -66,9 +87,28 @@ class Xinmeitulu : HttpSource() {
         val document = response.asJsoup()
         setUrlWithoutDomain(document.selectFirst("link[rel=canonical]")!!.attr("abs:href"))
         title = document.select(".container > h1").text()
-        description = document.select(".container > *:not(div)").text()
         status = SManga.COMPLETED
         thumbnail_url = document.selectFirst("figure img")!!.attr("abs:data-original")
+        description = document.select(".container > p").joinToString("\n") {
+            val str = it.text()
+            if (str.contains("拍摄机构：")) {
+                author = str.replace("拍摄机构：", "").trim()
+            }
+            str.replace("拍摄机构：", "${"拍摄机构".translate()}: ")
+                .replace("相关编号：", "${"相关编号".translate()}: ")
+                .replace("图片数量：", "${"图片数量".translate()}: ")
+                .replace("发行日期：", "${"发行日期".translate()}: ")
+                .replace("出镜模特：", "${"出镜模特".translate()}: ")
+                .replace("别名：", "\n${"别名".translate()}: ")
+                .replace("生日：", "\n${"生日".translate()}: ")
+                .replace("身高：", "\n${"身高".translate()}: ")
+                .replace("三围：", "\n${"三围".translate()}: ")
+                .replace("罩杯：", "\n${"罩杯".translate()}: ")
+                .replace("杯", "-${"杯".translate()}")
+                .replace("匿名", "匿名".translate())
+                .replace("；", "")
+                .trim()
+        }
     }
 
     // Chapters
@@ -78,7 +118,7 @@ class Xinmeitulu : HttpSource() {
         return listOf(
             SChapter.create().apply {
                 setUrlWithoutDomain(document.selectFirst("link[rel=canonical]")!!.attr("abs:href"))
-                name = document.select(".container > h1").text()
+                name = "Gallery"
             },
         )
     }
@@ -92,6 +132,62 @@ class Xinmeitulu : HttpSource() {
         }
 
     override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
+
+    // Filters
+
+    override fun getFilterList(): FilterList = FilterList(
+        RegionFilter(getRegionList()),
+    )
+
+    private class RegionFilter(vals: Array<Pair<String?, String>>) : UriPartFilter("Region", vals)
+
+    private fun getRegionList(): Array<Pair<String?, String>> = arrayOf(
+        null to "全部".translate(),
+        "zhongguodalumeinyu" to "中国大陆美女".translate(),
+        "taiguomeinyu" to "泰国美女".translate(),
+        "ribenmeinyu" to "日本美女".translate(),
+        "hanguomeinyu" to "韩国美女".translate(),
+        "taiwanmeinyu" to "台湾美女".translate(),
+        "oumeimeinyu" to "欧美美女".translate(),
+    )
+
+    private fun String.translate(): String {
+        if (Locale.getDefault().language.startsWith("zh")) return this
+        return when (this) {
+            // Region
+            "全部" -> "All"
+            "中国大陆美女" -> "Chinese beauty"
+            "泰国美女" -> "Thailand beauty"
+            "日本美女" -> "Japanese beauty"
+            "韩国美女" -> "Korean beauty"
+            "台湾美女" -> "Taiwanese beauty"
+            "欧美美女" -> "European & American beauty"
+            // Descriptions
+            "拍摄机构" -> "Studio"
+            "相关编号" -> "Issue number"
+            "图片数量" -> "Photos"
+            "发行日期" -> "Release date"
+            "出镜模特" -> "Model"
+            "别名" -> "Alias"
+            "生日" -> "Birthday"
+            "身高" -> "Height"
+            "三围" -> "Measurements"
+            "罩杯" -> "Cup size"
+            "杯" -> "cup"
+            "匿名" -> "Unknown"
+            else -> this
+        }
+    }
+
+    private open class UriPartFilter(
+        displayName: String,
+        val vals: Array<Pair<String?, String>>,
+    ) : Filter.Select<String>(
+        displayName,
+        vals.map { it.second }.toTypedArray(),
+    ) {
+        fun toUriPart() = vals[state].first
+    }
 
     companion object {
         private fun contentTypeIntercept(chain: Interceptor.Chain): Response {
