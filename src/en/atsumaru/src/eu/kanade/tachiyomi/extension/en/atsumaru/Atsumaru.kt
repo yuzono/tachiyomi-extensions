@@ -183,6 +183,10 @@ class Atsumaru : HttpSource() {
 
     override fun mangaDetailsParse(response: Response): SManga = response.parseAs<MangaObjectDto>().mangaPage.toSManga(baseUrl)
 
+    override fun relatedMangaListRequest(manga: SManga) = mangaDetailsRequest(manga)
+
+    override fun relatedMangaListParse(response: Response) = response.parseAs<MangaObjectDto>().mangaPage.recommendations(baseUrl)
+
     // ============================== Chapters ==============================
 
     override fun chapterListRequest(manga: SManga): Request = GET("$baseUrl/api/manga/allChapters?mangaId=${manga.url}", apiHeaders)
@@ -192,8 +196,8 @@ class Atsumaru : HttpSource() {
 
         val scanlatorMap = try {
             val detailsRequest = mangaDetailsRequest(SManga.create().apply { url = mangaId })
-            client.newCall(detailsRequest).execute().use {
-                it.parseAs<MangaObjectDto>().mangaPage.scanlators?.associate { it.id to it.name }
+            client.newCall(detailsRequest).execute().use { response ->
+                response.parseAs<MangaObjectDto>().mangaPage.scanlators?.associate { it.id to it.name }
             }.orEmpty()
         } catch (_: Exception) {
             emptyMap()

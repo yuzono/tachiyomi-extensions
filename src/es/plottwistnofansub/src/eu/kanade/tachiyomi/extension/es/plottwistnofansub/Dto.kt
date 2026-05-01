@@ -5,18 +5,13 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 class ChapterApiResponse(
-    val manga: List<VolumeDto>,
-)
-
-@Serializable
-class VolumeDto(
-    val chapters: List<ChapterDto>,
+    @SerialName("chapters_to_display") val chapters: List<ChapterDto>,
 )
 
 @Serializable
 class ChapterDto(
-    @SerialName("chapter_name") val chapterName: String,
-    @SerialName("chapter_name_extend") val chapterNameExtend: String = "",
-    @SerialName("chapter_slug") val chapterSlug: String,
+    val name: String,
+    @SerialName("name_extend") val nameExtend: String = "",
+    val link: String,
     val date: String,
 )

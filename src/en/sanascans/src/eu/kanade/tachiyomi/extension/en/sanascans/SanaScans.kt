@@ -13,6 +13,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.utils.extractNextJs
 import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.parseAs
 import kotlinx.serialization.json.JsonArray
@@ -169,17 +170,22 @@ class SanaScans :
         }
 
     private fun parseMangaDetails(response: Response): SManga {
-        val body = response.body.string()
-        val document = Jsoup.parse(body, response.request.url.toString())
+        val document = response.asJsoup()
+        val seriesJson = document.extractNextJs<SeriesDto>(
+            predicate = { it is JsonObject && "post" in it },
+        )?.post
 
-        val title = document.selectFirst("h1[itemprop=name]")?.text()
-            ?.takeIf(String::isNotEmpty)
+        val title = seriesJson?.postTitle
+            ?: document.selectFirst("h1[itemprop=name]")?.text()
+                ?.takeIf(String::isNotEmpty)
             ?: document.selectFirst("meta[property=og:title]")?.attr("content")
                 ?.substringBefore(" Manga - Sana scans")
             ?: document.title()
 
-        val description = document.selectFirst("[itemprop=description]")?.text()
+        val description = seriesJson?.postContent?.let { Jsoup.parse(it).text() }
             ?.takeIf(String::isNotEmpty)
+            ?: document.selectFirst("[itemprop=description]")?.text()
+                ?.takeIf(String::isNotEmpty)
             ?: document.selectFirst("meta[property=og:description]")?.attr("content")
                 ?.takeIf(String::isNotEmpty)
             ?: document.selectFirst("meta[name=twitter:description]")?.attr("content")
@@ -196,20 +202,30 @@ class SanaScans :
                     return@run jsonLdCandidate
                 }
 
-                extractPostContent(body)
+                extractPostContent(document.html())
             }
+
+        val altTitles = seriesJson?.alternativeTitles
+            ?.takeIf { it.isNotBlank() }
+            ?.let { "\n\nAlternative Titles: $it" }
+            ?: ""
+
         val thumbnailUrl = document.selectFirst("meta[property=og:image]")?.attr("content")
 
-        val genres = runCatching { extractJsonArray(body, "genres").parseAs<List<GenreDto>>() }
-            .getOrNull()
-            ?.joinToString { it.name }
+        val genres = seriesJson?.genres?.joinToString { it.name }
+            ?: runCatching { extractJsonArray(document.html(), "genres").parseAs<List<GenreDto>>() }
+                .getOrNull()
+                ?.joinToString { it.name }
 
-        val status = parseStatus(document)
+        val status = seriesJson?.seriesStatus?.let(::parseStatusText)
+            ?: parseStatus(document)
 
         return SManga.create().apply {
             this.title = title
-            this.description = description ?: ""
+            this.description = (description ?: "") + altTitles
             this.thumbnail_url = thumbnailUrl
+            this.author = seriesJson?.author
+            this.artist = seriesJson?.artist
             this.genre = genres
             this.status = status
         }
@@ -218,11 +234,17 @@ class SanaScans :
     override fun chapterListRequest(manga: SManga): Request = mangaDetailsRequest(manga)
 
     override fun chapterListParse(response: Response): List<SChapter> {
-        val body = response.body.string()
+        val document = response.asJsoup()
+        val seriesJson = document.extractNextJs<SeriesDto>(
+            predicate = { it is JsonObject && "post" in it },
+        )?.post
         val seriesSlug = seriesSlug(response.request.url) ?: ""
 
-        val chaptersJson = extractJsonArray(body, "chapters")
-        val chapters = chaptersJson.parseAs<List<ChapterDto>>()
+        val chapters = seriesJson?.chapters
+            ?: run {
+                val chaptersJson = extractJsonArray(document.html(), "chapters")
+                chaptersJson.parseAs<List<ChapterDto>>()
+            }
 
         return chapters.mapNotNull { chapter ->
             val isLocked = chapter.isPermanentlyLocked == true ||
@@ -244,7 +266,10 @@ class SanaScans :
             throw Exception("Unlock chapter in webview")
         }
 
-        val pages = document.getNextJson("images").parseAs<List<PageParseDto>>()
+        val pages = document.extractNextJs<SeriesDto>(
+            predicate = { it is JsonObject && "chapter" in it },
+        )?.chapter?.images
+            ?: document.getNextJson("images").parseAs<List<PageParseDto>>()
 
         val sortedPages = if (sortPagesByFilename) {
             pages.sortedWith(
@@ -262,11 +287,6 @@ class SanaScans :
             Page(idx, imageUrl = p.url.replace(" ", "%20"))
         }
     }
-
-    @kotlinx.serialization.Serializable
-    class PageParseDto(
-        val url: String,
-    )
 
     override fun imageUrlParse(response: Response) = throw UnsupportedOperationException()
 
@@ -327,13 +347,16 @@ class SanaScans :
     private fun parseStatus(document: Document): Int {
         val statusText = document.selectFirst("div:has(> h1:matchesOwn((?i)Status)) p")
             ?.text()
-            ?.lowercase(Locale.ROOT)
 
-        return when (statusText) {
-            "ongoing" -> SManga.ONGOING
-            "completed" -> SManga.COMPLETED
-            else -> SManga.UNKNOWN
-        }
+        return parseStatusText(statusText)
+    }
+
+    private fun parseStatusText(status: String?): Int = when (status?.lowercase(Locale.ROOT)) {
+        "ongoing" -> SManga.ONGOING
+        "completed" -> SManga.COMPLETED
+        "dropped" -> SManga.CANCELLED
+        "onhold", "hiatus" -> SManga.ON_HIATUS
+        else -> SManga.UNKNOWN
     }
 
     private fun extractJsonArray(body: String, key: String): String {

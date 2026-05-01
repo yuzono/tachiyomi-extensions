@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.extension.all.beauty3600000
 
 import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.network.interceptor.rateLimit
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -12,11 +13,17 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import keiyoushi.utils.firstInstance
 import keiyoushi.utils.parseAs
 import keiyoushi.utils.tryParse
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.Jsoup
+import rx.Observable
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -36,6 +43,10 @@ class Beauty3600000 : HttpSource() {
         .connectTimeout(120, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
         .rateLimit(1)
+        .build()
+
+    private val searchingClient: OkHttpClient = client.newBuilder()
+        .rateLimit(1, 30)
         .build()
 
     override fun headersBuilder() = super.headersBuilder()
@@ -63,17 +74,32 @@ class Beauty3600000 : HttpSource() {
 
     // ========================= Search =========================
 
+    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
+        val request = searchMangaRequest(page, query, filters)
+        val requestUrl = request.url
+        val searchParams = requestUrl.queryParameter("search")
+        return Observable.fromCallable {
+            if (searchParams != null) {
+                searchingClient.newCall(request).execute()
+            } else {
+                client.newCall(request).execute()
+            }
+        }.map { searchMangaParse(it) }
+    }
+
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
         val queryUrl = query.toHttpUrlOrNull()
         if (queryUrl != null && queryUrl.host == baseUrl.toHttpUrlOrNull()?.host) {
-            val id = queryUrl.queryParameter("p")
+            val id = queryUrl.queryParameter("p")?.trim()
             val slug = if (id == null) queryUrl.pathSegments.lastOrNull { it.isNotBlank() }?.removeSuffix(".html") else null
             val url = baseUrl.toHttpUrlOrNull()!!.newBuilder()
                 .addPathSegments(API_BASE)
                 .addPathSegment("posts")
                 .apply {
                     if (id != null) {
-                        addQueryParameter("include", id)
+                        id.toIntOrNull()?.let { addQueryParameter("include", it.toString()) }
+                            // Allow copy old entry's `manga.url` to search for old entry for migration which is in format "https://3600000.xyz/?p=/{slug}/"
+                            ?: addQueryParameter("slug", id.removeSurrounding("/"))
                     } else if (slug != null) {
                         addQueryParameter("slug", slug)
                     }
@@ -84,6 +110,16 @@ class Beauty3600000 : HttpSource() {
         val filterList = filters.ifEmpty { getFilterList() }
         val categoryFilter = filterList.firstInstance<CategoryFilter>()
         val tagFilter = filterList.firstInstance<TagFilter>()
+        var tagSearch: Int? = null
+
+        if (categoryFilter.state <= 0 && tagFilter.state <= 0) {
+            if (query.isBlank()) {
+                return popularMangaRequest(page)
+            }
+
+            val tags = runCatching { runBlocking { getTag(query.trim()) } }.getOrNull()
+            tagSearch = tags?.firstOrNull { it.name.equals(query.trim(), ignoreCase = true) }?.id
+        }
 
         val url = baseUrl.toHttpUrlOrNull()!!.newBuilder()
             .addPathSegments(API_BASE)
@@ -92,9 +128,14 @@ class Beauty3600000 : HttpSource() {
                 addQueryParameter("page", page.toString())
                 addQueryParameter("per_page", PER_PAGE.toString())
 
+                if (query.isNotBlank() && tagSearch == null) {
+                    addQueryParameter("search", query.trim())
+                }
+
                 when {
-                    categoryFilter.state != 0 -> addQueryParameter("categories", categoryFilter.toUriPart())
-                    tagFilter.state != 0 -> addQueryParameter("tags", tagFilter.toUriPart())
+                    categoryFilter.state > 0 -> addQueryParameter("categories", categoryFilter.toUriPart())
+                    tagFilter.state > 0 -> addQueryParameter("tags", tagFilter.toUriPart())
+                    tagSearch != null -> addQueryParameter("tags", tagSearch.toString())
                 }
             }.build()
 
@@ -114,25 +155,106 @@ class Beauty3600000 : HttpSource() {
 
     // ========================= Details =========================
 
-    override fun mangaDetailsRequest(manga: SManga): Request = GET(
-        baseUrl.toHttpUrlOrNull()!!.newBuilder()
-            .addPathSegments(API_BASE)
-            .addPathSegment("posts")
-            .addPathSegment(manga.url)
+    override fun mangaDetailsRequest(manga: SManga) = GET(
+        baseUrl.toHttpUrlOrNull()!!.newBuilder().apply {
+            addPathSegments(API_BASE)
+            addPathSegment("posts")
+            manga.url.toIntOrNull()?.let { addPathSegment(manga.url) }
+                ?: addQueryParameter("slug", manga.url.removeSurrounding("/"))
+        }
             .build(),
         headers,
     )
 
-    override fun mangaDetailsParse(response: Response): SManga = response.parseAs<PostDto>().toSManga()
+    override fun mangaDetailsParse(response: Response): SManga {
+        val post = response.toPost()
 
-    override fun getMangaUrl(manga: SManga): String = "$baseUrl/?p=${manga.url}"
+        return post.toSManga().apply {
+            genre = runBlocking {
+                listOf("categories", "tags").parallelCatchingFlatMap { term ->
+                    getTerms(post.id, term)
+                }
+            }.takeIf { it.isNotEmpty() }
+                ?.joinToString { it.name }
+        }
+    }
+
+    private suspend fun getTerms(mangaId: Int, term: String): List<TermDto> {
+        val request = GET(
+            baseUrl.toHttpUrlOrNull()!!.newBuilder()
+                .addPathSegments(API_BASE)
+                .addPathSegment(term)
+                .addQueryParameter("post", mangaId.toString())
+                .build(),
+            headers,
+        )
+        return client.newCall(request).awaitSuccess()
+            .parseAs<List<TermDto>>()
+    }
+
+    private suspend fun getTag(slug: String): List<TermDto> {
+        val request = GET(
+            baseUrl.toHttpUrlOrNull()!!.newBuilder()
+                .addPathSegments(API_BASE)
+                .addPathSegment("tags")
+                .addQueryParameter("slug", slug)
+                .build(),
+            headers,
+        )
+        return client.newCall(request).awaitSuccess()
+            .parseAs<List<TermDto>>()
+    }
+
+    override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> {
+        val mangaId = manga.url.toIntOrNull() ?: run {
+            val request = mangaDetailsRequest(manga)
+            client.newCall(request).awaitSuccess()
+                .use { mangaDetailsParse(it) }
+                .url.toIntOrNull()
+                ?: return emptyList()
+        }
+        val tags = getTerms(mangaId, "tags")
+            .sortedBy { it.name.startsWith('[') }
+
+        return tags.parallelCatchingFlatMap { tag ->
+            val url = baseUrl.toHttpUrlOrNull()!!.newBuilder()
+                .addPathSegments(API_BASE)
+                .addPathSegment("posts")
+                .apply {
+                    addQueryParameter("page", "1")
+                    addQueryParameter("per_page", PER_PAGE.toString())
+                    addQueryParameter("tags", tag.id.toString())
+                }.build()
+
+            client.newCall(GET(url, headers)).awaitSuccess()
+                .use { searchMangaParse(it) }.mangas
+        }
+    }
+
+    override fun getMangaUrl(manga: SManga): String = manga.url.toIntOrNull()
+        ?.let { "$baseUrl/?p=${manga.url}" }
+        ?: "$baseUrl${manga.url}"
+
+    private fun Response.toPost(): PostDto {
+        val slugParam = request.url.queryParameter("slug")
+        return if (slugParam != null) {
+            val body = body.string()
+            jsonArrayRegex.find(body)
+                ?.value
+                ?.parseAs<List<PostDto>>()
+                ?.firstOrNull()
+                ?: throw IllegalArgumentException("Post not found")
+        } else {
+            parseAs<PostDto>()
+        }
+    }
 
     // ========================= Chapters =========================
 
     override fun chapterListRequest(manga: SManga): Request = mangaDetailsRequest(manga)
 
     override fun chapterListParse(response: Response): List<SChapter> {
-        val post = response.parseAs<PostDto>()
+        val post = response.toPost()
         return listOf(
             post.toSChapter().apply {
                 date_upload = DATE_FORMAT.tryParse(post.date)
@@ -166,21 +288,41 @@ class Beauty3600000 : HttpSource() {
     // ========================= Helpers =========================
 
     private fun parseMangasPage(response: Response): MangasPage {
-        val posts = response.parseAs<List<PostDto>>()
+        val body = response.body.string()
+        val posts = jsonArrayRegex.find(body)
+            ?.value
+            ?.parseAs<List<PostDto>>()
+            ?: return MangasPage(emptyList(), false)
         val mangas = posts.map { it.toSManga() }
         val totalPages = response.header("X-WP-TotalPages")?.toIntOrNull() ?: 0
         val currentPage = response.request.url.queryParameter("page")?.toIntOrNull() ?: 1
         return MangasPage(mangas, currentPage < totalPages)
     }
 
+    /**
+     * Parallel implementation of [Iterable.flatMap], but running
+     * the transformation function inside a try-catch block.
+     */
+    private suspend inline fun <A, B> Iterable<A>.parallelCatchingFlatMap(crossinline f: suspend (A) -> Iterable<B>): List<B> = withContext(Dispatchers.IO) {
+        map {
+            async {
+                try {
+                    f(it)
+                } catch (e: Throwable) {
+                    e.printStackTrace()
+                    emptyList()
+                }
+            }
+        }.awaitAll().flatten()
+    }
+
     // disable suggested mangas on Komikku
-    // site doesn't support keyword search and too slow
     override val disableRelatedMangasBySearch = true
-    override val supportsRelatedMangas = false
 
     companion object {
         private const val API_BASE = "wp-json/wp/v2"
         private const val PER_PAGE = 100
+        private val jsonArrayRegex by lazy { Regex("""\[.*]\s*$""") }
 
         private val DATE_FORMAT by lazy {
             SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).apply {
