@@ -22,7 +22,7 @@ class HentaiEra(
     override val useIntermediateSearch: Boolean = true
     override val supportSpeechless: Boolean = true
 
-    override fun Element.mangaTitle(selector: String): String? = mangaFullTitle(selector.replace(".caption", ".gallery_title")).let {
+    override fun Element.mangaTitle(selector: String): String? = mangaFullTitle(selector.replace("caption", "gallery_title")).let {
         if (preferences.shortTitle) it?.shortenTitle() else it
     }
 
