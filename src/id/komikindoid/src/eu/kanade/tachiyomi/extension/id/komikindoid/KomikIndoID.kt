@@ -3,20 +3,23 @@ package eu.kanade.tachiyomi.extension.id.komikindoid
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
+import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
-import eu.kanade.tachiyomi.source.online.ParsedHttpSource
+import eu.kanade.tachiyomi.source.online.HttpSource
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
+import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
-class KomikIndoID : ParsedHttpSource() {
+class KomikIndoID : HttpSource() {
     override val name = "KomikIndoID"
     override val baseUrl = "https://komikindo.ch"
     override val lang = "id"
@@ -29,21 +32,38 @@ class KomikIndoID : ParsedHttpSource() {
 
     override fun latestUpdatesRequest(page: Int): Request = GET("$baseUrl/daftar-manga/page/$page/?order=update", headers)
 
-    override fun popularMangaSelector() = "div.animepost"
-    override fun latestUpdatesSelector() = popularMangaSelector()
-    override fun searchMangaSelector() = popularMangaSelector()
+    override fun popularMangaParse(response: Response): MangasPage {
+        val document = response.body.string().let { Jsoup.parse(it) }
+        val mangas = document.select("div.animepost").map { element ->
+            parseMangaFromElement(element)
+        }
+        val hasNextPage = document.selectFirst("a.next.page-numbers") != null
+        return MangasPage(mangas, hasNextPage)
+    }
 
-    override fun popularMangaFromElement(element: Element): SManga = searchMangaFromElement(element)
-    override fun latestUpdatesFromElement(element: Element): SManga = searchMangaFromElement(element)
+    override fun latestUpdatesParse(response: Response): MangasPage {
+        val document = response.body.string().let { Jsoup.parse(it) }
+        val mangas = document.select("div.animepost").map { element ->
+            parseMangaFromElement(element)
+        }
 
-    override fun popularMangaNextPageSelector() = "a.next.page-numbers"
-    override fun latestUpdatesNextPageSelector() = popularMangaNextPageSelector()
-    override fun searchMangaNextPageSelector() = popularMangaNextPageSelector()
+        val hasNextPage = document.selectFirst("a.next.page-numbers") != null
+        return MangasPage(mangas, hasNextPage)
+    }
 
-    override fun searchMangaFromElement(element: Element): SManga {
+    override fun searchMangaParse(response: Response): MangasPage {
+        val document = response.body.string().let { Jsoup.parse(it) }
+        val mangas = document.select("div.animepost").map { element ->
+            parseMangaFromElement(element)
+        }
+        val hasNextPage = document.selectFirst("a.next.page-numbers") != null
+        return MangasPage(mangas, hasNextPage)
+    }
+
+    private fun parseMangaFromElement(element: Element): SManga {
         val manga = SManga.create()
         manga.thumbnail_url = element.select("div.limit img").attr("src")
-        manga.title = element.select("div.tt h4").text()
+        manga.title = element.select("div.tt h3").text()
         element.select("div.animposx > a").first()!!.let {
             manga.setUrlWithoutDomain(it.attr("href"))
         }
@@ -128,7 +148,13 @@ class KomikIndoID : ParsedHttpSource() {
         }
         return GET(url.build(), headers)
     }
-    override fun mangaDetailsParse(document: Document): SManga {
+
+    override fun mangaDetailsParse(response: Response): SManga {
+        val document = response.body.string().let { Jsoup.parse(it) }
+        return parseMangaDetails(document)
+    }
+
+    private fun parseMangaDetails(document: Document): SManga {
         val infoElement = document.select("div.infoanime").first()!!
         val descElement = document.select("div.desc > .entry-content.entry-content-single").first()!!
         val manga = SManga.create()
@@ -160,9 +186,14 @@ class KomikIndoID : ParsedHttpSource() {
         else -> SManga.UNKNOWN
     }
 
-    override fun chapterListSelector() = "#chapter_list li"
+    override fun chapterListParse(response: Response): List<SChapter> {
+        val document = response.body.string().let { Jsoup.parse(it) }
+        return document.select("#chapter_list li").map { element ->
+            parseChapterFromElement(element)
+        }
+    }
 
-    override fun chapterFromElement(element: Element): SChapter {
+    private fun parseChapterFromElement(element: Element): SChapter {
         val urlElement = element.select(".lchx a").first()!!
         val chapter = SChapter.create()
         chapter.setUrlWithoutDomain(urlElement.attr("href"))
@@ -225,7 +256,12 @@ class KomikIndoID : ParsedHttpSource() {
         }
     }
 
-    override fun pageListParse(document: Document): List<Page> {
+    override fun pageListParse(response: Response): List<Page> {
+        val document = response.body.string().let { Jsoup.parse(it) }
+        return parsePageList(document)
+    }
+
+    private fun parsePageList(document: Document): List<Page> {
         val pages = mutableListOf<Page>()
         var i = 0
         document.select("div.img-landmine img").forEach { element ->
@@ -238,7 +274,7 @@ class KomikIndoID : ParsedHttpSource() {
         return pages
     }
 
-    override fun imageUrlParse(document: Document): String = throw UnsupportedOperationException()
+    override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
 
     override fun getFilterList() = FilterList(
         SortFilter(),
