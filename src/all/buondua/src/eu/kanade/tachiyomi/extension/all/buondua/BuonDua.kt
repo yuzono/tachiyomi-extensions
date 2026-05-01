@@ -177,10 +177,8 @@ class BuonDua :
         }
     }
 
-    private fun pageListParse(document: Document): List<Page> {
-        return document.select(pageListSelector).mapIndexed { i, imgEl ->
-            Page(i, imageUrl = imgEl.attr("abs:src"))
-        }
+    private fun pageListParse(document: Document): List<Page> = document.select(pageListSelector).mapIndexed { i, imgEl ->
+        Page(i, imageUrl = imgEl.attr("abs:src"))
     }
 
     private suspend fun pageListMerge(document: Document): List<Page> {
