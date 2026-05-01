@@ -160,9 +160,9 @@ class Chapter(
     val id: String,
     val source: String,
     @SerialName("chapter_number")
-    val number: String,
+    val number: String? = null,
     @SerialName("chapter_title")
-    val name: String,
+    val name: String? = null,
     @SerialName("group_name")
     val group: String? = null,
     @SerialName("scanlator_name")
@@ -175,7 +175,7 @@ class Chapter(
 class Volume(
     val id: Int,
     @SerialName("volume_number")
-    val volume: Float,
+    val volume: Float? = null,
     @SerialName("group_name")
     val group: String? = null,
     @SerialName("scanlator_name")

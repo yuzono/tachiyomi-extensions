@@ -221,11 +221,12 @@ class Mangadotnet :
                         SChapter.create().apply {
                             url = ChapterUrl(chapter.id, chapter.source, false).toJsonString()
                             name = buildString {
-                                val number = chapter.number.toFloat().toString().substringBefore(".0")
-                                if (!chapter.name.contains(number)) append("Chapter ", number, ": ")
-                                append(chapter.name.trim())
+                                val number = (chapter.number ?: "0").toFloat().toString().substringBefore(".0")
+                                val name = chapter.name ?: ""
+                                if (!name.contains(number)) append("Chapter ", number, ": ")
+                                append(name.trim())
                             }
-                            chapter_number = chapter.number.toFloat()
+                            chapter_number = (chapter.number ?: "0").toFloat()
                             scanlator = (chapter.group ?: chapter.scanlator)?.takeIf { it.isNotBlank() }
                             date_upload = dateFormat.tryParse(chapter.date)
                         }
@@ -239,7 +240,7 @@ class Mangadotnet :
                         .map { volume ->
                             SChapter.create().apply {
                                 url = ChapterUrl(volume.id.toString(), "user", true).toJsonString()
-                                name = "Volume ${volume.volume.toString().substringBefore(".0")}"
+                                name = "Volume ${(volume.volume ?: 0f).toString().substringBefore(".0")}"
                                 chapter_number = -2f
                                 scanlator = (volume.group ?: volume.scanlator)?.takeIf { it.isNotBlank() }
                                 date_upload = dateFormat.tryParse(volume.date)
