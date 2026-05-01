@@ -1,8 +1,8 @@
 ext {
-    kmkVersionCode = 2
+    kmkVersionCode = 1
     extName = 'Buon Dua'
     extClass = '.BuonDua'
-    extVersionCode = 7
+    extVersionCode = 9
     isNsfw = true
 }
 
