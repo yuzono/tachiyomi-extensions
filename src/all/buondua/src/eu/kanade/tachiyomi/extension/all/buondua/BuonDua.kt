@@ -199,7 +199,7 @@ class BuonDua :
                         .setQueryParameter("page", page.toString())
                         .build()
                         .toString()
-                    client.newCall(GET(pageUrl)).awaitSuccess()
+                    client.newCall(GET(pageUrl, headers)).awaitSuccess()
                         .use { it.asJsoup() }
                 }
             }
