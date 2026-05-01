@@ -17,11 +17,13 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 
+private const val DOMAIN = "mangakuri.online"
+
 class Mangakuri : HttpSource() {
 
     override val name = "Mangakuri"
 
-    override val baseUrl = "https://mangakuri.org"
+    override val baseUrl = "https://lc1.$DOMAIN"
 
     override val lang = "id"
 
@@ -31,7 +33,7 @@ class Mangakuri : HttpSource() {
 
     override val versionId = 2
 
-    private val apiUrl = "https://api.mangakuri.org/api"
+    private val apiUrl = "https://api.$DOMAIN/api"
 
     override fun headersBuilder() = super.headersBuilder()
         .add("Referer", "$baseUrl/")
@@ -58,7 +60,10 @@ class Mangakuri : HttpSource() {
                 thumbnail_url = manga.posterImageUrl
             }
         }
-        return MangasPage(mangas, response.request.url.queryParameter("page")!!.toInt() < dto.totalPages)
+
+        val hasNextPage = response.request.url.queryParameter("page")?.toIntOrNull()?.let { it < dto.totalPages } ?: false
+
+        return MangasPage(mangas, hasNextPage)
     }
 
     // ================= Latest =================
