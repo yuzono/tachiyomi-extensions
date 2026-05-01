@@ -66,7 +66,13 @@ class BuonDua :
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
         val tagFilter = filters.firstInstanceOrNull<Filter.Text>()
         return when {
-            query.isNotEmpty() -> GET("$baseUrl/?search=$query&start=${20 * (page - 1)}", headers)
+            query.isNotEmpty() -> {
+                val urlBuilder = baseUrl.toHttpUrl().newBuilder().apply {
+                    addQueryParameter("search", query)
+                    addQueryParameter("start", (20 * (page - 1)).toString())
+                }
+                GET(urlBuilder.build(), headers)
+            }
             tagFilter?.state?.isNotEmpty() == true -> GET("$baseUrl/tag/${tagFilter.state}&start=${20 * (page - 1)}", headers)
             else -> popularMangaRequest(page)
         }
