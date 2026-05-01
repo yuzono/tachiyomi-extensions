@@ -8,11 +8,11 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
+import eu.kanade.tachiyomi.util.asJsoup
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
-import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.text.SimpleDateFormat
@@ -32,30 +32,15 @@ class KomikIndoID : HttpSource() {
 
     override fun latestUpdatesRequest(page: Int): Request = GET("$baseUrl/daftar-manga/page/$page/?order=update", headers)
 
-    override fun popularMangaParse(response: Response): MangasPage {
-        val document = response.body.string().let { Jsoup.parse(it) }
-        val mangas = document.select("div.animepost").map { element ->
-            parseMangaFromElement(element)
-        }
-        val hasNextPage = document.selectFirst("a.next.page-numbers") != null
-        return MangasPage(mangas, hasNextPage)
-    }
+    override fun popularMangaParse(response: Response): MangasPage = mangasPageParse(response)
 
-    override fun latestUpdatesParse(response: Response): MangasPage {
-        val document = response.body.string().let { Jsoup.parse(it) }
-        val mangas = document.select("div.animepost").map { element ->
-            parseMangaFromElement(element)
-        }
+    override fun latestUpdatesParse(response: Response): MangasPage = mangasPageParse(response)
 
-        val hasNextPage = document.selectFirst("a.next.page-numbers") != null
-        return MangasPage(mangas, hasNextPage)
-    }
+    override fun searchMangaParse(response: Response): MangasPage = mangasPageParse(response)
 
-    override fun searchMangaParse(response: Response): MangasPage {
-        val document = response.body.string().let { Jsoup.parse(it) }
-        val mangas = document.select("div.animepost").map { element ->
-            parseMangaFromElement(element)
-        }
+    private fun mangasPageParse(response: Response): MangasPage {
+        val document = response.asJsoup()
+        val mangas = document.select("div.animepost").map(::parseMangaFromElement)
         val hasNextPage = document.selectFirst("a.next.page-numbers") != null
         return MangasPage(mangas, hasNextPage)
     }
@@ -150,7 +135,7 @@ class KomikIndoID : HttpSource() {
     }
 
     override fun mangaDetailsParse(response: Response): SManga {
-        val document = response.body.string().let { Jsoup.parse(it) }
+        val document = response.asJsoup()
         return parseMangaDetails(document)
     }
 
@@ -187,7 +172,7 @@ class KomikIndoID : HttpSource() {
     }
 
     override fun chapterListParse(response: Response): List<SChapter> {
-        val document = response.body.string().let { Jsoup.parse(it) }
+        val document = response.asJsoup()
         return document.select("#chapter_list li").map { element ->
             parseChapterFromElement(element)
         }
@@ -257,7 +242,7 @@ class KomikIndoID : HttpSource() {
     }
 
     override fun pageListParse(response: Response): List<Page> {
-        val document = response.body.string().let { Jsoup.parse(it) }
+        val document = response.asJsoup()
         return parsePageList(document)
     }
 
