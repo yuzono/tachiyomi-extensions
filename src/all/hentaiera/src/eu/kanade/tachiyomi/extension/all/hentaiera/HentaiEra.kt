@@ -22,7 +22,7 @@ class HentaiEra(
     override val useIntermediateSearch: Boolean = true
     override val supportSpeechless: Boolean = true
 
-    override fun Element.mangaTitle(selector: String): String? = mangaFullTitle(selector.replace(".caption", ".gallery_title")).let {
+    override fun Element.mangaTitle(selector: String): String? = mangaFullTitle(selector.replace("caption", "gallery_title")).let {
         if (preferences.shortTitle) it?.shortenTitle() else it
     }
 
@@ -50,11 +50,11 @@ class HentaiEra(
     }
 
     /* Details */
-    override fun Element.getInfo(tag: String): String = select("li:has(.tags_text:contains($tag)) a.tag")
+    override fun Element.getInfo(tag: String): String = select("li:has(.tags_text:contains($tag)) .tag .item_name")
         .joinToString {
-            val name = it.selectFirst(".item_name")?.ownText() ?: ""
+            val name = it.ownText()
             if (tag.contains(regexTag)) {
-                genres[name] = it.attr("href")
+                genres[name] = it.parent()!!.attr("href")
                     .removeSuffix("/").substringAfterLast('/')
             }
             listOf(

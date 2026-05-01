@@ -1,6 +1,5 @@
 ext {
     kmkVersionCode = 3
-    isNsfw = true
     extName = 'ManHuaGui'
     extClass = '.Manhuagui'
     extVersionCode = 25
