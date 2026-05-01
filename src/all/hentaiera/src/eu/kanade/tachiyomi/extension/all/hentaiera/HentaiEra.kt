@@ -50,11 +50,11 @@ class HentaiEra(
     }
 
     /* Details */
-    override fun Element.getInfo(tag: String): String = select("li:has(.tags_text:contains($tag)) .tag .item_name")
+    override fun Element.getInfo(tag: String): String = select("li:has(.tags_text:contains($tag)) a.tag")
         .joinToString {
-            val name = it.ownText()
+            val name = it.selectFirst(".item_name")?.ownText() ?: ""
             if (tag.contains(regexTag)) {
-                genres[name] = it.parent()!!.attr("href")
+                genres[name] = it.attr("href")
                     .removeSuffix("/").substringAfterLast('/')
             }
             listOf(
