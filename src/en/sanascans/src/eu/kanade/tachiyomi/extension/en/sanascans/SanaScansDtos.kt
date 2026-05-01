@@ -46,6 +46,36 @@ class GenreDto(
     val name: String,
 )
 
+@Serializable
+class PageParseDto(
+    val url: String,
+)
+
+@Serializable
+class SeriesDto(
+    val post: MangaPostDto? = null,
+    val chapter: ChapterPayloadDto? = null,
+)
+
+@Serializable
+class ChapterPayloadDto(
+    val images: List<PageParseDto>,
+)
+
+@Serializable
+class MangaPostDto(
+    val id: Int,
+    val slug: String,
+    val postTitle: String? = null,
+    val postContent: String? = null,
+    val author: String? = null,
+    val artist: String? = null,
+    val seriesStatus: String? = null,
+    val alternativeTitles: String? = null,
+    val genres: List<GenreDto>? = null,
+    val chapters: List<ChapterDto>? = null,
+)
+
 class SitemapSeries(
     val slug: String,
     val title: String,
