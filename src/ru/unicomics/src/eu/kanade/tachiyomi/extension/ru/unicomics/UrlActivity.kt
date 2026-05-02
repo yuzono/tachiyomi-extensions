@@ -1,18 +1,12 @@
 package eu.kanade.tachiyomi.extension.ru.unicomics
 
 import android.app.Activity
-import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import kotlin.system.exitProcess
-/**
- * Springboard that accepts https://unicomics.ru/comics/series/xxx intents and redirects them to
- * the main tachiyomi process. The idea is to not install the intent filter unless
- * you have this extension installed, but still let the main tachiyomi app control
- * things.
- */
-class UniComicsActivity : Activity() {
+
+class UrlActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -27,11 +21,11 @@ class UniComicsActivity : Activity() {
 
             try {
                 startActivity(mainIntent)
-            } catch (e: ActivityNotFoundException) {
-                Log.e("UniComicsActivity", e.toString())
+            } catch (e: Throwable) {
+                Log.e("UrlActivity", e.toString())
             }
         } else {
-            Log.e("UniComicsActivity", "could not parse uri from intent $intent")
+            Log.e("UrlActivity", "could not parse uri from intent $intent")
         }
 
         finish()
