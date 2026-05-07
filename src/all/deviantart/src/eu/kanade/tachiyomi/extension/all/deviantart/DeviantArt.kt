@@ -32,6 +32,7 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import org.jsoup.parser.Parser
+import rx.Observable
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -117,6 +118,19 @@ class DeviantArt :
                 description = "Click tag to show artist's gallery"
             }
         }
+    }
+
+    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (url.host != baseUrl.toHttpUrl().host) {
+                throw Exception("Unsupported url")
+            }
+            val username = url.pathSegments[0]
+            val folderId = url.pathSegments[2]
+            return super.fetchSearchManga(page, "gallery:$username/$folderId", filters)
+        }
+        return super.fetchSearchManga(page, query, filters)
     }
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
