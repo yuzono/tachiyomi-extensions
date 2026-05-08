@@ -147,12 +147,6 @@ class Comix :
         val url = apiUrl.toHttpUrl().newBuilder()
             .addPathSegment("manga")
             .addPathSegment(hid)
-            .addQueryParameter("includes[]", "demographic")
-            .addQueryParameter("includes[]", "genre")
-            .addQueryParameter("includes[]", "theme")
-            .addQueryParameter("includes[]", "author")
-            .addQueryParameter("includes[]", "artist")
-            .addQueryParameter("includes[]", "publisher")
             .build()
 
         return GET(url, headers)
