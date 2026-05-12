@@ -43,7 +43,7 @@ class TaimuMangas : HttpSource() {
 
     // ================================ Popular =======================================
 
-    override fun popularMangaRequest(page: Int): Request = GET("$baseUrl/biblioteca?page=$page", rscHeaders())
+    override fun popularMangaRequest(page: Int): Request = GET("$baseUrl/biblioteca?sort_by=total_views&sort_order=desc&page=$page", rscHeaders())
 
     override fun popularMangaParse(response: Response): MangasPage {
         val library = response.extractNextJs<TaimuLibraryDto>(::isLibraryData)
@@ -61,40 +61,30 @@ class TaimuMangas : HttpSource() {
 
     // ================================ Search =======================================
 
-    override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request = GET("$baseUrl/biblioteca?page=$page", rscHeaders())
-
-    override fun searchMangaParse(response: Response): MangasPage {
-        val query = response.request.url.queryParameter("q").orEmpty()
-        val library = response.extractNextJs<TaimuLibraryDto>(::isLibraryData)
-            ?: return MangasPage(emptyList(), false)
-
-        val mangas = if (query.isNotEmpty()) {
-            library.series
-                .filter { it.title.contains(query, ignoreCase = true) }
-                .map { it.toSManga() }
-        } else {
-            library.series.map { it.toSManga() }
+    override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
+        val urlBuilder = baseUrl.toHttpUrl().newBuilder().apply {
+            addPathSegment("biblioteca")
+            addQueryParameter("name", query)
+            addQueryParameter("sort_by", "total_views")
+            addQueryParameter("sort_order", "desc")
+            addQueryParameter("page", page.toString())
         }
-
-        return MangasPage(mangas, library.pagination.hasNext)
+        return GET(urlBuilder.build(), rscHeaders())
     }
 
-    // ================================ Details =======================================
+    override fun searchMangaParse(response: Response): MangasPage = popularMangaParse(response)
 
-    override fun getMangaUrl(manga: SManga): String = "$baseUrl${manga.url}"
+    // ================================ Details =======================================
 
     override fun mangaDetailsRequest(manga: SManga): Request = GET("$baseUrl${manga.url}", rscHeaders())
 
     override fun mangaDetailsParse(response: Response): SManga {
-        val detail = response.extractNextJs<TaimuSeriesDetailDto>(::isSeriesDetail)
-            ?: return SManga.create()
+        val detail = response.extractNextJs<TaimuSeriesDetailDto>(::isSeriesDetail)!!
 
         return detail.toSManga()
     }
 
     // ================================ Chapters =======================================
-
-    override fun chapterListRequest(manga: SManga): Request = mangaDetailsRequest(manga)
 
     override fun chapterListParse(response: Response): List<SChapter> {
         val detail = response.extractNextJs<TaimuSeriesDetailDto>(::isSeriesDetail)
@@ -104,13 +94,14 @@ class TaimuMangas : HttpSource() {
 
         // Fetch remaining chapter pages if there are more
         if (detail.chapters.hasNext) {
-            val seriesCode = response.request.url.pathSegments.last()
+            val seriesCode = response.request.url.pathSegments.last { it.isNotEmpty() }
             for (page in 2..detail.chapters.totalPages) {
                 try {
-                    val pageResponse = client.newCall(
+                    val pageDetail = client.newCall(
                         GET("$baseUrl/series/$seriesCode?page=$page", rscHeaders()),
-                    ).execute()
-                    val pageDetail = pageResponse.extractNextJs<TaimuSeriesDetailDto>(::isSeriesDetail)
+                    ).execute().use { pageResponse ->
+                        pageResponse.extractNextJs<TaimuSeriesDetailDto>(::isSeriesDetail)
+                    }
                         ?: break
                     chapters.addAll(pageDetail.chapters.chapters.map { it.toSChapter() })
                 } catch (_: Exception) {
@@ -137,7 +128,7 @@ class TaimuMangas : HttpSource() {
             }
     }
 
-    override fun imageUrlParse(response: Response): String = ""
+    override fun imageUrlParse(response: Response) = throw UnsupportedOperationException()
 
     override fun imageRequest(page: Page): Request {
         val headers = headersBuilder()
