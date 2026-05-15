@@ -41,7 +41,7 @@ class SeriesPayloadDto(
     val artist: String? = null,
     val coverImage: String? = null,
     val chapters: List<SeriesChapterDto> = emptyList(),
-    val slug: String,
+    private val slug: String? = null,
 )
 
 @Serializable
@@ -87,4 +87,9 @@ class SeriesChapterDto(
     }
 }
 
-fun Double.toChapterNumberString(): String = toString().removeSuffix(".0")
+@Serializable
+class ChapterContentDto(
+    val content: List<String>,
+)
+
+private fun Double.toChapterNumberString(): String = toString().removeSuffix(".0")
