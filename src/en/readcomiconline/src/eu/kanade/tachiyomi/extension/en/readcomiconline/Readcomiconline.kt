@@ -1,6 +1,9 @@
 package eu.kanade.tachiyomi.extension.en.readcomiconline
 
 import android.content.SharedPreferences
+import androidx.preference.EditTextPreference
+import androidx.preference.ListPreference
+import androidx.preference.PreferenceScreen
 import app.cash.quickjs.QuickJs
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.source.ConfigurableSource
@@ -38,7 +41,13 @@ class Readcomiconline :
 
     override val name = "ReadComicOnline"
 
-    override val baseUrl = "https://readcomiconline.li"
+    override val baseUrl: String
+        get() {
+            val index = preferences.getString(MIRROR_PREF, "1")!!
+                .toIntOrNull() ?: 1
+
+            return MIRROR_URLS[index.coerceIn(MIRROR_URLS.indices)]
+        }
 
     override val lang = "en"
 
@@ -406,8 +415,17 @@ class Readcomiconline :
     )
     // Preferences Code
 
-    override fun setupPreferenceScreen(screen: androidx.preference.PreferenceScreen) {
-        val remoteConfigPref = androidx.preference.EditTextPreference(screen.context).apply {
+    override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        val mirrorPref = ListPreference(screen.context).apply {
+            key = MIRROR_PREF
+            title = MIRROR_PREF_TITLE
+            entries = MIRROR_NAMES
+            entryValues = Array(MIRROR_URLS.size) { it.toString() }
+            setDefaultValue("1")
+            summary = "%s"
+        }
+
+        val remoteConfigPref = EditTextPreference(screen.context).apply {
             key = IMAGE_REMOTE_CONFIG_PREF
             title = IMAGE_REMOTE_CONFIG_TITLE
             summary = IMAGE_REMOTE_CONFIG_SUMMARY
@@ -427,7 +445,7 @@ class Readcomiconline :
             }
         }
 
-        val qualityPref = androidx.preference.ListPreference(screen.context).apply {
+        val qualityPref = ListPreference(screen.context).apply {
             key = QUALITY_PREF
             title = QUALITY_PREF_TITLE
             entries = arrayOf("High Quality", "Low Quality")
@@ -442,7 +460,7 @@ class Readcomiconline :
             }
         }
 
-        val serverPref = androidx.preference.ListPreference(screen.context).apply {
+        val serverPref = ListPreference(screen.context).apply {
             key = SERVER_PREF
             title = SERVER_PREF_TITLE
             entries = arrayOf("Server 1", "Server 2")
@@ -457,6 +475,7 @@ class Readcomiconline :
             }
         }
 
+        screen.addPreference(mirrorPref)
         screen.addPreference(remoteConfigPref)
         screen.addPreference(qualityPref)
         screen.addPreference(serverPref)
@@ -502,6 +521,10 @@ class Readcomiconline :
         private const val QUALITY_PREF = "qualitypref"
         private const val SERVER_PREF_TITLE = "Server Preference"
         private const val SERVER_PREF = "serverpref"
+        private const val MIRROR_PREF_TITLE = "Mirror Preference"
+        private const val MIRROR_PREF = "mirrorpref"
+        private val MIRROR_NAMES = arrayOf("readcomiconline.li", "rcostation.xyz")
+        private val MIRROR_URLS = arrayOf("https://readcomiconline.li", "https://rcostation.xyz")
         private const val IMAGE_REMOTE_CONFIG_TITLE = "Remote Config"
         private const val IMAGE_REMOTE_CONFIG_SUMMARY = "Remote Config Link"
         private const val IMAGE_REMOTE_CONFIG_PREF = "imageuseremotelinkpref"
