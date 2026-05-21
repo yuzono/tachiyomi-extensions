@@ -120,6 +120,8 @@ class AllManga :
     }
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
+        val subDub = filters.firstInstanceOrNull<SubDubFilter>()?.getValue() ?: "sub"
+
         val payload = GraphQL(
             SearchVariables(
                 search = SearchPayload(
@@ -133,7 +135,7 @@ class AllManga :
                 ),
                 size = LIMIT,
                 page = page,
-                translationType = "sub",
+                translationType = subDub,
                 countryOrigin = filters.firstInstanceOrNull<CountryFilter>()?.getValue() ?: "ALL",
             ),
             SEARCH_QUERY,

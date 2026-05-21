@@ -11,6 +11,8 @@ internal class SortFilter(name: String, sorts: List<Pair<String, String>>) : Sel
 
 internal class CountryFilter(name: String, countries: List<Pair<String, String>>) : SelectFilter(name, countries)
 
+internal class SubDubFilter(name: String, options: List<Pair<String, String>>) : SelectFilter(name, options)
+
 internal class Genre(name: String) : Filter.TriState(name)
 
 internal class GenreFilter(title: String, genres: List<String>) : Filter.Group<Genre>(title, genres.map(::Genre)) {
@@ -21,6 +23,11 @@ internal class GenreFilter(title: String, genres: List<String>) : Filter.Group<G
         get() = state.filter { it.isExcluded() }.map { it.name }.takeUnless { it.isEmpty() }
 }
 
+private val subDubList: List<Pair<String, String>> = listOf(
+    Pair("Sub", "sub"),
+    Pair("Dub", "dub"),
+    Pair("Both", "both")
+)
 private val sortList = listOf(
     Pair("Update", ""),
     Pair("Name Ascending", "Name_ASC"),
@@ -109,4 +116,5 @@ fun getFilters() = FilterList(
     SortFilter("Sort", sortList),
     CountryFilter("Countries", countryList),
     GenreFilter("Genres", genreList),
+    SubDubFilter("Sub/Dub", subDubList),
 )
