@@ -13,6 +13,7 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.annotation.Source
+import keiyoushi.utils.firstInstanceOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import okhttp3.Response
@@ -84,7 +85,9 @@ abstract class EliteBabes : Masonry() {
 
     class ChannelFilter(channels: List<Pair<String, String>>) : SelectFilter("Channels", channels)
 
+    @Volatile
     private var channelsFetchAttempt = 0
+    @Volatile
     private var channels = emptyList<Pair<String, String>>()
 
     private fun getChannels() {
@@ -111,7 +114,9 @@ abstract class EliteBabes : Masonry() {
 
     class BoardFilter(boards: List<Pair<String, String>>) : SelectFilter("Boards", boards)
 
+    @Volatile
     private var boardsFetchAttempt = 0
+    @Volatile
     private var boards = emptyList<Pair<String, String>>()
 
     private fun getBoards() {
@@ -165,10 +170,10 @@ abstract class EliteBabes : Masonry() {
     }
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
-        val highlightsFilter = filters.filterIsInstance<HighlightsFilter>().first()
-        val channelFilter = filters.filterIsInstance<ChannelFilter>().first()
-        val boardFilter = filters.filterIsInstance<BoardFilter>().first()
-        val sortFilter = filters.filterIsInstance<SortFilter>().first()
+        val highlightsFilter = filters.firstInstanceOrNull<HighlightsFilter>() ?: HighlightsFilter(highlights)
+        val channelFilter = filters.firstInstanceOrNull<ChannelFilter>() ?: ChannelFilter(channels)
+        val boardFilter = filters.firstInstanceOrNull<BoardFilter>() ?: BoardFilter(boards)
+        val sortFilter = filters.firstInstanceOrNull<SortFilter>() ?: SortFilter()
 
         return when {
             highlightsFilter.state != 0 -> GET(highlightsFilter.selected, headers)
@@ -230,6 +235,8 @@ abstract class EliteBabes : Masonry() {
     )
 
     override fun searchMangaParse(response: Response): MangasPage {
+        getChannels()
+        getBoards()
         val requestUrl = response.request.url.toString()
         return when {
             highlights.map { it.second }.any { it == requestUrl } -> {
@@ -244,10 +251,9 @@ abstract class EliteBabes : Masonry() {
                 val mangaFromElement = ::collectionMangaFromElement
 
                 val document = response.asJsoup()
-                val mangas = document.select(searchMangaSelector())
+                val mangas = document.select(popularMangaSelector())
                     .map { element -> mangaFromElement(element) }
-                val hasNextPage = searchMangaNextPageSelector().let { document.select(it).first() } != null
-
+                val hasNextPage = document.selectFirst(popularMangaNextPageSelector()) != null
                 MangasPage(mangas, hasNextPage)
             }
             /* Support all three:
@@ -262,8 +268,7 @@ abstract class EliteBabes : Masonry() {
                 val mangas =
                     document.select("$galleryListSelector > li:not(:has(.icon-play, a[href*='/video/']))")
                         .map { element -> mangaFromElement(element) }
-                val hasNextPage = searchMangaNextPageSelector().let { document.select(it).first() } != null
-
+                val hasNextPage = document.selectFirst(popularMangaNextPageSelector()) != null
                 MangasPage(mangas, hasNextPage)
             }
             else -> super.searchMangaParse(response)
