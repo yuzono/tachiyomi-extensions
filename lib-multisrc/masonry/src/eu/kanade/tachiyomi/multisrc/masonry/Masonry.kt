@@ -261,30 +261,29 @@ abstract class Masonry(
              - model search /search/model/ to show each gallery as a separated title (just like normal browsing)
              - and model-tag
               They all return model-entries */
-            response.request.url.toString()
-                .contains("/model(s|-tag)?/".toRegex()) -> ::modelMangaFromElement
+            response.request.url.pathSegments.any { it == "model" || it == "models" || it == "model-tag" } -> ::modelMangaFromElement
 
             else -> ::popularMangaFromElement
         }
 
         val document = response.asJsoup()
-        val mangas = document.select(popularMangaSelector()).map { element ->
-            mangaFromElement(element)
-        }
+        val mangas = document.select(popularMangaSelector()).map(mangaFromElement)
         val hasNextPage = document.selectFirst(popularMangaNextPageSelector()) != null
         return MangasPage(mangas, hasNextPage)
     }
 
     private val scope = CoroutineScope(Dispatchers.IO)
     protected fun launchIO(block: () -> Unit) = scope.launch { block() }
+
     @Volatile
     private var tagsFetchAttempt = 0
+
     @Volatile
     private var tags = emptyList<Tag>()
 
     protected open fun getTags() {
-        launchIO {
-            if (tags.isEmpty() && tagsFetchAttempt < 3) {
+        if (tags.isEmpty() && tagsFetchAttempt < 3) {
+            launchIO {
                 runCatching {
                     tags = client.newCall(GET("$baseUrl/updates/", headers))
                         .execute().asJsoup()
@@ -397,14 +396,16 @@ abstract class Masonry(
     /* Models */
     @Volatile
     private var modelTagsFetchAttempt = 0
+
     @Volatile
     private var modelTags = emptyList<Tag>()
+
     @Volatile
     private var modelCountries = emptyList<Country>()
 
     protected open fun getModelTags() {
-        launchIO {
-            if (modelTagsFetchAttempt < 3 && (modelTags.isEmpty() || modelCountries.isEmpty())) {
+        if (modelTagsFetchAttempt < 3 && (modelTags.isEmpty() || modelCountries.isEmpty())) {
+            launchIO {
                 runCatching {
                     client.newCall(GET("$baseUrl/models/", headers))
                         .execute().asJsoup().run {

@@ -85,12 +85,13 @@ class EliteBabes : Masonry("Elite Babes", "https://www.elitebabes.com", "all") {
 
     @Volatile
     private var channelsFetchAttempt = 0
+
     @Volatile
     private var channels = emptyList<Pair<String, String>>()
 
     private fun getChannels() {
-        launchIO {
-            if (channels.isEmpty() && channelsFetchAttempt < 3) {
+        if (channels.isEmpty() && channelsFetchAttempt < 3) {
+            launchIO {
                 runCatching {
                     channels = listOf(Pair("Off", "")) +
                         client.newCall(GET("$baseUrl/erotic-art-channels/", headers))
@@ -114,12 +115,13 @@ class EliteBabes : Masonry("Elite Babes", "https://www.elitebabes.com", "all") {
 
     @Volatile
     private var boardsFetchAttempt = 0
+
     @Volatile
     private var boards = emptyList<Pair<String, String>>()
 
     private fun getBoards() {
-        launchIO {
-            if (boards.isEmpty() && boardsFetchAttempt < 3) {
+        if (boards.isEmpty() && boardsFetchAttempt < 3) {
+            launchIO {
                 runCatching {
                     boards = listOf(Pair("Off", "")) +
                         client.newCall(GET("$baseUrl/boards/", headers))
@@ -249,8 +251,7 @@ class EliteBabes : Masonry("Elite Babes", "https://www.elitebabes.com", "all") {
                 val mangaFromElement = ::collectionMangaFromElement
 
                 val document = response.asJsoup()
-                val mangas = document.select(popularMangaSelector())
-                    .map { element -> mangaFromElement(element) }
+                val mangas = document.select(popularMangaSelector()).map(mangaFromElement)
                 val hasNextPage = document.selectFirst(popularMangaNextPageSelector()) != null
                 MangasPage(mangas, hasNextPage)
             }
