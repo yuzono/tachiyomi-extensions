@@ -63,21 +63,22 @@ abstract class Masonry(
     // Add fake selector for updates/sort/popular because it only has 1 page
     protected open fun popularMangaNextPageSelector() = ".pagination-a li.next, main#content .link-btn a.overlay-a[href='/updates/sort/popular/']"
 
-    override fun popularMangaParse(response: Response): MangasPage {
-        getTags()
-        val document = response.asJsoup()
-        val mangas = document.select(popularMangaSelector())
-            .map(::popularMangaFromElement)
-        val hasNextPage = document.selectFirst(popularMangaNextPageSelector()) != null
-        return MangasPage(mangas, hasNextPage)
-    }
-
-    protected open fun popularMangaFromElement(element: Element) = SManga.create().apply {
+    protected open fun popularMangaFromElement(element: Element): SManga = SManga.create().apply {
         element.selectFirst(".img-overlay > p > a")!!.run {
             setUrlWithoutDomain(absUrl("href"))
             title = text()
         }
         thumbnail_url = element.selectFirst("a img")?.imgAttr()
+    }
+
+    override fun popularMangaParse(response: Response): MangasPage {
+        getTags()
+        getModelTags()
+        val document = response.asJsoup()
+        val mangas = document.select(popularMangaSelector())
+            .map(::popularMangaFromElement)
+        val hasNextPage = document.selectFirst(popularMangaNextPageSelector()) != null
+        return MangasPage(mangas, hasNextPage)
     }
 
     /**
@@ -127,7 +128,7 @@ abstract class Masonry(
     }
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
-        val searchType = filters.firstInstanceOrNull<SearchTypeFilter>()?.selected!!
+        val searchType = filters.firstInstanceOrNull<SearchTypeFilter>()?.selected ?: searchTypeOptions.first().second
         return if (query.isNotEmpty()) {
             val url = "$baseUrl/search/$searchType/".toHttpUrl().newBuilder()
                 .addPathSegment(query.trim())
@@ -135,12 +136,12 @@ abstract class Masonry(
                 .build()
             GET(url, headers)
         } else {
-            val sortFilter = filters.firstInstanceOrNull<SortFilter>()!!
-            val tagsFilter = filters.firstInstanceOrNull<TagsFilter>()!!
-            val modelTagsFilter = filters.firstInstanceOrNull<ModelTagsFilter>()!!
-            val modelAgeFilter = filters.firstInstanceOrNull<AgesFilter>()!!
+            val sortFilter = filters.firstInstanceOrNull<SortFilter>() ?: SortFilter()
+            val tagsFilter = filters.firstInstanceOrNull<TagsFilter>() ?: TagsFilter(tags)
+            val modelTagsFilter = filters.firstInstanceOrNull<ModelTagsFilter>() ?: ModelTagsFilter(modelTags)
+            val modelAgeFilter = filters.firstInstanceOrNull<AgesFilter>() ?: AgesFilter()
             val modelCountriesFilter =
-                filters.firstInstanceOrNull<ModelCountriesFilter>()!!
+                filters.firstInstanceOrNull<ModelCountriesFilter>() ?: ModelCountriesFilter(modelCountries)
 
             val url = baseUrl.toHttpUrl().newBuilder().apply {
                 when {
@@ -252,6 +253,8 @@ abstract class Masonry(
     }
 
     override fun searchMangaParse(response: Response): MangasPage {
+        getTags()
+        getModelTags()
         val mangaFromElement = when {
             /* Support all three:
              - models browsing /models/ to make each model a title with multiple chapters of her galleries
@@ -261,25 +264,22 @@ abstract class Masonry(
             response.request.url.toString()
                 .contains("/model(s|-tag)?/".toRegex()) -> ::modelMangaFromElement
 
-            else -> ::searchMangaFromElement
+            else -> ::popularMangaFromElement
         }
 
         val document = response.asJsoup()
-        val mangas = document.select(searchMangaSelector()).map { element ->
+        val mangas = document.select(popularMangaSelector()).map { element ->
             mangaFromElement(element)
         }
-        val hasNextPage = searchMangaNextPageSelector().let { document.select(it).first() } != null
-
+        val hasNextPage = document.selectFirst(popularMangaNextPageSelector()) != null
         return MangasPage(mangas, hasNextPage)
     }
 
-    protected open fun searchMangaSelector() = popularMangaSelector()
-    protected open fun searchMangaNextPageSelector() = popularMangaNextPageSelector()
-    protected open fun searchMangaFromElement(element: Element) = popularMangaFromElement(element)
-
     private val scope = CoroutineScope(Dispatchers.IO)
     protected fun launchIO(block: () -> Unit) = scope.launch { block() }
+    @Volatile
     private var tagsFetchAttempt = 0
+    @Volatile
     private var tags = emptyList<Tag>()
 
     protected open fun getTags() {
@@ -344,26 +344,26 @@ abstract class Masonry(
         Pair("Models", "model"),
     )
 
-    protected open fun mangaDetailsParse(document: Document) = SManga.create().apply {
-        document.selectFirst("header#top h1")?.run {
-            title = text()
-        }
-        document.selectFirst("p.link-btn")?.run {
-            artist = select("a[href*=/model/]").eachText().joinToString()
-            author = selectFirst("a")?.text()
-            genre = (listOf(author, artist) + select("a[href*=/tag/]").eachText()).joinToString()
-        }
-        description = document.selectFirst("#content > p")?.text()
-        status = SManga.COMPLETED
-        update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
-    }
-
     override fun mangaDetailsParse(response: Response): SManga = when {
         response.request.url.toString().contains("/model/") ->
             modelMangaDetailsParse(response.asJsoup())
 
-        else ->
-            mangaDetailsParse(response.asJsoup())
+        else -> {
+            val document = response.asJsoup()
+            SManga.create().apply {
+                document.selectFirst("header#top h1")?.run {
+                    title = text()
+                }
+                document.selectFirst("p.link-btn")?.run {
+                    artist = select("a[href*=/model/]").eachText().joinToString()
+                    author = selectFirst("a")?.text()
+                    genre = (listOf(author, artist) + select("a[href*=/tag/]").eachText()).joinToString()
+                }
+                description = document.selectFirst("#content > p")?.text()
+                status = SManga.COMPLETED
+                update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
+            }
+        }
     }
 
     override fun chapterListRequest(manga: SManga) = when {
@@ -378,7 +378,7 @@ abstract class Masonry(
         return document.selectFirst(galleryListSelector)?.run {
             // select separately so if a model doesn't have any content then it will return an empty list
             select(gallerySelector)
-                .map { chapterFromElement(it) }
+                .map(::modelChapterFromElement)
         } ?: document.selectFirst(videoSelector)?.run {
             listOf(
                 SChapter.create().apply {
@@ -395,8 +395,11 @@ abstract class Masonry(
     }
 
     /* Models */
+    @Volatile
     private var modelTagsFetchAttempt = 0
+    @Volatile
     private var modelTags = emptyList<Tag>()
+    @Volatile
     private var modelCountries = emptyList<Country>()
 
     protected open fun getModelTags() {
@@ -454,8 +457,8 @@ abstract class Masonry(
 
     protected open fun modelMangaDetailsParse(document: Document) = SManga.create().apply {
         document.selectFirst("article.module-model")?.run {
-            val stats = selectFirst(".header-model").also {
-                val model = selectFirst("h1")?.text()
+            val stats = selectFirst(".header-model")?.also { elm: Element ->
+                val model = elm.selectFirst("h1")?.text()
                 artist = model
                 title = "$model @$name"
             }
@@ -475,7 +478,7 @@ abstract class Masonry(
     /**
      * This is mainly used for model as a manga with each of her galleries as a chapter
      */
-    protected open fun chapterFromElement(element: Element): SChapter {
+    protected open fun modelChapterFromElement(element: Element): SChapter {
         val isVideo = element.selectFirst(videoTitleSelector) != null
         return SChapter.create().apply {
             // Use img-overlay to get correct set's name without duplicate model's name
@@ -490,6 +493,8 @@ abstract class Masonry(
         val document = response.asJsoup()
         return pageListParse(document)
     }
+
+    /* Pages */
 
     protected open fun pageListParse(document: Document): List<Page> = document.select(".list-gallery a[href^=https://cdn.], $videoSelector")
         .mapIndexed { idx, img ->
