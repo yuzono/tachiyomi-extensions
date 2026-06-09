@@ -366,8 +366,10 @@ class Comix :
                         return originalOpen.apply(this, arguments);
                     };
 
+                    if (JSON.parse.__comixChapterCaptureInstalled) return;
                     const originalParse = JSON.parse;
                     const seen = new Set();
+                    const nextClicks = new Set();
                     const items = [];
                     let submitted = false;
                     const submit = function () {
@@ -376,7 +378,7 @@ class Comix :
                         window.$$interfaceName.passPayload(JSON.stringify(items));
                     };
 
-                    JSON.parse = new Proxy(originalParse, {
+                    const proxiedParse = new Proxy(originalParse, {
                         apply(target, thisArg, args) {
                             const parsed = Reflect.apply(target, thisArg, args);
                             try {
@@ -394,7 +396,8 @@ class Comix :
                                     if (!seen.has(page)) {
                                         seen.add(page);
                                         for (const it of parsed.result.items) items.push(it);
-                                        if (meta && meta.hasNext) {
+                                        if (meta && meta.hasNext && !nextClicks.has(page)) {
+                                            nextClicks.add(page);
                                             window.$$interfaceName.resetTimer();
                                             let tries = 0;
                                             const iv = setInterval(function () {
@@ -416,6 +419,8 @@ class Comix :
                             return parsed;
                         }
                     });
+                    proxiedParse.__comixChapterCaptureInstalled = true;
+                    JSON.parse = proxiedParse;
                 })();
                 """.trimIndent()
             },
@@ -496,8 +501,9 @@ class Comix :
             buildScript = { interfaceName ->
                 """
                 (function () {
+                    if (JSON.parse.__comixPageCaptureInstalled) return;
                     const originalParse = JSON.parse;
-                    JSON.parse = new Proxy(originalParse, {
+                    const proxiedParse = new Proxy(originalParse, {
                         apply(target, thisArg, args) {
                             const parsed = Reflect.apply(target, thisArg, args);
                             try {
@@ -508,6 +514,8 @@ class Comix :
                             return parsed;
                         }
                     });
+                    proxiedParse.__comixPageCaptureInstalled = true;
+                    JSON.parse = proxiedParse;
                 })();
                 """.trimIndent()
             },
