@@ -91,8 +91,9 @@ abstract class EliteBabes : Masonry() {
     @Volatile
     private var channels = emptyList<Pair<String, String>>()
 
+    @Synchronized
     private fun getChannels() {
-        if (channels.isEmpty() && channelsFetchAttempt < 3) {
+        if (channels.isEmpty() && channelsFetchAttempt++ < 3) {
             launchIO {
                 runCatching {
                     channels = listOf(Pair("Off", "")) +
@@ -108,7 +109,6 @@ abstract class EliteBabes : Masonry() {
                                 )
                             }
                 }
-                channelsFetchAttempt++
             }
         }
     }
@@ -121,8 +121,9 @@ abstract class EliteBabes : Masonry() {
     @Volatile
     private var boards = emptyList<Pair<String, String>>()
 
+    @Synchronized
     private fun getBoards() {
-        if (boards.isEmpty() && boardsFetchAttempt < 3) {
+        if (boards.isEmpty() && boardsFetchAttempt++ < 3) {
             launchIO {
                 runCatching {
                     boards = listOf(Pair("Off", "")) +
@@ -138,7 +139,6 @@ abstract class EliteBabes : Masonry() {
                                 )
                             }
                 }
-                boardsFetchAttempt++
             }
         }
     }

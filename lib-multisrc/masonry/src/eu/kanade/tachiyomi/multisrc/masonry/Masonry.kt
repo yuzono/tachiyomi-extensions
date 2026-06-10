@@ -277,8 +277,9 @@ abstract class Masonry : HttpSource() {
     @Volatile
     private var tags = emptyList<Tag>()
 
+    @Synchronized
     protected open fun getTags() {
-        if (tags.isEmpty() && tagsFetchAttempt < 3) {
+        if (tags.isEmpty() && tagsFetchAttempt++ < 3) {
             launchIO {
                 runCatching {
                     tags = client.newCall(GET("$baseUrl/updates/", headers))
@@ -291,7 +292,6 @@ abstract class Masonry : HttpSource() {
                             )
                         }
                 }
-                tagsFetchAttempt++
             }
         }
     }
@@ -399,8 +399,9 @@ abstract class Masonry : HttpSource() {
     @Volatile
     private var modelCountries = emptyList<Country>()
 
+    @Synchronized
     protected open fun getModelTags() {
-        if (modelTagsFetchAttempt < 3 && (modelTags.isEmpty() || modelCountries.isEmpty())) {
+        if (modelTagsFetchAttempt++ < 3 && (modelTags.isEmpty() || modelCountries.isEmpty())) {
             launchIO {
                 runCatching {
                     client.newCall(GET("$baseUrl/models/", headers))
@@ -423,7 +424,6 @@ abstract class Masonry : HttpSource() {
                                     }
                         }
                 }
-                modelTagsFetchAttempt++
             }
         }
     }
