@@ -158,7 +158,7 @@ class MissKon :
     }
 
     override suspend fun getChapterList(manga: SManga): List<SChapter> {
-        val doc = client.newCall(chapterListRequest(manga)).await().asJsoup()
+        val doc = client.newCall(chapterListRequest(manga)).await().use { it.asJsoup() }
         val dateUploadStr = doc.selectFirst(".entry img")?.imgAttr()
             ?.let { url ->
                 FULL_DATE_REGEX.find(url)?.groupValues?.get(1)
@@ -235,7 +235,7 @@ class MissKon :
             chapterPage += pages.map { url ->
                 async(Dispatchers.IO) {
                     val request = GET(url, headers)
-                    parseImageList(client.newCall(request).await().asJsoup())
+                    parseImageList(client.newCall(request).await().use { it.asJsoup() })
                 }
             }.awaitAll().flatten()
         }
@@ -282,7 +282,7 @@ class MissKon :
             launchIO {
                 runCatching {
                     client.newCall(GET("$baseUrl/sets/", headers)).execute()
-                        .asJsoup()
+                        .use { it.asJsoup() }
                         .select(".entry .tag-counterz a[href*=/tag/]")
                         .mapNotNull {
                             Pair(
