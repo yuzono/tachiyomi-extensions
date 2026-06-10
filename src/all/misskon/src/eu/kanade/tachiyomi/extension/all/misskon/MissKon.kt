@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.extension.all.misskon
 
 import android.content.SharedPreferences
+import android.net.Uri
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import androidx.preference.SwitchPreferenceCompat
@@ -284,7 +285,8 @@ class MissKon :
                                 it.select("strong").text(),
                                 it.attr("href")
                                     .removeSuffix("/")
-                                    .substringAfterLast('/'),
+                                    .substringAfterLast('/')
+                                    .let(Uri::decode),
                             )
                         }
                         .let { newTags ->
@@ -324,6 +326,7 @@ class MissKon :
                 val uri = tag.attr("href")
                     .removeSuffix("/")
                     .substringAfterLast('/')
+                    .let(Uri::decode)
                 tag.text() to uri
             }
             tagList = tagList + newTags.toSet()
