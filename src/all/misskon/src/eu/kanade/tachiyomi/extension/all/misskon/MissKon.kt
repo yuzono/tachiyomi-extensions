@@ -7,7 +7,6 @@ import androidx.preference.PreferenceScreen
 import androidx.preference.SwitchPreferenceCompat
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.await
-import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -18,6 +17,7 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.firstInstanceOrNull
 import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.tryParse
@@ -34,12 +34,12 @@ import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.text.SimpleDateFormat
 import java.util.Locale
-import java.util.concurrent.TimeUnit
-import kotlin.getValue
+import kotlin.time.Duration.Companion.seconds
 
 class MissKon :
     HttpSource(),
     ConfigurableSource {
+    private val baseUrlHost by lazy { baseUrl.toHttpUrl().host }
 
     override val baseUrl = "https://misskon.com"
     override val lang = "all"
@@ -47,7 +47,7 @@ class MissKon :
     override val supportsLatest = true
 
     override val client = network.client.newBuilder()
-        .rateLimitHost(baseUrl.toHttpUrl(), 10, 1, TimeUnit.SECONDS)
+        .rateLimit(10, 1.seconds) { it.host == baseUrlHost }
         .build()
 
     private val preferences by getPreferencesLazy()
@@ -270,44 +270,59 @@ class MissKon :
     private var tagsFetched = false
 
     @Volatile
+    private var tagsFetching = false
+
+    @Volatile
     private var tagsFetchAttempt = 0
 
     @Synchronized
     private fun getTags() {
-        if (!tagsFetched && tagsFetchAttempt++ < 3) {
-            launchIO {
-                runCatching {
-                    client.newCall(GET("$baseUrl/sets/", headers)).execute()
-                        .use { it.asJsoup() }
-                        .select(".entry .tag-counterz a[href*=/tag/]")
-                        .map {
-                            Pair(
-                                it.select("strong").text(),
-                                it.attr("href")
-                                    .removeSuffix("/")
-                                    .substringAfterLast('/')
-                                    .let(Uri::decode),
-                            )
-                        }
-                        .let { newTags ->
-                            tagList = DefaultTagList + newTags.toSet() + tagList
-                            tagsFetched = true
-                        }
-                }
+        if (tagsFetched || tagsFetching || tagsFetchAttempt >= 3) return
+        tagsFetching = true
+        tagsFetchAttempt++
+        launchIO {
+            runCatching {
+                client.newCall(GET("$baseUrl/sets/", headers)).execute()
+                    .use { it.asJsoup() }
+                    .select(".entry .tag-counterz a[href*=/tag/]")
+                    .map {
+                        Pair(
+                            it.select("strong").text(),
+                            it.attr("href")
+                                .removeSuffix("/")
+                                .substringAfterLast('/')
+                                .let(Uri::decode),
+                        )
+                    }
+                    .let { newTags ->
+                        updateTags(newTags.toSet(), true)
+                        tagsFetched = true
+                    }
+            }.onFailure {
+                tagsFetching = false
             }
         }
     }
 
     @Volatile
     private var tagList: Set<Pair<String, String>> = DefaultTagList + loadTagListFromPreferences()
-        set(value) {
-            val additionalTags = value - DefaultTagList
+
+    @Synchronized
+    private fun updateTags(newTags: Set<Pair<String, String>>, reset: Boolean = false) {
+        val updated = if (reset) {
+            DefaultTagList + newTags + tagList
+        } else {
+            tagList + newTags
+        }
+        if (tagList != updated) {
+            val additionalTags = updated - DefaultTagList
             preferences.edit().putString(
                 TAG_LIST_PREF,
                 additionalTags.joinToString("%") { "${it.first}|${it.second}" },
             ).apply()
-            field = value
+            tagList = updated
         }
+    }
 
     private fun loadTagListFromPreferences(): Set<Pair<String, String>> = preferences.getString(TAG_LIST_PREF, "")
         ?.let {
@@ -329,7 +344,7 @@ class MissKon :
                     .let(Uri::decode)
                 tag.text() to uri
             }
-            tagList = tagList + newTags.toSet()
+            updateTags(newTags.toSet())
         }
         .joinToString { it.text() }
 
