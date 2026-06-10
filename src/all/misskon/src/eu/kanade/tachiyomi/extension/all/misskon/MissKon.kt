@@ -78,6 +78,7 @@ class MissKon :
     }
 
     override fun popularMangaParse(response: Response): MangasPage {
+        getTags()
         val document = response.asJsoup()
         val mangas = document.select("article.item-list").map { mangaFromElement(it) }
         val hasNextPage = document.selectFirst(".current + a.page") != null
@@ -93,38 +94,33 @@ class MissKon :
 
     // region Search
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
-        val categoryFilter = filters.firstInstanceOrNull<SourceCategorySelector>()
         val tagFilter = filters.firstInstanceOrNull<TagsFilter>()
         val topDaysFilter = filters.firstInstanceOrNull<TopDaysFilter>()
-        return categoryFilter?.selectedCategory?.let {
-            GET("$baseUrl${it.url}", headers)
-        } ?: run {
-            val url = baseUrl.toHttpUrl().newBuilder()
-            when {
-                query.isNotBlank() -> {
-                    if (listOf("photo", "photos", "video", "videos").contains(query.trim())) {
-                        return GET("$baseUrl/search")
-                    }
-                    if (page > 1) {
-                        url.addPathSegment("page")
-                        url.addPathSegment(page.toString())
-                    }
-                    url.addQueryParameter("s", query.trim())
+        val url = baseUrl.toHttpUrl().newBuilder()
+        when {
+            query.isNotBlank() -> {
+                if (listOf("photo", "photos", "video", "videos").contains(query.trim())) {
+                    return GET("$baseUrl/search")
                 }
-                topDaysFilter != null && topDaysFilter.state > 0 -> {
-                    url.addPathSegment(topDaysFilter.toUriPart())
-                }
-                tagFilter != null && tagFilter.state > 0 -> {
-                    url.addPathSegment("tag")
-                    url.addPathSegment(tagFilter.toUriPart())
-
+                if (page > 1) {
                     url.addPathSegment("page")
                     url.addPathSegment(page.toString())
                 }
-                else -> return@run latestUpdatesRequest(page)
+                url.addQueryParameter("s", query.trim())
             }
-            GET(url.build(), headers)
+            topDaysFilter != null && topDaysFilter.state > 0 -> {
+                url.addPathSegment(topDaysFilter.toUriPart())
+            }
+            tagFilter != null && tagFilter.state > 0 -> {
+                url.addPathSegment("tag")
+                url.addPathSegment(tagFilter.toUriPart())
+
+                url.addPathSegment("page")
+                url.addPathSegment(page.toString())
+            }
+            else -> return latestUpdatesRequest(page)
         }
+        return GET(url.build(), headers)
     }
 
     override fun searchMangaParse(response: Response) = popularMangaParse(response)
@@ -256,7 +252,6 @@ class MissKon :
         return FilterList(
             Filter.Header("NOTE: Unable to further search in the category!"),
             Filter.Separator(),
-            SourceCategorySelector.create(),
             TopDaysFilter("Top days", getTopDaysList()),
             if (tagList.isEmpty()) {
                 Filter.Header("Hit refresh to load Tags")
@@ -284,7 +279,7 @@ class MissKon :
                     client.newCall(GET("$baseUrl/sets/", headers)).execute()
                         .use { it.asJsoup() }
                         .select(".entry .tag-counterz a[href*=/tag/]")
-                        .mapNotNull {
+                        .map {
                             Pair(
                                 it.select("strong").text(),
                                 it.attr("href")
@@ -292,10 +287,8 @@ class MissKon :
                                     .substringAfterLast('/'),
                             )
                         }
-                        .onEach {
-                            tagList = tagList.plus(it)
-                        }
-                        .also {
+                        .let { newTags ->
+                            tagList = DefaultTagList + newTags.toSet() + tagList
                             tagsFetched = true
                         }
                 }
@@ -303,11 +296,13 @@ class MissKon :
         }
     }
 
-    private var tagList: Set<Pair<String, String>> = loadTagListFromPreferences()
+    @Volatile
+    private var tagList: Set<Pair<String, String>> = DefaultTagList + loadTagListFromPreferences()
         set(value) {
+            val additionalTags = value - DefaultTagList
             preferences.edit().putString(
                 TAG_LIST_PREF,
-                value.joinToString("%") { "${it.first}|${it.second}" },
+                additionalTags.joinToString("%") { "${it.first}|${it.second}" },
             ).apply()
             field = value
         }
@@ -320,17 +315,18 @@ class MissKon :
                         if (splits.size == 2) Pair(splits[0], splits[1]) else null
                     }
             }
-        }
-        ?.toSet()
-        // Load default tags
-        .let { if (it.isNullOrEmpty()) TagList else it }
+        }?.toSet()
+        ?: emptySet()
 
     private fun Element.parseTags(selector: String = ".post-tag a, .post-cats a"): String = select(selector)
-        .onEach {
-            val uri = it.attr("href")
-                .removeSuffix("/")
-                .substringAfterLast('/')
-            tagList = tagList.plus(it.text() to uri)
+        .also { elements ->
+            val newTags = elements.map { tag ->
+                val uri = tag.attr("href")
+                    .removeSuffix("/")
+                    .substringAfterLast('/')
+                tag.text() to uri
+            }
+            tagList = tagList + newTags.toSet()
         }
         .joinToString { it.text() }
 

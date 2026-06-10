@@ -24,7 +24,7 @@ class TagsFilter(displayName: String, private val tags: List<Pair<String, String
 }
 
 // console.log([...document.querySelectorAll(".tag-counterz a")].map((el) => `Tag("${el.innerText.trim()}", "${el.getAttribute('href')}"),`).join('\n'))
-val TagList = setOf(
+val DefaultTagList = setOf(
     Pair("<Select>", ""),
     Pair("--<Chinese>--", ""),
     Pair("[MTCos] 喵糖映画", "mtcos"),
@@ -105,5 +105,6 @@ val TagList = setOf(
     Pair("JP", "jp"),
     Pair("JVID", "jvid"),
     Pair("Patreon", "patreon"),
+    Pair("Haivia", "haivia"),
     Pair("--<More>--", ""),
 )
