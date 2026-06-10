@@ -61,7 +61,7 @@ class Mangadotnet :
     override val baseUrl = "https://mangadot.net"
     override val supportsLatest = true
 
-    override val client = network.cloudflareClient
+    override val client = network.client
 
     // ============================== Setup ===============================
     private val preferences = getPreferences {
@@ -349,7 +349,6 @@ class Mangadotnet :
 
     override fun mangaDetailsParse(response: Response): SManga {
         val data = response.decodeRscAs<Data<MangaData>>().data
-
         return data.mangaData.manga.toSManga(baseUrl)
     }
 
