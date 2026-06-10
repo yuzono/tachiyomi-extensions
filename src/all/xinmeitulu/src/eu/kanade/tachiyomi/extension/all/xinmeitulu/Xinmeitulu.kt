@@ -8,20 +8,19 @@ import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
-import eu.kanade.tachiyomi.source.online.ParsedHttpSource
+import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.utils.firstInstanceOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.asResponseBody
-import org.jsoup.nodes.Document
-import org.jsoup.nodes.Element
 import rx.Observable
 import java.util.Locale
 
-class Xinmeitulu : ParsedHttpSource() {
+class Xinmeitulu : HttpSource() {
     override val baseUrl = "https://www.xinmeitulu.com"
     override val lang = "all"
     override val name = "Xinmeitulu"
@@ -32,63 +31,75 @@ class Xinmeitulu : ParsedHttpSource() {
     // Latest
 
     override fun latestUpdatesRequest(page: Int) = throw UnsupportedOperationException()
-    override fun latestUpdatesNextPageSelector() = throw UnsupportedOperationException()
-    override fun latestUpdatesSelector() = throw UnsupportedOperationException()
-    override fun latestUpdatesFromElement(element: Element) = throw UnsupportedOperationException()
+    override fun latestUpdatesParse(response: Response): MangasPage = throw UnsupportedOperationException()
 
     // Popular
 
     override fun popularMangaRequest(page: Int) = GET("$baseUrl/page/$page")
-    override fun popularMangaNextPageSelector() = ".next"
-    override fun popularMangaSelector() = ".container > .row > div:has(figure)"
-    override fun popularMangaFromElement(element: Element) = SManga.create().apply {
-        setUrlWithoutDomain(element.select("figure > a").attr("abs:href"))
-        title = element.select("figcaption").text()
-        thumbnail_url = element.select("img").attr("abs:data-original-")
-        genre = element.select("a[rel='tag category']").last()?.text()
-            ?.removeSuffix("写真")?.let { translate(it) }
+
+    override fun popularMangaParse(response: Response): MangasPage {
+        val document = response.asJsoup()
+        val mangas = document.select(".container > .row > div:has(figure)").map { element ->
+            SManga.create().apply {
+                setUrlWithoutDomain(element.select("figure > a").attr("abs:href"))
+                title = element.select("figcaption").text()
+                thumbnail_url = element.select("img").attr("abs:data-original-")
+                genre = element.select("a[rel='tag category']")
+                    .joinToString {
+                        it.text().removeSuffix("写真")
+                            .translate()
+                    }
+            }
+        }
+        val hasNextPage = document.selectFirst(".next") != null
+        return MangasPage(mangas, hasNextPage)
     }
 
     // Search
 
-    override fun searchMangaFromElement(element: Element) = popularMangaFromElement(element)
-    override fun searchMangaNextPageSelector() = popularMangaNextPageSelector()
-    override fun searchMangaSelector() = popularMangaSelector()
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
-        val filterList = filters.let { if (it.isEmpty()) getFilterList() else it }
+        val filterList = filters.ifEmpty { getFilterList() }
+        val regionFilter = filterList.firstInstanceOrNull<RegionFilter>()
 
-        val url = baseUrl.toHttpUrl().newBuilder()
-
-        if (!filterList.isEmpty()) {
-            filterList.forEach { filter ->
-                when (filter) {
-                    is RegionFilter -> filter.toUriPart()?.let {
-                        url
-                            .addPathSegment("area")
-                            .addPathSegment(it)
-                    }
-                    else -> {}
-                }
+        val url = baseUrl.toHttpUrl().newBuilder().apply {
+            regionFilter?.toUriPart()?.let {
+                addPathSegment("area")
+                addPathSegment(it)
             }
-        }
+            addPathSegment("page")
+            addPathSegment(page.toString())
+            addQueryParameter("s", query)
+        }.toString()
 
-        url.addPathSegment("page").addPathSegment(page.toString())
-        url.addQueryParameter("s", query)
-
-        return GET(url.toString(), headers)
+        return GET(url, headers)
     }
 
-    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> = if (query.startsWith("SLUG:")) {
-        val slug = query.removePrefix("SLUG:")
-        client.newCall(GET("$baseUrl/photo/$slug", headers)).asObservableSuccess()
-            .map { response -> MangasPage(listOf(mangaDetailsParse(response.asJsoup())), false) }
-    } else {
-        super.fetchSearchManga(page, query, filters)
+    override fun searchMangaParse(response: Response) = popularMangaParse(response)
+
+    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (url.host != baseUrl.toHttpUrl().host) {
+                throw Exception("Unsupported url")
+            }
+            val slug = url.pathSegments.getOrNull(1)
+                ?: throw Exception("Unsupported url")
+            return fetchSearchManga(page, "SLUG:$slug", filters)
+        }
+
+        return if (query.startsWith("SLUG:")) {
+            val slug = query.removePrefix("SLUG:")
+            client.newCall(GET("$baseUrl/photo/$slug", headers)).asObservableSuccess()
+                .map { response -> MangasPage(listOf(mangaDetailsParse(response)), false) }
+        } else {
+            super.fetchSearchManga(page, query, filters)
+        }
     }
 
     // Details
 
-    override fun mangaDetailsParse(document: Document) = SManga.create().apply {
+    override fun mangaDetailsParse(response: Response) = SManga.create().apply {
+        val document = response.asJsoup()
         setUrlWithoutDomain(document.selectFirst("link[rel=canonical]")!!.attr("abs:href"))
         title = document.select(".container > h1").text()
         status = SManga.COMPLETED
@@ -98,18 +109,18 @@ class Xinmeitulu : ParsedHttpSource() {
             if (str.contains("拍摄机构：")) {
                 author = str.replace("拍摄机构：", "").trim()
             }
-            str.replace("拍摄机构：", "${translate("拍摄机构")}: ")
-                .replace("相关编号：", "${translate("相关编号")}: ")
-                .replace("图片数量：", "${translate("图片数量")}: ")
-                .replace("发行日期：", "${translate("发行日期")}: ")
-                .replace("出镜模特：", "${translate("出镜模特")}: ")
-                .replace("别名：", "\n${translate("别名")}: ")
-                .replace("生日：", "\n${translate("生日")}: ")
-                .replace("身高：", "\n${translate("身高")}: ")
-                .replace("三围：", "\n${translate("三围")}: ")
-                .replace("罩杯：", "\n${translate("罩杯")}: ")
-                .replace("杯", "-${translate("杯")}")
-                .replace("匿名", translate("匿名"))
+            str.replace("拍摄机构：", "${"拍摄机构".translate()}: ")
+                .replace("相关编号：", "${"相关编号".translate()}: ")
+                .replace("图片数量：", "${"图片数量".translate()}: ")
+                .replace("发行日期：", "${"发行日期".translate()}: ")
+                .replace("出镜模特：", "${"出镜模特".translate()}: ")
+                .replace("别名：", "\n${"别名".translate()}: ")
+                .replace("生日：", "\n${"生日".translate()}: ")
+                .replace("身高：", "\n${"身高".translate()}: ")
+                .replace("三围：", "\n${"三围".translate()}: ")
+                .replace("罩杯：", "\n${"罩杯".translate()}: ")
+                .replace("杯", "-${"杯".translate()}")
+                .replace("匿名", "匿名".translate())
                 .replace("；", "")
                 .trim()
         }
@@ -117,18 +128,25 @@ class Xinmeitulu : ParsedHttpSource() {
 
     // Chapters
 
-    override fun chapterListSelector() = "html"
-
-    override fun chapterFromElement(element: Element) = SChapter.create().apply {
-        setUrlWithoutDomain(element.selectFirst("link[rel=canonical]")!!.attr("abs:href"))
-        name = "Gallery" // Recheck how it affect download
+    override fun chapterListParse(response: Response): List<SChapter> {
+        val document = response.asJsoup()
+        return listOf(
+            SChapter.create().apply {
+                setUrlWithoutDomain(document.selectFirst("link[rel=canonical]")!!.attr("abs:href"))
+                name = "Gallery"
+            },
+        )
     }
 
-    override fun pageListParse(document: Document) = document.select(".container > div > figure img").mapIndexed { index, element ->
-        Page(index, imageUrl = element.attr("abs:data-original"))
-    }
+    // Pages
 
-    override fun imageUrlParse(document: Document): String = throw UnsupportedOperationException()
+    override fun pageListParse(response: Response) = response.asJsoup()
+        .select(".container > div > figure img")
+        .mapIndexed { index, element ->
+            Page(index, imageUrl = element.attr("abs:data-original"))
+        }
+
+    override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
 
     // Filters
 
@@ -139,18 +157,18 @@ class Xinmeitulu : ParsedHttpSource() {
     private class RegionFilter(vals: Array<Pair<String?, String>>) : UriPartFilter("Region", vals)
 
     private fun getRegionList(): Array<Pair<String?, String>> = arrayOf(
-        null to translate("全部"),
-        "zhongguodalumeinyu" to translate("中国大陆美女"),
-        "taiguomeinyu" to translate("泰国美女"),
-        "ribenmeinyu" to translate("日本美女"),
-        "hanguomeinyu" to translate("韩国美女"),
-        "taiwanmeinyu" to translate("台湾美女"),
-        "oumeimeinyu" to translate("欧美美女"),
+        null to "全部".translate(),
+        "zhongguodalumeinyu" to "中国大陆美女".translate(),
+        "taiguomeinyu" to "泰国美女".translate(),
+        "ribenmeinyu" to "日本美女".translate(),
+        "hanguomeinyu" to "韩国美女".translate(),
+        "taiwanmeinyu" to "台湾美女".translate(),
+        "oumeimeinyu" to "欧美美女".translate(),
     )
 
-    private fun translate(it: String): String {
-        if (Locale.getDefault().language == "zh") return it
-        return when (it) {
+    private fun String.translate(): String {
+        if (Locale.getDefault().language.startsWith("zh")) return this
+        return when (this) {
             // Region
             "全部" -> "All"
             "中国大陆美女" -> "Chinese beauty"
@@ -172,13 +190,17 @@ class Xinmeitulu : ParsedHttpSource() {
             "罩杯" -> "Cup size"
             "杯" -> "cup"
             "匿名" -> "Unknown"
-            else -> {
-                it
-            }
+            else -> this
         }
     }
 
-    private open class UriPartFilter(displayName: String, val vals: Array<Pair<String?, String>>) : Filter.Select<String>(displayName, vals.map { it.second }.toTypedArray()) {
+    private open class UriPartFilter(
+        displayName: String,
+        val vals: Array<Pair<String?, String>>,
+    ) : Filter.Select<String>(
+        displayName,
+        vals.map { it.second }.toTypedArray(),
+    ) {
         fun toUriPart() = vals[state].first
     }
 
