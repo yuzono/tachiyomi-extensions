@@ -279,23 +279,30 @@ abstract class Masonry(
     private var tagsFetchAttempt = 0
 
     @Volatile
+    private var tagsFetching = false
+
+    @Volatile
     private var tags = emptyList<Tag>()
 
     @Synchronized
     protected open fun getTags() {
-        if (tags.isEmpty() && tagsFetchAttempt++ < 3) {
-            launchIO {
-                runCatching {
-                    tags = client.newCall(GET("$baseUrl/updates/", headers))
-                        .execute().asJsoup()
-                        .select("#filter-a span[data-placeholder='Tags'] span:has(> input)")
-                        .mapNotNull {
-                            Tag(
-                                it.select("label").text(),
-                                it.select("input").attr("value"),
-                            )
-                        }
-                }
+        if (tags.isNotEmpty() || tagsFetching || tagsFetchAttempt >= 3) return
+        tagsFetching = true
+        tagsFetchAttempt++
+        launchIO {
+            try {
+                tags = client.newCall(GET("$baseUrl/updates/", headers)).execute()
+                    .use { it.asJsoup() }
+                    .select("#filter-a span[data-placeholder='Tags'] span:has(> input)")
+                    .map {
+                        Tag(
+                            it.select("label").text(),
+                            it.select("input").attr("value"),
+                        )
+                    }
+            } catch (_: Exception) {
+            } finally {
+                tagsFetching = false
             }
         }
     }
@@ -398,6 +405,9 @@ abstract class Masonry(
     private var modelTagsFetchAttempt = 0
 
     @Volatile
+    private var modelTagsFetching = false
+
+    @Volatile
     private var modelTags = emptyList<Tag>()
 
     @Volatile
@@ -405,29 +415,33 @@ abstract class Masonry(
 
     @Synchronized
     protected open fun getModelTags() {
-        if (modelTagsFetchAttempt++ < 3 && (modelTags.isEmpty() || modelCountries.isEmpty())) {
-            launchIO {
-                runCatching {
-                    client.newCall(GET("$baseUrl/models/", headers))
-                        .execute().asJsoup().run {
-                            modelTags =
-                                select("#filter-b span[data-placeholder='Tags'] span:has(> input)")
-                                    .mapNotNull {
-                                        Tag(
-                                            "M: " + it.select("label").text(),
-                                            it.select("input").attr("value"),
-                                        )
-                                    }
-                            modelCountries =
-                                select("#filter-b span[data-placeholder='Country'] span:has(> input)")
-                                    .mapNotNull {
-                                        Country(
-                                            it.select("label").text(),
-                                            it.select("input").attr("value"),
-                                        )
-                                    }
-                        }
-                }
+        if ((modelTags.isNotEmpty() && modelCountries.isNotEmpty()) || modelTagsFetching || modelTagsFetchAttempt >= 3) return
+        modelTagsFetching = true
+        modelTagsFetchAttempt++
+        launchIO {
+            try {
+                client.newCall(GET("$baseUrl/models/", headers)).execute()
+                    .use { it.asJsoup() }.run {
+                        modelTags =
+                            select("#filter-b span[data-placeholder='Tags'] span:has(> input)")
+                                .map {
+                                    Tag(
+                                        "M: " + it.select("label").text(),
+                                        it.select("input").attr("value"),
+                                    )
+                                }
+                        modelCountries =
+                            select("#filter-b span[data-placeholder='Country'] span:has(> input)")
+                                .map {
+                                    Country(
+                                        it.select("label").text(),
+                                        it.select("input").attr("value"),
+                                    )
+                                }
+                    }
+            } catch (_: Exception) {
+            } finally {
+                modelTagsFetching = false
             }
         }
     }

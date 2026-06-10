@@ -87,26 +87,33 @@ class EliteBabes : Masonry("Elite Babes", "https://www.elitebabes.com", "all") {
     private var channelsFetchAttempt = 0
 
     @Volatile
+    private var channelsFetching = false
+
+    @Volatile
     private var channels = emptyList<Pair<String, String>>()
 
     @Synchronized
     private fun getChannels() {
-        if (channels.isEmpty() && channelsFetchAttempt++ < 3) {
-            launchIO {
-                runCatching {
-                    channels = listOf(Pair("Off", "")) +
-                        client.newCall(GET("$baseUrl/erotic-art-channels/", headers))
-                            .execute().asJsoup()
-                            .select("ul.list-gallery figure > a")
-                            .mapNotNull {
-                                Pair(
-                                    it.select("img").attr("alt"),
-                                    it.attr("href")
-                                        .removeSuffix("/")
-                                        .substringAfterLast("/"),
-                                )
-                            }
-                }
+        if (channels.isNotEmpty() || channelsFetching || channelsFetchAttempt >= 3) return
+        channelsFetching = true
+        channelsFetchAttempt++
+        launchIO {
+            try {
+                channels = listOf(Pair("Off", "")) +
+                    client.newCall(GET("$baseUrl/erotic-art-channels/", headers)).execute()
+                        .use { it.asJsoup() }
+                        .select("ul.list-gallery figure > a")
+                        .map {
+                            Pair(
+                                it.select("img").attr("alt"),
+                                it.attr("href")
+                                    .removeSuffix("/")
+                                    .substringAfterLast("/"),
+                            )
+                        }
+            } catch (_: Exception) {
+            } finally {
+                channelsFetching = false
             }
         }
     }
@@ -117,26 +124,33 @@ class EliteBabes : Masonry("Elite Babes", "https://www.elitebabes.com", "all") {
     private var boardsFetchAttempt = 0
 
     @Volatile
+    private var boardsFetching = false
+
+    @Volatile
     private var boards = emptyList<Pair<String, String>>()
 
     @Synchronized
     private fun getBoards() {
-        if (boards.isEmpty() && boardsFetchAttempt++ < 3) {
-            launchIO {
-                runCatching {
-                    boards = listOf(Pair("Off", "")) +
-                        client.newCall(GET("$baseUrl/boards/", headers))
-                            .execute().asJsoup()
-                            .select("ul.list-gallery figure > a")
-                            .mapNotNull {
-                                Pair(
-                                    it.select("img").attr("alt"),
-                                    it.attr("href")
-                                        .removeSuffix("/")
-                                        .substringAfterLast("/"),
-                                )
-                            }
-                }
+        if (boards.isNotEmpty() || boardsFetching || boardsFetchAttempt >= 3) return
+        boardsFetching = true
+        boardsFetchAttempt++
+        launchIO {
+            try {
+                boards = listOf(Pair("Off", "")) +
+                    client.newCall(GET("$baseUrl/boards/", headers)).execute()
+                        .use { it.asJsoup() }
+                        .select("ul.list-gallery figure > a")
+                        .map {
+                            Pair(
+                                it.select("img").attr("alt"),
+                                it.attr("href")
+                                    .removeSuffix("/")
+                                    .substringAfterLast("/"),
+                            )
+                        }
+            } catch (_: Exception) {
+            } finally {
+                boardsFetching = false
             }
         }
     }
