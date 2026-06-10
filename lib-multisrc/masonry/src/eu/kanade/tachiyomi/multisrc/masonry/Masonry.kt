@@ -363,7 +363,7 @@ abstract class Masonry(
                 document.selectFirst("p.link-btn")?.run {
                     artist = select("a[href*=/model/]").eachText().joinToString()
                     author = selectFirst("a")?.text()
-                    genre = (listOf(author, artist) + select("a[href*=/tag/]").eachText()).joinToString()
+                    genre = (listOfNotNull(author, artist?.takeIf(String::isNotBlank)) + select("a[href*=/tag/]").eachText()).joinToString()
                 }
                 description = document.selectFirst("#content > p")?.text()
                 status = SManga.COMPLETED
