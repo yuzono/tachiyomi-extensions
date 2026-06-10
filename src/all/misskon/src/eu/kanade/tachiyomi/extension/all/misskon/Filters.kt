@@ -116,7 +116,7 @@ class SourceCategorySelector(
         }
 
         fun create(): SourceCategorySelector {
-            val options = mutableListOf(SourceCategory("unselected", "")).apply {
+            val options = mutableListOf(SourceCategory("<Select>", "")).apply {
                 addAll(TOP)
                 addAll(CHINESE)
                 addAll(KOREAN)
