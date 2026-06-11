@@ -5,45 +5,42 @@ import eu.kanade.tachiyomi.source.model.FilterList
 
 fun getFilters(): FilterList = FilterList(
     Filter.Header("Add quote (\"...\") for exact search query match"),
-    SortFilter(),
+    SelectFilter("Sort by", getSortsList),
     Filter.Separator(),
     Filter.Header("Separate tags with commas (,)"),
     Filter.Header("Prepend with dash (-) to exclude"),
     Filter.Header("Use 'Male Tags' or 'Female Tags' for specific categories. 'Tags' searches all other categories."),
-    AdvSearchEntryFilter("Tags", "tag"),
-    AdvSearchEntryFilter("Female Tags", "tag", "female"),
-    AdvSearchEntryFilter("Male Tags", "tag", "male"),
-    AdvSearchEntryFilter("Series", "serie"),
-    AdvSearchEntryFilter("Artists", "artist"),
-    AdvSearchEntryFilter("Characters", "character"),
-    AdvSearchEntryFilter("Groups", "group"),
-    AdvSearchEntryFilter("Categories", "category"),
+    TextFilter("Tags", "tag"),
+    TextFilter("Male Tags", "tag", "male"),
+    TextFilter("Female Tags", "tag", "female"),
+    TextFilter("Series", "serie"),
+    TextFilter("Characters", "character"),
+    TextFilter("Artists", "artist"),
+    TextFilter("Groups", "group"),
+    TextFilter("Categories", "category"),
     Filter.Header("Uploaded valid units are h, d, w, m, y."),
     Filter.Header("example: >20d or <20d"),
-    AdvSearchEntryFilter("Uploaded", "added"),
+    TextFilter("Uploaded", "added"),
+    Filter.Separator(),
     Filter.Header("Filter by pages, for example: 20 or >20 or <20"),
-    AdvSearchEntryFilter("Pages", "pages"),
+    TextFilter("Pages", "pages"),
     OffsetPageFilter(),
     FavoriteFilter(),
 )
 
-open class AdvSearchEntryFilter(name: String, val type: String, val specific: String = "") : Filter.Text(name)
+internal open class TextFilter(name: String, val type: String, val specific: String = "") : Filter.Text(name)
 
 class OffsetPageFilter : Filter.Text("Offset results by # pages")
 
 internal class FavoriteFilter : Filter.CheckBox("Favorites only", false)
 
-internal class SortFilter :
-    UriPartFilter(
-        "Sort By",
-        arrayOf(
-            Pair("Recent", ""),
-            Pair("Popular: All Time", "popular"),
-            Pair("Popular: Week", "popular-7d"),
-            Pair("Popular: Today", "popular-24h"),
-        ),
-    )
-
-internal open class UriPartFilter(displayName: String, val pairs: Array<Pair<String, String>>) : Filter.Select<String>(displayName, pairs.map { it.first }.toTypedArray()) {
-    fun toUriPart() = pairs[state].second
+internal open class SelectFilter(name: String, private val vals: List<Pair<String, String>>, state: Int = 0) : Filter.Select<String>(name, vals.map { it.first }.toTypedArray(), state) {
+    fun getValue() = vals[state].second
 }
+
+private val getSortsList: List<Pair<String, String>> = listOf(
+    Pair("Recent", ""),
+    Pair("Popular: All Time", "popular"),
+    Pair("Popular: Week", "popular-7d"),
+    Pair("Popular: Today", "popular-24h"),
+)
