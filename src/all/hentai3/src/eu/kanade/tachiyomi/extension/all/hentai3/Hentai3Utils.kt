@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.extension.all.hentai3
 
+import keiyoushi.utils.tryParse
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.text.SimpleDateFormat
@@ -76,9 +77,8 @@ internal object Hentai3Utils {
         val timeString = document.selectFirst("#main-info > div.tag-container > time")
             ?.attr("datetime")
             ?.replace("T", " ")
-            ?: ""
 
-        return SimpleDateFormat("yyyy-MM-dd HH:mm:ssZ", Locale.getDefault()).parse(timeString)?.time ?: 0L
+        return SimpleDateFormat("yyyy-MM-dd HH:mm:ssZ", Locale.getDefault()).tryParse(timeString)
     }
 
 //    val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZZZZZ", Locale.ENGLISH).apply {
