@@ -102,9 +102,11 @@ internal object Hentai3Utils {
 
     private fun Element.cleanTag(): String = text()
         .replace("(female)", "♀").replace("(male)", "♂")
-        .replace(Regex("\\(.*\\)"), "")
+        .replace(bracketRegex, "")
         .capitalizeEach()
         .trim()
+
+    private val bracketRegex by lazy { Regex("""\(.*\)""") }
 
     private fun String.capitalizeEach() = this.split(" ").joinToString(" ") { s ->
         s.replaceFirstChar { sr ->

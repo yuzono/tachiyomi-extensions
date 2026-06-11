@@ -265,20 +265,20 @@ open class Hentai3(
         val document = response.asJsoup()
         val fullTitle = document.select("#main-info > h1").text()
             .replace("\"", "").trim()
-        val artists = getArtists(document)
-        val authors = getGroups(document)
 
         return SManga.create().apply {
+            val authors = getGroups(document) ?: ""
+            val artists = getArtists(document) ?: ""
+            initialized = true
+
             title = if (displayFullTitle) {
                 fullTitle
             } else {
                 document.select("#main-info > h1 > span").text()
                     .replace("\"", "").trim()
             }
-            thumbnail_url = document.select("#main-cover img").attr("data-src")
-            status = SManga.COMPLETED
-            artist = artists?.ifEmpty { authors }
-            author = authors?.ifEmpty { artists }
+            author = authors.ifEmpty { artists }
+            artist = artists.ifEmpty { authors }
             val code = getCodes(document)
             // Some people want these additional details in description
             description = "Full English and Japanese titles:\n"
@@ -287,8 +287,9 @@ open class Hentai3(
                 .plus("Pages: ${getNumPages(document)}\n")
                 .plus(getTagDescription(document))
             genre = getTags(document)
+            thumbnail_url = document.select("#main-cover img").attr("data-src")
             update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
-            initialized = true
+            status = SManga.COMPLETED
         }
     }
 
@@ -300,7 +301,6 @@ open class Hentai3(
             SChapter.create().apply {
                 name = "Chapter"
                 setUrlWithoutDomain(response.request.url.toString())
-                scanlator = getGroups(doc)
                 date_upload = getTime(doc)
             },
         )
