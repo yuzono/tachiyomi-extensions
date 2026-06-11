@@ -13,7 +13,7 @@ fun getFilters(): FilterList = FilterList(
     TextFilter("Tags", "tag"),
     TextFilter("Male Tags", "tag", "male"),
     TextFilter("Female Tags", "tag", "female"),
-    TextFilter("Series", "serie"),
+    TextFilter("Series", "series"),
     TextFilter("Characters", "character"),
     TextFilter("Artists", "artist"),
     TextFilter("Groups", "group"),
