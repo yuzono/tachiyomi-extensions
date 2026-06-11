@@ -14,22 +14,20 @@ import kotlin.system.exitProcess
 class Hentai3UrlActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val pathSegments = intent?.data?.pathSegments
-        if (pathSegments != null && pathSegments.size > 1) {
-            val id = pathSegments[1]
-            val mainIntent = Intent().apply {
-                action = "eu.kanade.tachiyomi.SEARCH"
-                putExtra("query", "${Hentai3.PREFIX_ID_SEARCH}$id")
-                putExtra("filter", packageName)
-            }
 
-            try {
-                startActivity(mainIntent)
-            } catch (e: ActivityNotFoundException) {
-                Log.e("Hentai3UrlActivity", e.toString())
-            }
-        } else {
-            Log.e("Hentai3UrlActivity", "could not parse uri from intent $intent")
+        val mainIntent = Intent().apply {
+            action = "eu.kanade.tachiyomi.SEARCH"
+            putExtra("query", intent.data.toString())
+            putExtra("filter", packageName)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        try {
+            startActivity(mainIntent)
+        } catch (e: ActivityNotFoundException) {
+            Log.e("Hentai3UrlActivity", "Activity not found: " + e.message)
+        } catch (e: Throwable) {
+            Log.e("Hentai3UrlActivity", "Unexpected throwable: " + e.message)
         }
 
         finish()
