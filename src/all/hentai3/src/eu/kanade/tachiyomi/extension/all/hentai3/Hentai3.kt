@@ -12,6 +12,7 @@ import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getTags
 import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getTime
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.await
+import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -25,8 +26,6 @@ import keiyoushi.annotation.Source
 import keiyoushi.lib.randomua.addRandomUAPreference
 import keiyoushi.utils.firstInstanceOrNull
 import keiyoushi.utils.getPreferencesLazy
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -193,23 +192,30 @@ abstract class Hentai3 :
 
     /* Search */
 
-    override suspend fun getSearchManga(page: Int, query: String, filters: FilterList): MangasPage = coroutineScope {
-        async {
-            when {
-                query.startsWith(PREFIX_ID_SEARCH) -> {
-                    val id = query.removePrefix(PREFIX_ID_SEARCH)
-                    client.newCall(searchMangaByIdRequest(id))
-                        .await()
-                        .use { response -> searchMangaByIdParse(response, id) }
-                }
-                query.toIntOrNull() != null -> {
-                    client.newCall(searchMangaByIdRequest(query))
-                        .await()
-                        .use { response -> searchMangaByIdParse(response, query) }
-                }
-                else -> super.getSearchManga(page, query, filters)
+    override suspend fun getSearchManga(page: Int, query: String, filters: FilterList): MangasPage {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (url.host != baseUrl.toHttpUrl().host || url.pathSegments.size < 2) {
+                throw Exception("Unsupported url")
             }
-        }.await()
+            val id = url.pathSegments[1]
+            return getSearchManga(page, "$PREFIX_ID_SEARCH$id", filters)
+        }
+
+        return when {
+            query.startsWith(PREFIX_ID_SEARCH) -> {
+                val id = query.removePrefix(PREFIX_ID_SEARCH)
+                client.newCall(searchMangaByIdRequest(id))
+                    .awaitSuccess()
+                    .use { response -> searchMangaByIdParse(response, id) }
+            }
+            query.toIntOrNull() != null -> {
+                client.newCall(searchMangaByIdRequest(query))
+                    .awaitSuccess()
+                    .use { response -> searchMangaByIdParse(response, query) }
+            }
+            else -> super.getSearchManga(page, query, filters)
+        }
     }
 
     private fun searchMangaByIdRequest(id: String) = GET("$baseUrl/d/$id", headers)
