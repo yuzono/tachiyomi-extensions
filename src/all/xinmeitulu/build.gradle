@@ -1,9 +1,0 @@
-ext {
-    kmkVersionCode = 2
-    extName = 'Xinmeitulu'
-    extClass = '.Xinmeitulu'
-    extVersionCode = 7
-    isNsfw = true
-}
-
-apply plugin: "kei.plugins.extension.legacy"

@@ -1,9 +1,0 @@
-ext {
-    kmkVersionCode = 1
-    extName = 'Simply Cosplay'
-    extClass = '.SimplyCosplay'
-    extVersionCode = 4
-    isNsfw = true
-}
-
-apply plugin: "kei.plugins.extension.legacy"
