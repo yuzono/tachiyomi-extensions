@@ -29,6 +29,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import okhttp3.Response
@@ -209,16 +210,14 @@ abstract class MissKon :
     // endregion
 
     // region Pages
-    override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val response = client.newCall(pageListRequest(chapter)).await()
-        return response.use { resp ->
+    override fun fetchPageList(chapter: SChapter): Observable<List<Page>> = client.newCall(pageListRequest(chapter)).asObservableSuccess()
+        .map { resp ->
             if (preferences.splitPages) {
                 pageListParse(resp)
             } else {
                 pageListMerge(resp)
             }
         }
-    }
 
     private val imageListSelector = "div.post-inner > div.entry > p > img"
 
@@ -226,7 +225,7 @@ abstract class MissKon :
         .select(imageListSelector)
         .mapIndexed { i, img -> Page(i, imageUrl = img.imgAttr()) }
 
-    private suspend fun pageListMerge(response: Response): List<Page> {
+    private fun pageListMerge(response: Response): List<Page> {
         val document = response.asJsoup()
         val pages = document
             .select("div.page-link:first-of-type a")
@@ -236,13 +235,15 @@ abstract class MissKon :
 
         val chapterPage = parseImageList(document).toMutableList()
 
-        coroutineScope {
-            chapterPage += pages.map { url ->
-                async(Dispatchers.IO) {
-                    val request = GET(url, headers)
-                    parseImageList(client.newCall(request).await().use { it.asJsoup() })
-                }
-            }.awaitAll().flatten()
+        runBlocking(Dispatchers.IO) {
+            coroutineScope {
+                chapterPage += pages.map { url ->
+                    async(Dispatchers.IO) {
+                        val request = GET(url, headers)
+                        parseImageList(client.newCall(request).await().use { it.asJsoup() })
+                    }
+                }.awaitAll().flatten()
+            }
         }
 
         return chapterPage.mapIndexed { index, url ->
