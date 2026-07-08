@@ -6,6 +6,7 @@ import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import androidx.preference.SwitchPreferenceCompat
 import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.network.asObservableSuccess
 import eu.kanade.tachiyomi.network.await
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
@@ -33,6 +34,7 @@ import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import rx.Observable
 import java.text.SimpleDateFormat
 import java.util.Locale
 import kotlin.time.Duration.Companion.seconds
@@ -108,9 +110,11 @@ abstract class MissKon :
                 }
                 url.addQueryParameter("s", query.trim())
             }
+
             topDaysFilter != null && topDaysFilter.state > 0 -> {
                 url.addPathSegment(topDaysFilter.toUriPart())
             }
+
             tagFilter != null && tagFilter.state > 0 -> {
                 url.addPathSegment("tag")
                 url.addPathSegment(tagFilter.toUriPart())
@@ -118,6 +122,7 @@ abstract class MissKon :
                 url.addPathSegment("page")
                 url.addPathSegment(page.toString())
             }
+
             else -> return latestUpdatesRequest(page)
         }
         return GET(url.build(), headers)
@@ -142,9 +147,11 @@ abstract class MissKon :
                 "[$serviceText]($link)"
             }
 
-            description = "${info.html()
-                .replace("<input.*?>".toRegex(), password)
-                .replace("<.+?>".toRegex(), "")}\n\n" +
+            description = "${
+                info.html()
+                    .replace("<input.*?>".toRegex(), password)
+                    .replace("<.+?>".toRegex(), "")
+            }\n\n" +
                 "$view\n\n" +
                 downloadLinks
             genre = document.parseTags()
@@ -153,36 +160,38 @@ abstract class MissKon :
         }
     }
 
-    override suspend fun getChapterList(manga: SManga): List<SChapter> {
-        val doc = client.newCall(chapterListRequest(manga)).await().use { it.asJsoup() }
-        val dateUploadStr = doc.selectFirst(".entry img")?.imgAttr()
-            ?.let { url ->
-                FULL_DATE_REGEX.find(url)?.groupValues?.get(1)
-                    ?: YEAR_MONTH_REGEX.find(url)?.groupValues?.get(1)?.let { "$it/01" }
-            }
-
-        val dateUpload = FULL_DATE_FORMAT.tryParse(dateUploadStr)
-        if (preferences.splitPages) {
-            val maxPage = doc.select("div.page-link:first-of-type a.post-page-numbers").last()?.text()?.toIntOrNull() ?: 1
-            return (maxPage downTo 1).map { page ->
-                SChapter.create().apply {
-                    setUrlWithoutDomain("${manga.url}/$page")
-                    name = "Page $page"
-                    chapter_number = page.toFloat()
-                    date_upload = dateUpload
+    override fun fetchChapterList(manga: SManga): Observable<List<SChapter>> = client.newCall(chapterListRequest(manga))
+        .asObservableSuccess()
+        .map { response ->
+            val doc = response.asJsoup()
+            val dateUploadStr = doc.selectFirst(".entry img")?.imgAttr()
+                ?.let { url ->
+                    FULL_DATE_REGEX.find(url)?.groupValues?.get(1)
+                        ?: YEAR_MONTH_REGEX.find(url)?.groupValues?.get(1)?.let { "$it/01" }
                 }
+
+            val dateUpload = FULL_DATE_FORMAT.tryParse(dateUploadStr)
+            if (preferences.splitPages) {
+                val maxPage = doc.select("div.page-link:first-of-type a.post-page-numbers").last()?.text()?.toIntOrNull() ?: 1
+                (maxPage downTo 1).map { page ->
+                    SChapter.create().apply {
+                        setUrlWithoutDomain("${manga.url}/$page")
+                        name = "Page $page"
+                        chapter_number = page.toFloat()
+                        date_upload = dateUpload
+                    }
+                }
+            } else {
+                listOf(
+                    SChapter.create().apply {
+                        chapter_number = 0F
+                        setUrlWithoutDomain(manga.url)
+                        name = "Gallery"
+                        date_upload = dateUpload
+                    },
+                )
             }
-        } else {
-            return listOf(
-                SChapter.create().apply {
-                    chapter_number = 0F
-                    setUrlWithoutDomain(manga.url)
-                    name = "Gallery"
-                    date_upload = dateUpload
-                },
-            )
         }
-    }
 
     override fun chapterListParse(response: Response): List<SChapter> = throw UnsupportedOperationException()
 
