@@ -4,11 +4,11 @@ plugins {
 
 keiyoushi {
     name = "Hiperdex"
-    versionCode = 29
+    versionCode = 30
     contentWarning = ContentWarning.NSFW
     libVersion = "1.4"
     theme = "madara"
-    kmkVersionCode = 2
+    kmkVersionCode = 1
 
     source {
         lang = "en"

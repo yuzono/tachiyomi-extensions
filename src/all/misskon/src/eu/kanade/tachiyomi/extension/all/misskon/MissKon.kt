@@ -289,7 +289,7 @@ abstract class MissKon :
         tagsFetching = true
         tagsFetchAttempt++
         launchIO {
-            runCatching {
+            try {
                 client.newCall(GET("$baseUrl/sets/", headers)).execute()
                     .use { it.asJsoup() }
                     .select(".entry .tag-counterz a[href*=/tag/]")
@@ -306,7 +306,8 @@ abstract class MissKon :
                         updateTags(newTags.toSet(), true)
                         tagsFetched = true
                     }
-            }.onFailure {
+            } catch (_: Exception) {
+            } finally {
                 tagsFetching = false
             }
         }
