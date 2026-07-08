@@ -124,7 +124,7 @@ abstract class Hentai3 :
             ?: emptyList()
 
     override val client: OkHttpClient by lazy {
-        network.cloudflareClient.newBuilder()
+        network.client.newBuilder()
             .addNetworkInterceptor(::authorizationInterceptor)
             .build()
     }
