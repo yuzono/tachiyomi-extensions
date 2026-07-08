@@ -359,7 +359,7 @@ abstract class Masonry : HttpSource() {
                 document.selectFirst("p.link-btn")?.run {
                     artist = select("a[href*=/model/]").eachText().joinToString()
                     author = selectFirst("a")?.text()
-                    genre = (listOfNotNull(author, artist?.takeIf(String::isNotBlank)) + select("a[href*=/tag/]").eachText()).joinToString()
+                    genre = (listOfNotNull(author?.takeIf(String::isNotBlank), artist?.takeIf(String::isNotBlank)) + select("a[href*=/tag/]").eachText()).joinToString()
                 }
                 description = document.selectFirst("#content > p")?.text()
                 status = SManga.COMPLETED
@@ -469,7 +469,7 @@ abstract class Masonry : HttpSource() {
     protected open fun modelMangaDetailsParse(document: Document) = SManga.create().apply {
         document.selectFirst("article.module-model")?.run {
             val stats = selectFirst(".header-model")?.also { elm: Element ->
-                val model = elm.selectFirst("h1")?.text()
+                val model = elm.selectFirst("h1")?.text() ?: "Model"
                 artist = model
                 title = "$model @$name"
             }
