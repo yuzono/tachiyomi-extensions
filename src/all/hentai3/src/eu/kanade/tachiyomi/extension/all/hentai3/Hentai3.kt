@@ -12,7 +12,7 @@ import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getTagDescription
 import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getTags
 import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getTime
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.awaitSuccess
+import eu.kanade.tachiyomi.network.asObservableSuccess
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -32,6 +32,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Element
+import rx.Observable
 import java.io.IOException
 
 @Source
@@ -207,29 +208,29 @@ abstract class Hentai3 :
 
     // Search
 
-    override suspend fun getSearchManga(page: Int, query: String, filters: FilterList): MangasPage {
+    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
         if (query.startsWith("https://")) {
             val url = query.toHttpUrl()
             if (url.host != baseUrl.toHttpUrl().host || url.pathSegments.size < 2) {
                 throw Exception("Unsupported url")
             }
             val id = url.pathSegments[1]
-            return getSearchManga(page, "$PREFIX_ID_SEARCH$id", filters)
+            return fetchSearchManga(page, "$PREFIX_ID_SEARCH$id", filters)
         }
 
         return when {
             query.startsWith(PREFIX_ID_SEARCH) -> {
                 val id = query.removePrefix(PREFIX_ID_SEARCH)
                 client.newCall(searchMangaByIdRequest(id))
-                    .awaitSuccess()
-                    .use { response -> searchMangaByIdParse(response, id) }
+                    .asObservableSuccess()
+                    .map { response -> searchMangaByIdParse(response, id) }
             }
             query.toIntOrNull() != null -> {
                 client.newCall(searchMangaByIdRequest(query))
-                    .awaitSuccess()
-                    .use { response -> searchMangaByIdParse(response, query) }
+                    .asObservableSuccess()
+                    .map { response -> searchMangaByIdParse(response, query) }
             }
-            else -> super.getSearchManga(page, query, filters)
+            else -> super.fetchSearchManga(page, query, filters)
         }
     }
 
