@@ -255,7 +255,7 @@ abstract class EliteBabes : Masonry() {
         getBoards()
         val requestUrl = response.request.url.toString()
         return when {
-            highlights.map { it.second }.any { it == requestUrl } -> {
+            highlights.any { it.second == requestUrl } -> {
                 /* Handle filter for highlights */
                 MangasPage(
                     mangas = response.asJsoup().select("div.item a[href]:has(img)")

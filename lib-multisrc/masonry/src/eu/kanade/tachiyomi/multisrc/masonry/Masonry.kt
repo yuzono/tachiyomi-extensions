@@ -359,7 +359,10 @@ abstract class Masonry : HttpSource() {
                 document.selectFirst("p.link-btn")?.run {
                     artist = select("a[href*=/model/]").eachText().joinToString()
                     author = selectFirst("a")?.text()
-                    genre = (listOfNotNull(author?.takeIf(String::isNotBlank), artist?.takeIf(String::isNotBlank)) + select("a[href*=/tag/]").eachText()).joinToString()
+                    genre = (
+                        listOfNotNull(author?.takeIf(String::isNotBlank), artist?.takeIf(String::isNotBlank)) +
+                            select("a[href*=/tag/]").eachText()
+                        ).distinct().joinToString()
                 }
                 description = document.selectFirst("#content > p")?.text()
                 status = SManga.COMPLETED
