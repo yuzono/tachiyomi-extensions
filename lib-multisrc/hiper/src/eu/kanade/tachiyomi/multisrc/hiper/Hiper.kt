@@ -76,7 +76,7 @@ abstract class Hiper :
     override fun popularMangaParse(response: Response): MangasPage = searchMangaParse(response)
 
     // ============================ Latest ====================================
-    private val latestFilter = FilterList(OrderByFilter("", arrayOf("" to "newest")))
+    private val latestFilter = FilterList(OrderByFilter("", arrayOf("" to "recent")))
 
     override fun latestUpdatesRequest(page: Int): Request = searchMangaRequest(page, "", latestFilter)
 
