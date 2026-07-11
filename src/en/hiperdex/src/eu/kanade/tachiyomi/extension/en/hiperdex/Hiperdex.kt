@@ -7,40 +7,24 @@ import android.widget.Toast
 import androidx.preference.CheckBoxPreference
 import androidx.preference.EditTextPreference
 import androidx.preference.PreferenceScreen
-import eu.kanade.tachiyomi.multisrc.madara.Madara
+import eu.kanade.tachiyomi.multisrc.hiper.Hiper
 import eu.kanade.tachiyomi.source.ConfigurableSource
+import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.SManga
 import keiyoushi.annotation.Source
-import keiyoushi.lib.randomua.addRandomUAPreference
-import keiyoushi.lib.randomua.setRandomUserAgent
 import keiyoushi.network.rateLimit
 import keiyoushi.utils.getPreferences
-import org.jsoup.nodes.Document
-import org.jsoup.nodes.Element
-import java.text.SimpleDateFormat
-import java.util.Locale
+import okhttp3.Response
 
 @Source
 abstract class Hiperdex :
-    Madara(),
+    Hiper(),
     ConfigurableSource {
-    override val dateFormat = SimpleDateFormat("dd/MM/yyyy", Locale.US)
-
-    override val mangaDetailsSelectorStatus = "div.summary-heading:contains(Status) + div.summary-content"
-
-    private val preferences = getPreferences()
-
-    override val client = super.client.newBuilder()
-        .addNetworkInterceptor(ClearanceInterceptor())
-        .rateLimit(3)
+    override val client = network.client.newBuilder()
+        .rateLimit(2)
         .build()
 
-    override fun headersBuilder() = super.headersBuilder()
-        .setRandomUserAgent()
-
-    override val useLoadMoreRequest = LoadMoreStrategy.Never
-
-    override val pageListParseSelector = "div.page-break:not([style*='display:none'])"
+    private val preferences = getPreferences()
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         val noRemoveTitleBrowsingPref = CheckBoxPreference(screen.context).apply {
@@ -108,33 +92,22 @@ abstract class Hiperdex :
         }.also { screen.addPreference(it) }
 
         screen.addPreference(noRemoveTitleBrowsingPref)
-
-        screen.addRandomUAPreference()
     }
 
-    override fun popularMangaFromElement(element: Element): SManga = super.popularMangaFromElement(element).apply {
-        if (!noCleanTitlesWhileBrowsing()) {
-            title = title.cleanTitleIfNeeded()
-        }
+    override fun searchMangaParse(response: Response): MangasPage {
+        val (manga, hasNextPage) = super.searchMangaParse(response)
+        return MangasPage(
+            manga.map {
+                if (!noCleanTitlesWhileBrowsing()) {
+                    it.title = it.title.cleanTitleIfNeeded()
+                }
+                it
+            },
+            hasNextPage,
+        )
     }
 
-    override fun latestUpdatesFromElement(element: Element): SManga = super.latestUpdatesFromElement(element).apply {
-        if (!noCleanTitlesWhileBrowsing()) {
-            title = title.cleanTitleIfNeeded()
-        }
-    }
-
-    override fun searchMangaFromElement(element: Element): SManga = super.searchMangaFromElement(element).apply {
-        if (!noCleanTitlesWhileBrowsing()) {
-            title = title.cleanTitleIfNeeded()
-        }
-    }
-
-    override fun searchMangaSelector() = "#loop-content div.page-listing-item"
-
-    override val chapterUrlSuffix = ""
-
-    override fun mangaDetailsParse(document: Document): SManga = super.mangaDetailsParse(document).apply {
+    override fun mangaDetailsParse(response: Response): SManga = super.mangaDetailsParse(response).apply {
         val cleanedTitle = title.cleanTitleIfNeeded()
         if (cleanedTitle != title.trim()) {
             description = listOfNotNull(title, description)
@@ -142,8 +115,6 @@ abstract class Hiperdex :
             title = cleanedTitle
         }
     }
-
-    override fun getMangaUrl(manga: SManga) = "$baseUrl${manga.url}"
 
     private fun String.cleanTitleIfNeeded(): String {
         var tempTitle = this

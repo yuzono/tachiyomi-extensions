@@ -4,21 +4,16 @@ plugins {
 
 keiyoushi {
     name = "Hiperdex"
-    versionCode = 30
+    versionCode = 81
     contentWarning = ContentWarning.NSFW
     libVersion = "1.4"
-    theme = "madara"
+    theme = "hiper"
     kmkVersionCode = 1
 
     source {
         lang = "en"
         baseUrl {
-            custom("https://hiperdex.com")
+            custom("https://hiperdex.tv")
         }
     }
-}
-
-dependencies {
-
-    implementation(project(":lib:randomua"))
 }
