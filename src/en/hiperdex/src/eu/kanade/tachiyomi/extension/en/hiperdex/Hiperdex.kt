@@ -8,25 +8,21 @@ import androidx.preference.CheckBoxPreference
 import androidx.preference.EditTextPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.multisrc.hiper.Hiper
-import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.SManga
 import keiyoushi.annotation.Source
 import keiyoushi.network.rateLimit
-import keiyoushi.utils.getPreferences
 import okhttp3.Response
 
 @Source
-abstract class Hiperdex :
-    Hiper(),
-    ConfigurableSource {
+abstract class Hiperdex : Hiper() {
     override val client = network.client.newBuilder()
         .rateLimit(2)
         .build()
 
-    private val preferences = getPreferences()
-
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        super.setupPreferenceScreen(screen)
+
         val noRemoveTitleBrowsingPref = CheckBoxPreference(screen.context).apply {
             key = NO_REMOVE_TITLE_BROWSING_PREF
             title = "Don't apply title cleaning in browsing/search results"

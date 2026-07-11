@@ -1,6 +1,9 @@
 package eu.kanade.tachiyomi.multisrc.hiper
 
+import androidx.preference.ListPreference
+import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -9,6 +12,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import keiyoushi.utils.get
+import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.parseAs
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.add
@@ -23,7 +27,11 @@ import okhttp3.Request
 import okhttp3.Response
 import java.io.IOException
 
-abstract class Hiper : HttpSource() {
+abstract class Hiper :
+    HttpSource(),
+    ConfigurableSource {
+
+    protected val preferences by getPreferencesLazy()
 
     protected open val mangaPath: String = "manga"
 
@@ -88,7 +96,7 @@ abstract class Hiper : HttpSource() {
 
                     put("limit", limit)
                     put("offset", (page - 1) * limit)
-                    put("maxRating", "pornographic")
+                    put("maxRating", preferences.getString(MAX_RATING_PREF, MAX_RATING_DEFAULT))
                 }
                 putJsonObject("meta") {
                     putJsonObject("values") {
@@ -260,9 +268,29 @@ abstract class Hiper : HttpSource() {
 
     override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
 
+    // ============================ Preferences ================================
+
+    override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        ListPreference(screen.context).apply {
+            key = MAX_RATING_PREF
+            title = "Default max rating"
+            summary = "Restricts content to the selected rating or below.\nCurrently: %s"
+            entries = MAX_RATING_ENTRIES
+            entryValues = MAX_RATING_VALUES
+            setDefaultValue(MAX_RATING_DEFAULT)
+        }.let(screen::addPreference)
+    }
+
     // ============================ Filters ====================================
 
     open class OrderByFilter(displayName: String, private val vals: Array<Pair<String, String>>, state: Int = 0) : Filter.Select<String>(displayName, vals.map { it.first }.toTypedArray(), state) {
         fun selected() = vals[state].second
+    }
+
+    companion object {
+        private const val MAX_RATING_PREF = "MAX_RATING"
+        private const val MAX_RATING_DEFAULT = "pornographic"
+        private val MAX_RATING_ENTRIES = arrayOf("Pornographic", "Erotica", "Suggestive", "Safe")
+        private val MAX_RATING_VALUES = arrayOf("pornographic", "erotica", "suggestive", "safe")
     }
 }
