@@ -77,6 +77,11 @@ abstract class Hiper :
     // ============================ Search ====================================
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
         val limit = 30
+        val typeValue = filters.filterIsInstance<TypeFilter>().firstOrNull()?.selected()
+        val statusValue = filters.filterIsInstance<StatusFilter>().firstOrNull()?.selected()
+        val ratingValue = filters.filterIsInstance<RatingFilter>().firstOrNull()?.selected()
+        val genresValue = filters.filterIsInstance<GenresFilter>().firstOrNull()?.checked.orEmpty()
+
         val input = buildJsonObject {
             putJsonObject("0") {
                 putJsonObject("json") {
@@ -85,10 +90,14 @@ abstract class Hiper :
                         put("sort", filter.selected())
                     }
                     putJsonObject("filters") {
-                        put("genres", null)
-                        put("type", null)
-                        put("status", null)
-                        put("contentRating", null)
+                        if (genresValue.isEmpty()) {
+                            put("genres", null)
+                        } else {
+                            putJsonArray("genres") { genresValue.forEach { add(it) } }
+                        }
+                        put("type", typeValue)
+                        put("status", statusValue)
+                        put("contentRating", ratingValue)
                         put("author", null)
                         put("artist", null)
                         put("year", null)
@@ -100,10 +109,10 @@ abstract class Hiper :
                 }
                 putJsonObject("meta") {
                     putJsonObject("values") {
-                        put("filters.genres", buildJsonArray { add("undefined") })
-                        put("filters.type", buildJsonArray { add("undefined") })
-                        put("filters.status", buildJsonArray { add("undefined") })
-                        put("filters.contentRating", buildJsonArray { add("undefined") })
+                        if (genresValue.isEmpty()) put("filters.genres", buildJsonArray { add("undefined") })
+                        if (typeValue == null) put("filters.type", buildJsonArray { add("undefined") })
+                        if (statusValue == null) put("filters.status", buildJsonArray { add("undefined") })
+                        if (ratingValue == null) put("filters.contentRating", buildJsonArray { add("undefined") })
                         put("filters.author", buildJsonArray { add("undefined") })
                         put("filters.artist", buildJsonArray { add("undefined") })
                         put("filters.year", buildJsonArray { add("undefined") })
@@ -283,8 +292,81 @@ abstract class Hiper :
 
     // ============================ Filters ====================================
 
+    override fun getFilterList(): FilterList = FilterList(
+        SortFilter(),
+        RatingFilter(),
+        TypeFilter(),
+        StatusFilter(),
+        GenresFilter(),
+    )
+
     open class OrderByFilter(displayName: String, private val vals: Array<Pair<String, String>>, state: Int = 0) : Filter.Select<String>(displayName, vals.map { it.first }.toTypedArray(), state) {
         fun selected() = vals[state].second
+    }
+
+    class SortFilter :
+        OrderByFilter(
+            "Sort",
+            arrayOf(
+                "Relevance" to "relevance",
+                "Popularity" to "popular",
+                "Score" to "score",
+                "Recent Updated" to "recent",
+                "Newest" to "newest",
+                "Oldest" to "oldest",
+                "A-Z" to "alphabetical",
+            ),
+        )
+
+    open class SelectFilter(displayName: String, private val vals: Array<Pair<String, String?>>, state: Int = 0) : Filter.Select<String>(displayName, vals.map { it.first }.toTypedArray(), state) {
+        fun selected(): String? = vals[state].second
+    }
+
+    class RatingFilter :
+        SelectFilter(
+            "Rating",
+            (
+                listOf(
+                    "All" to null,
+                ) + MAX_RATING_ENTRIES.zip(MAX_RATING_VALUES).map { it.first to it.second }
+                )
+                .toTypedArray(),
+        )
+
+    class TypeFilter :
+        SelectFilter(
+            "Type",
+            arrayOf(
+                "All" to null,
+                "Manga" to "manga",
+                "Manhwa" to "manhwa",
+                "Manhua" to "manhua",
+                "Novel" to "novel",
+                "Webtoon" to "webtoon",
+                "One Shot" to "one_shot",
+            ),
+        )
+
+    class StatusFilter :
+        SelectFilter(
+            "Status",
+            arrayOf(
+                "All" to null,
+                "Ongoing" to "ongoing",
+                "Completed" to "completed",
+                "Hiatus" to "hiatus",
+                "Cancelled" to "cancelled",
+            ),
+        )
+
+    class GenreCheckBox(val value: String) : Filter.CheckBox(value)
+
+    class GenresFilter :
+        Filter.Group<GenreCheckBox>(
+            "Genres",
+            GENRE_LIST.map { GenreCheckBox(it) },
+        ) {
+        val checked get() = state.filter { it.state }.map { it.value }
     }
 
     companion object {
@@ -292,5 +374,126 @@ abstract class Hiper :
         private const val MAX_RATING_DEFAULT = "pornographic"
         private val MAX_RATING_ENTRIES = arrayOf("Pornographic", "Erotica", "Suggestive", "Safe")
         private val MAX_RATING_VALUES = arrayOf("pornographic", "erotica", "suggestive", "safe")
+
+        private val GENRE_LIST = listOf(
+            "4-Koma",
+            "Action",
+            "Adaptation",
+            "Adult",
+            "Adventure",
+            "Age Gap",
+            "Aliens",
+            "Ancient Korea",
+            "Anthology",
+            "Campus",
+            "Childhood Friends",
+            "Comedy",
+            "Cooking",
+            "Crime",
+            "Crossdressing",
+            "Dance",
+            "Delinquents",
+            "Demons",
+            "Doujinshi",
+            "Drama",
+            "Ecchi",
+            "Escolar",
+            "Fantasy",
+            "Fellatio/Blowjob",
+            "Fetish",
+            "Full Color",
+            "Furry",
+            "Gender Bender",
+            "Genderswap",
+            "Ghosts",
+            "Girls' Love",
+            "Gore",
+            "Guideverse",
+            "Gyaru",
+            "Hair Color Change",
+            "Harem",
+            "Hentai",
+            "Heroes",
+            "Historical",
+            "Horror",
+            "Human-Nonhuman Relationship",
+            "Isekai",
+            "Josei",
+            "Korea",
+            "Korean Ambience",
+            "Korean BL",
+            "Long Strip",
+            "Long-Haired Male Character/s",
+            "Long-Haired Male Lead",
+            "Love Triangle/s",
+            "Low Fantasy",
+            "Maduro",
+            "Mafia",
+            "Magic",
+            "Male Protagonist",
+            "Manga",
+            "Martial Arts",
+            "Masculine Uke",
+            "Mature",
+            "Mecha",
+            "Medical",
+            "Military",
+            "Monster Girls",
+            "Monsters",
+            "Monsters Invade Earth",
+            "Murim",
+            "Muscular Male Lead",
+            "Muscular Uke",
+            "Music",
+            "Mystery",
+            "Nameverse",
+            "Ninja",
+            "Office Workers",
+            "Older Uke Younger Seme",
+            "Oneshot",
+            "Orphan Female Lead",
+            "Police",
+            "Post-Apocalyptic",
+            "Psychological",
+            "Red-Haired Male Lead",
+            "Red-Haired Seme",
+            "Regression",
+            "Reincarnation",
+            "Revenge",
+            "Romance",
+            "Samurai",
+            "School Life",
+            "Sci-fi",
+            "Secret Relationship",
+            "Seinen",
+            "Sexual Violence",
+            "Shota",
+            "Shoujo",
+            "Shoujo Ai",
+            "Shounen",
+            "Size Difference",
+            "Slice of Life",
+            "Smut",
+            "Sobrenatural",
+            "Sports",
+            "Superhero",
+            "Supernatural",
+            "Survival",
+            "Suspense",
+            "Thriller",
+            "Time Travel",
+            "Tower",
+            "Tragedy",
+            "Uncensored",
+            "Video Games",
+            "Villainess",
+            "Violence",
+            "Virtual Reality",
+            "Web Comic",
+            "Webtoon",
+            "Wuxia",
+            "Yaoi",
+            "Yuri",
+        )
     }
 }
