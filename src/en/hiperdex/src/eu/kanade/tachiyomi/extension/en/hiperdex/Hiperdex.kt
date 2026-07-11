@@ -144,7 +144,7 @@ abstract class Hiperdex : Hiper() {
         }
     }
 
-    override val GENRE_LIST = listOf(
+    override val genresList = listOf(
         "4-Koma",
         "Action",
         "Adaptation",

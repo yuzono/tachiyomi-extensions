@@ -10,7 +10,7 @@ abstract class Hipercool : Hiper() {
         .rateLimit(3)
         .build()
 
-    override val GENRE_LIST = listOf(
+    override val genresList = listOf(
         "Academia",
         "Ação",
         "Adult",

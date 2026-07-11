@@ -6,7 +6,7 @@ import keiyoushi.annotation.Source
 @Source
 abstract class Hipertoon : Hiper() {
 
-    override val GENRE_LIST = listOf(
+    override val genresList = listOf(
         "4-Koma",
         "Ação",
         "Adaptation",

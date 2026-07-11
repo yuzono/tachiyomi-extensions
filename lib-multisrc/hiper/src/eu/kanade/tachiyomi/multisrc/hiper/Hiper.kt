@@ -11,6 +11,7 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
+import keiyoushi.lib.i18n.Intl
 import keiyoushi.utils.get
 import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.parseAs
@@ -58,6 +59,13 @@ abstract class Hiper :
             }
         }
         .build()
+
+    protected val intl = Intl(
+        language = lang,
+        baseLanguage = "en",
+        availableLanguages = setOf("en", "pt-BR"),
+        classLoader = this::class.java.classLoader!!,
+    )
 
     // ============================ Popular ====================================
 
@@ -282,8 +290,8 @@ abstract class Hiper :
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         ListPreference(screen.context).apply {
             key = MAX_RATING_PREF
-            title = "Default max rating"
-            summary = "Restricts content to the selected rating or below.\nCurrently: %s"
+            title = intl["pref_rating_title"]
+            summary = "${intl["pref_rating_summary"]} %s"
             entries = MAX_RATING_ENTRIES
             entryValues = MAX_RATING_VALUES
             setDefaultValue(MAX_RATING_DEFAULT)
@@ -293,27 +301,27 @@ abstract class Hiper :
     // ============================ Filters ====================================
 
     override fun getFilterList(): FilterList = FilterList(
-        SortFilter(),
-        RatingFilter(),
-        TypeFilter(),
-        StatusFilter(),
-        GenresFilter(GENRE_LIST),
+        SortFilter(intl),
+        RatingFilter(intl),
+        TypeFilter(intl),
+        StatusFilter(intl),
+        GenresFilter(genresList, intl),
     )
 
     open class OrderByFilter(displayName: String, private val vals: Array<Pair<String, String>>, state: Int = 0) : Filter.Select<String>(displayName, vals.map { it.first }.toTypedArray(), state) {
         fun selected() = vals[state].second
     }
 
-    class SortFilter :
+    class SortFilter(intl: Intl) :
         OrderByFilter(
-            "Sort",
+            intl["sort_by_filter_title"],
             arrayOf(
-                "Relevance" to "relevance",
-                "Popularity" to "popular",
-                "Score" to "score",
-                "Recent Updated" to "recent",
-                "Newest" to "newest",
-                "Oldest" to "oldest",
+                intl["sort_by_relevance"] to "relevance",
+                intl["sort_by_popular"] to "popular",
+                intl["sort_by_score"] to "score",
+                intl["sort_by_recent"] to "recent",
+                intl["sort_by_newest"] to "newest",
+                intl["sort_by_oldest"] to "oldest",
                 "A-Z" to "alphabetical",
             ),
         )
@@ -322,22 +330,22 @@ abstract class Hiper :
         fun selected(): String? = vals[state].second
     }
 
-    class RatingFilter :
+    class RatingFilter(intl: Intl) :
         SelectFilter(
-            "Rating",
+            intl["rating_filter_title"],
             (
                 listOf(
-                    "All" to null,
+                    intl["status_all"] to null,
                 ) + MAX_RATING_ENTRIES.zip(MAX_RATING_VALUES).map { it.first to it.second }
                 )
                 .toTypedArray(),
         )
 
-    class TypeFilter :
+    class TypeFilter(intl: Intl) :
         SelectFilter(
-            "Type",
+            intl["type_filter_title"],
             arrayOf(
-                "All" to null,
+                intl["status_all"] to null,
                 "Manga" to "manga",
                 "Manhwa" to "manhwa",
                 "Manhua" to "manhua",
@@ -347,29 +355,29 @@ abstract class Hiper :
             ),
         )
 
-    class StatusFilter :
+    class StatusFilter(intl: Intl) :
         SelectFilter(
-            "Status",
+            intl["status_filter_title"],
             arrayOf(
-                "All" to null,
-                "Ongoing" to "ongoing",
-                "Completed" to "completed",
-                "Hiatus" to "hiatus",
-                "Cancelled" to "cancelled",
+                intl["status_all"] to null,
+                intl["status_ongoing"] to "ongoing",
+                intl["status_completed"] to "completed",
+                intl["status_onhiatus"] to "hiatus",
+                intl["status_canceled"] to "cancelled",
             ),
         )
 
     class GenreCheckBox(val value: String) : Filter.CheckBox(value)
 
-    class GenresFilter(entries: List<String>) :
+    class GenresFilter(entries: List<String>, intl: Intl) :
         Filter.Group<GenreCheckBox>(
-            "Genres",
+            intl["genre_filter_title"],
             entries.map { GenreCheckBox(it) },
         ) {
         val checked get() = state.filter { it.state }.map { it.value }
     }
 
-    protected open val GENRE_LIST: List<String> = emptyList()
+    protected open val genresList: List<String> = emptyList()
 
     companion object {
         private const val MAX_RATING_PREF = "MAX_RATING"
