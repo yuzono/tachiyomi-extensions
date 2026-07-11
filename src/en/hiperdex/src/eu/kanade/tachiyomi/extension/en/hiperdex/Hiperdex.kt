@@ -13,11 +13,12 @@ import eu.kanade.tachiyomi.source.model.SManga
 import keiyoushi.annotation.Source
 import keiyoushi.network.rateLimit
 import okhttp3.Response
+import kotlin.time.Duration.Companion.minutes
 
 @Source
 abstract class Hiperdex : Hiper() {
-    override val client = network.client.newBuilder()
-        .rateLimit(2)
+    override val client = super.client.newBuilder()
+        .rateLimit(999999, 1.minutes)
         .build()
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
