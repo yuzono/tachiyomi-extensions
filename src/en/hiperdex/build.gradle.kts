@@ -6,7 +6,7 @@ plugins {
 
 keiyoushi {
     name = "Hiperdex"
-    versionCode = 82
+    versionCode = 81
     contentWarning = ContentWarning.MIXED
     libVersion = "1.4"
     theme = "hiper"
