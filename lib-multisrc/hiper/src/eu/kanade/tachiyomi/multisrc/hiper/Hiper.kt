@@ -285,6 +285,8 @@ abstract class Hiper :
 
     override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
 
+    override val supportsRelatedMangas = false
+
     // ============================ Preferences ================================
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
