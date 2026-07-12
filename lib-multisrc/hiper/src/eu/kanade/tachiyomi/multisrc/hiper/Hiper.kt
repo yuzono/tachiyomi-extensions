@@ -361,7 +361,7 @@ abstract class Hiper :
                         if (allHeaders.isNotEmpty()) {
                             wvHeaders = Headers.Builder().apply {
                                 allHeaders.forEach { (key, value) ->
-                                    if (headers.get(key) != null) {
+                                    if (headers.get(key) == null) {
                                         add(key, value)
                                     }
                                 }
