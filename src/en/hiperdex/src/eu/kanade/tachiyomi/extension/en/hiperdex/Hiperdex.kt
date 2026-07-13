@@ -19,7 +19,7 @@ import kotlin.time.Duration.Companion.minutes
 abstract class Hiperdex : Hiper() {
 
     override fun headersBuilder() = super.headersBuilder()
-        .set("x-svc-gate", "f5pabmx7sdek")
+        .set("x-cfg-auth", "yceqt7qgu004")
 
     override val client = super.client.newBuilder()
         .rateLimit(999999, 1.minutes)

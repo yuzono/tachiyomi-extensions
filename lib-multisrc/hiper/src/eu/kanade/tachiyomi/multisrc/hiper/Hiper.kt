@@ -52,7 +52,6 @@ abstract class Hiper :
 
     override fun headersBuilder(): Headers.Builder = super.headersBuilder()
         .set("Referer", "$baseUrl/")
-        .add("X-Hpx-Nexus", "hpx-block-f91")
 
     private val acceptHeaders = headersBuilder()
         .set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
