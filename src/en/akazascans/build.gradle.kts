@@ -5,14 +5,14 @@ plugins {
 }
 
 keiyoushi {
-    name = "Manga Livre"
-    versionCode = 78
+    name = "Akaza Scans"
+    versionCode = 0
     contentWarning = ContentWarning.SAFE
     libVersion = "1.4"
+    theme = "mangathemesia"
 
     source {
-        baseUrl = "https://toonlivre.net"
-        lang = "pt-BR"
-        versionId = 2
+        lang = "en"
+        baseUrl = "https://akazascans.org"
     }
 }
