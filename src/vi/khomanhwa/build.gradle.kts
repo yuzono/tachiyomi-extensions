@@ -5,17 +5,19 @@ plugins {
 }
 
 keiyoushi {
-    name = "YaoiHot"
-    versionCode = 2
+    name = "KhoManhwa"
+    versionCode = 1
     contentWarning = ContentWarning.NSFW
     libVersion = "1.6"
 
     source {
-        lang = "en"
-        baseUrl = "https://yaoihot.com"
+        lang = "vi"
+        baseUrl {
+            custom("https://khomanhwa.com")
+        }
     }
 
     deeplink {
-        path("/manga/..*")
+        path("/.*")
     }
 }
