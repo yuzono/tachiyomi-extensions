@@ -31,7 +31,7 @@ Some extensions from this repo provide better support for Komikku's `Suggestions
 * Otherwise, copy & paste the following URL:
 
 ```html
-https://raw.githubusercontent.com/yuzono/manga-repo/repo/index.min.json
+https://github.com/yuzono/manga-repo/raw/repo/index.pb
 ```
 
 ## Requests
