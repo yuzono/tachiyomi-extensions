@@ -6,9 +6,9 @@ plugins {
 
 keiyoushi {
     name = "Kagane"
-    versionCode = 28
+    versionCode = 29
     contentWarning = ContentWarning.MIXED
-    libVersion = "1.4"
+    libVersion = "1.6"
     kmkVersionCode = 1
 
     listOf("en", "ja", "ko", "zh", "es", "es-419", "fr", "de", "pt", "pt-BR", "ru", "it", "id", "vi", "th", "pl", "hi", "ar").forEach {
@@ -16,5 +16,9 @@ keiyoushi {
             lang = it
             baseUrl = "https://kagane.to"
         }
+    }
+
+    deeplink {
+        path("/series/..*")
     }
 }
