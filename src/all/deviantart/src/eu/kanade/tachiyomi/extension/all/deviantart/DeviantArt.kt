@@ -413,17 +413,22 @@ abstract class DeviantArt :
         val buttons = document.selectFirst("[draggable=false]")?.children()
         return if (buttons == null) {
             val imageUrl = document.selectFirst("img[fetchpriority=high]")?.absUrl("src")
-            listOf(Page(0, imageUrl = imageUrl))
+                ?: document.selectFirst(".v-poster")?.attr("style")?.let { STYLE_URL_REGEX.find(it)?.groupValues?.get(1) }
+            listOf(imageUrl)
         } else {
-            buttons.mapIndexed { i, button ->
-                // Remove everything past "/v1/" to get original instead of thumbnail
-                // But need to preserve the query parameter where the token is
-                val imageUrl = button.selectFirst("img")?.absUrl("src")
-                    ?.replaceFirst(IMAGE_ORIGINAL_URL_REGEX, "")
-                Page(i, imageUrl = imageUrl)
+            // The art which has multiple images inside
+            buttons.map { button ->
+                button.selectFirst("img")?.absUrl("src")
             }
+        }.mapIndexed { i, imgUrl ->
+            // Remove everything past "/v1/" to get original instead of thumbnail
+            // But need to preserve the query parameter where the token is
+            val imageUrl = imgUrl?.replaceFirst(IMAGE_ORIGINAL_URL_REGEX, "")
+            Page(i, imageUrl = imageUrl)
         }
     }
+
+    override suspend fun getImageUrl(page: Page) = throw Exception("Open Webview to view this")
 
     private fun Response.asJsoupXml(): Document = Jsoup.parse(body.string(), request.url.toString(), Parser.xmlParser())
 
@@ -546,6 +551,7 @@ abstract class DeviantArt :
         private val GALLERY_LINK_REGEX = Regex("""(.+gallery/[\w-]+)(?:/[\w-]+)?""")
         private val RCACHE_REGEX = Regex("""window\.__RCACHE__ = JSON\.parse\("(.+?)"\);""")
         private val IMAGE_ORIGINAL_URL_REGEX = Regex("""/v1(/.*)?(?=\?)""")
+        private val STYLE_URL_REGEX = Regex("""background-image\s*:\s*url\('([^']+)'\)""")
     }
 }
 
