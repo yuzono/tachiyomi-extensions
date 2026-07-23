@@ -20,14 +20,11 @@ import keiyoushi.network.rateLimit
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.asJsoup
 import keiyoushi.utils.getPreferencesLazy
+import keiyoushi.utils.parseAs
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -52,7 +49,6 @@ abstract class DeviantArt :
     private val backendBaseUrl = "https://backend.deviantart.com"
     private fun backendBuilder() = backendBaseUrl.toHttpUrl().newBuilder()
 
-    private val json = Json { ignoreUnknownKeys = true }
     private val baseUrlHost by lazy { baseUrl.toHttpUrl().host }
     private val backendBaseUrlHost by lazy { backendBaseUrl.toHttpUrl().host }
     override fun OkHttpClient.Builder.configureClient(): OkHttpClient.Builder = apply {
@@ -364,66 +360,49 @@ abstract class DeviantArt :
                 .replace("\\\'", "\'")
                 .replace("\\\\", "\\")
 
-            try {
-                val jsonArray = json.parseToJsonElement(jsonString)
-                    .jsonObject["relatedContent"]?.let { it.jsonObject["relatedContent"] }
-                jsonArray?.let {
-                    it.jsonArray.mapNotNull { jsonElement ->
-                        try {
-                            val contentType = jsonElement.jsonObject["contentType"]?.jsonPrimitive?.content
-                                ?: return@mapNotNull null
+            return try {
+                jsonString.parseAs<RelatedContent>().relatedContent?.relatedContent
+                    ?.mapNotNull { related ->
+                        val contentType = related.contentType
+                            ?: return@mapNotNull null
 
-                            when (contentType) {
-                                "gallery", "boosted", "recommended",
-                                "monetization_promotion_tier_thirdparty",
-                                "monetization_promotion_dreamup_thirdparty",
-                                "monetization_promotion_pcp_firstparty",
-                                -> {
-                                    val deviations = json.decodeFromString<List<Deviation>>(
-                                        jsonElement.jsonObject["deviations"]?.jsonArray.toString(),
-                                    )
-                                    deviations
-                                }
-                                "users" -> {
-                                    val users = json.decodeFromString<List<User>>(
-                                        jsonElement.jsonObject["users"]?.jsonArray.toString(),
-                                    )
-                                    val deviations = users.flatMap { user -> user.deviations }
-                                    deviations
-                                }
-                                "collections" -> {
-                                    val collections = json.decodeFromString<List<Collection>>(
-                                        jsonElement.jsonObject["collections"]?.jsonArray.toString(),
-                                    )
-                                    val deviations = collections.flatMap { collection -> collection.deviations }
-                                    deviations
-                                }
-                                else -> {
-                                    Log.e("DeviantArt", "contentType: $contentType | ${jsonElement.jsonObject}")
-                                    return@mapNotNull null
-                                }
+                        when (contentType) {
+                            "gallery", "boosted", "recommended",
+                            "monetization_promotion_tier_thirdparty",
+                            "monetization_promotion_dreamup_thirdparty",
+                            "monetization_promotion_pcp_firstparty",
+                            -> {
+                                related.deviations
                             }
-                        } catch (e: SerializationException) {
-                            Log.e("DeviantArt", "Error parsing JSON", e)
-                            return@mapNotNull null
-                        }
-                    }.flatten()
-                        .map { deviation ->
-                            SManga.create().apply {
-                                setUrlWithoutDomain(deviation.url)
-                                title = deviation.title
-                                thumbnail_url = deviation.media.getCoverUrl()
-                                author = deviation.author.username
-                                author?.let { genre = "gallery:$author, by:$author" }
-                                description = "Click tag to show artist's gallery"
+                            "users" -> {
+                                related.users
+                                    ?.flatMap { user -> user.deviations }
+                            }
+                            "collections" -> {
+                                related.collections
+                                    ?.flatMap { collection -> collection.deviations }
+                            }
+                            else -> {
+                                Log.w("DeviantArt", "contentType: $contentType")
+                                null
                             }
                         }
-                }?.let { return it }
+                    }?.flatten()
+                    ?.mapNotNull { deviation ->
+                        SManga.create().apply {
+                            setUrlWithoutDomain(deviation.url)
+                            title = deviation.title
+                            thumbnail_url = deviation.media.getCoverUrl() ?: return@mapNotNull null
+                            author = deviation.author.username
+                            author?.let { genre = "gallery:$author, by:$author" }
+                            description = "Click tag to show artist's gallery"
+                        }
+                    }
+                    ?: emptyList()
             } catch (e: SerializationException) {
                 Log.e("DeviantArt", "Error parsing JSON", e)
+                emptyList()
             }
-
-            return emptyList()
         }
     }
 
