@@ -224,20 +224,24 @@ abstract class DeviantArt :
             ?: gallery?.selectFirst("[aria-haspopup=listbox] > div")!!.ownText()
         val artistInTitle = (preferences.artistInTitle == ArtistInTitle.ALWAYS.name) ||
             ((preferences.artistInTitle == ArtistInTitle.ONLY_ALL_GALLERIES.name) && (galleryName == "All"))
+        val username = document.selectFirst("#background-container + div a[data-username]")?.attr("data-username")
+        val artistName = document.selectFirst("#background-container + div .YbGUtI.TA5fQS, #background-container + div .o4WcK_")?.ownText()?.takeIf(String::isNotBlank)
 
         return SManga.create().apply {
             setUrlWithoutDomain(link)
-            author = document.title().substringBefore(" ")
+            author = username
+            artist = artistName
             title = when {
-                artistInTitle -> "$author - $galleryName"
+                artistInTitle && !username.isNullOrBlank() -> "$username - $galleryName"
                 else -> galleryName
             }
-            description = gallery.selectFirst(".legacy-journal")?.wholeText()
-                ?.let { "$it\n\nClick tag to show artist's gallery" }
-                ?: "Click tag to show artist's gallery"
+            description = listOfNotNull(
+                gallery.selectFirst(".legacy-journal")?.wholeText(),
+                "Click tag to show artist's gallery",
+            ).joinToString("\n\n")
             thumbnail_url = gallery.selectFirst("img[property=contentUrl]")?.getImgAttr()
                 ?: document.selectFirst("#background-container + div a[data-icon]")?.attr("abs:data-icon")
-            author?.let { genre = "gallery:$author, by:$author" }
+            author?.let { genre = "gallery:$username, by:$username" }
             status = SManga.ONGOING
         }
     }
@@ -537,7 +541,7 @@ abstract class DeviantArt :
 
     companion object {
         private const val SEARCH_FORMAT_MSG = "Browse user's gallery by searching for `gallery:{username}` or `gallery:{username}/{folderId}`\n" +
-            "Or search for his separated arts with `by:{username}"
+            "Or search for his separated arts with `by:{username}`"
         private const val FILTER_CATEGORY = "Category (<name> or <name1>/<name2>/...)"
         private const val CATALOG_FORMAT_MSG = "Show Popular/Latest with:"
         private const val CATALOG_SEARCH_QUERY = "search query of: "
