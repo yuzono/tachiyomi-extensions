@@ -16,6 +16,7 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
 import keiyoushi.network.get
+import keiyoushi.network.rateLimit
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.asJsoup
 import keiyoushi.utils.getPreferencesLazy
@@ -39,6 +40,7 @@ import java.time.DateTimeException
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.time.Duration.Companion.minutes
 
 @Source
 abstract class DeviantArt :
@@ -51,6 +53,13 @@ abstract class DeviantArt :
     private fun backendBuilder() = backendBaseUrl.toHttpUrl().newBuilder()
 
     private val json = Json { ignoreUnknownKeys = true }
+    private val baseUrlHost by lazy { baseUrl.toHttpUrl().host }
+    private val backendBaseUrlHost by lazy { backendBaseUrl.toHttpUrl().host }
+    override fun OkHttpClient.Builder.configureClient(): OkHttpClient.Builder = apply {
+        rateLimit(30, 1.minutes) { it.host == baseUrlHost }
+        // rateLimit(5, 1.minutes) { it.host == backendBaseUrlHost }
+        rateLimit(30, 5.minutes) { it.host == backendBaseUrlHost }
+    }
 
     private val dateFormat by lazy { DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.ENGLISH) }
     private val dateFormatZ by lazy { DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US) }
