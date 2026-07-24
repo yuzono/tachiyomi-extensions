@@ -96,10 +96,10 @@ abstract class DeviantArt :
 
     private fun parseToMangaList(document: Document): List<SManga> {
         val items = document.select("item")
-        return items.map {
-            val creator = it.selectFirst("media|credit")?.text()
-            val artName = it.selectFirst("title")!!.text()
-            val link = it.selectFirst("link")!!.text()
+        return items.map { item ->
+            val creator = item.selectFirst("media|credit")?.text()
+            val artName = item.selectFirst("title")!!.text()
+            val link = item.selectFirst("link")!!.text()
             val id = link.removeSuffix("/")
                 .substringAfterLast('/')
                 .substringAfterLast('-')
@@ -112,8 +112,8 @@ abstract class DeviantArt :
                     artName
                 }
                 author = creator
-                thumbnail_url = it.selectFirst("media|content")?.getImgAttr()
-                author?.let { genre = "gallery:$author, by:$author" }
+                thumbnail_url = item.selectFirst("media|content")?.getImgAttr()
+                author?.let { genre = "gallery:$it, by:$it" }
                 description = DESCRIPTION_GUIDE
             }
         }
@@ -241,7 +241,7 @@ abstract class DeviantArt :
             ).joinToString("\n\n")
             thumbnail_url = gallery.selectFirst("img[property=contentUrl]")?.getImgAttr()
                 ?: document.selectFirst("#background-container + div a[data-icon]")?.attr("abs:data-icon")
-            author?.let { genre = "gallery:$username, by:$username" }
+            username?.let { genre = "gallery:$it, by:$it" }
             status = SManga.ONGOING
         }
     }
@@ -357,15 +357,16 @@ abstract class DeviantArt :
                 }
             }
         } else {
-            val script = document.selectFirst("script:containsData(__RCACHE__)")?.data() ?: return emptyList()
-            val matchResult = RCACHE_REGEX.find(script)?.groupValues ?: return emptyList()
-            val jsonString = matchResult[1]
-                .replace("\\\"", "\"")
-                .replace("\\\'", "\'")
-                .replace("\\\\", "\\")
-
+            // Art
             return try {
-                jsonString.parseAs<RelatedContent>().relatedContent?.relatedContent
+                val script = document.selectFirst("script:containsData(__RCACHE__)")?.data() ?: return emptyList()
+                val matchResult = RCACHE_REGEX.find(script)?.groupValues ?: return emptyList()
+                val jsonString = matchResult[1]
+                    .replace("\\\"", "\"")
+                    .replace("\\\'", "\'")
+                    .replace("\\\\", "\\")
+
+                jsonString.parseAs<RCacheContent>().relatedContent?.relatedContent
                     ?.mapNotNull { related ->
                         val contentType = related.contentType
                             ?: return@mapNotNull null
@@ -398,7 +399,7 @@ abstract class DeviantArt :
                             title = deviation.title
                             thumbnail_url = deviation.media.getCoverUrl() ?: return@mapNotNull null
                             author = deviation.author.username
-                            author?.let { genre = "gallery:$author, by:$author" }
+                            author?.let { genre = "gallery:$it, by:$it" }
                             description = DESCRIPTION_GUIDE
                         }
                     }
