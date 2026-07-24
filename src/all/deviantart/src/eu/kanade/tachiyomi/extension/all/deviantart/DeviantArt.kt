@@ -114,7 +114,7 @@ abstract class DeviantArt :
                 author = creator
                 thumbnail_url = it.selectFirst("media|content")?.getImgAttr()
                 author?.let { genre = "gallery:$author, by:$author" }
-                description = "Click tag to show artist's gallery"
+                description = DESCRIPTION_GUIDE
             }
         }
     }
@@ -237,7 +237,7 @@ abstract class DeviantArt :
             }
             description = listOfNotNull(
                 gallery.selectFirst(".legacy-journal")?.wholeText(),
-                "Click tag to show artist's gallery",
+                DESCRIPTION_GUIDE,
             ).joinToString("\n\n")
             thumbnail_url = gallery.selectFirst("img[property=contentUrl]")?.getImgAttr()
                 ?: document.selectFirst("#background-container + div a[data-icon]")?.attr("abs:data-icon")
@@ -353,7 +353,7 @@ abstract class DeviantArt :
                     thumbnail_url = gallery.selectFirst("img")?.getImgAttr()
                     author = creator
                     author?.let { genre = "by:$author" }
-                    description = "Click tag to show artist's gallery"
+                    description = DESCRIPTION_GUIDE
                 }
             }
         } else {
@@ -399,7 +399,7 @@ abstract class DeviantArt :
                             thumbnail_url = deviation.media.getCoverUrl() ?: return@mapNotNull null
                             author = deviation.author.username
                             author?.let { genre = "gallery:$author, by:$author" }
-                            description = "Click tag to show artist's gallery"
+                            description = DESCRIPTION_GUIDE
                         }
                     }
                     ?: emptyList()
@@ -543,12 +543,14 @@ abstract class DeviantArt :
         private const val SEARCH_FORMAT_MSG = "Browse user's gallery by searching for `gallery:{username}` or `gallery:{username}/{folderId}`\n" +
             "Or search for his separated arts with `by:{username}`"
         private const val FILTER_CATEGORY = "Category (<name> or <name1>/<name2>/...)"
+        private const val CATALOG_CATEGORY = "in category (<name> or <name1>/<name2>/...)"
+        private const val DESCRIPTION_GUIDE = "Click tag to show artist's gallery"
+
         private const val CATALOG_FORMAT_MSG = "Show Popular/Latest with:"
         private const val CATALOG_SEARCH_QUERY = "search query of: "
         private const val CATALOG_SEARCH_QUERY_PREF = "catalog_search_query_pref"
-        private const val CATALOG_CATEGORY = "in category (<name> or <name1>/<name2>/...)"
-        private const val CATALOG_CATEGORY_PREF = "catalog_category_pref"
 
+        private const val CATALOG_CATEGORY_PREF = "catalog_category_pref"
         private const val CHAPTER_NAME_PREF = "includeArtIdAsChapterNamePref"
 
         private val GALLERY_QUERY_REGEX = Regex("""gallery:([\w-]+)(?:/(\d+))?""")
