@@ -1,6 +1,8 @@
 package eu.kanade.tachiyomi.extension.all.deviantart
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
 
 @Serializable
 class Deviation(
@@ -12,6 +14,19 @@ class Deviation(
     val publishedTime: String, // "2024-01-03T03:17:25-0800"
     val isMature: Boolean,
     val author: Author,
+    val media: Media,
+)
+
+@Serializable
+class DeviationState(
+    val deviationId: Int,
+    val type: String, // "image", "film"
+    val url: String, // "https://www.deviantart.com/shw67/art/Beach-58-1007661685"
+    val title: String,
+    val isVideo: Boolean,
+    val publishedTime: String, // "2024-01-03T03:17:25-0800"
+    val isMature: Boolean,
+    val author: Int,
     val media: Media,
 )
 
@@ -83,6 +98,18 @@ class CollectionInfo(
     val folderId: Int,
     val name: String,
     val owner: Author,
+)
+
+@Serializable
+class StateContent(
+    @SerialName("@@entities")
+    val entities: Entities,
+)
+
+@Serializable
+class Entities(
+    val user: JsonObject,
+    val deviation: JsonObject,
 )
 
 @Serializable

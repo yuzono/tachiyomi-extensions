@@ -19,6 +19,7 @@ import keiyoushi.network.get
 import keiyoushi.network.rateLimit
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.asJsoup
+import keiyoushi.utils.getObjectOrNull
 import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.parseAs
 import kotlinx.coroutines.async
@@ -141,12 +142,21 @@ abstract class DeviantArt :
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
         if (url.host != baseUrl.toHttpUrl().host) return null
 
+        val type = url.pathSegments.getOrNull(1)?.takeIf { it in listOf("gallery", "art") } ?: return null
         val username = url.pathSegments.getOrNull(0) ?: return null
         val folderId = url.pathSegments.getOrNull(2) ?: return null
-        val link = "$baseUrl/$username/gallery/$folderId"
-        val document = client.get(link).asJsoup()
 
-        return parseGalleryDetails(document, link)
+        val link = "$baseUrl/$username/$type/$folderId"
+        val document = client.get(link).asJsoup()
+        return when (type) {
+            "gallery" -> {
+                parseGalleryDetails(document, link)
+            }
+            "art" -> {
+                parseArtDetails(document)
+            }
+            else -> null
+        }
     }
 
     override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
@@ -247,9 +257,40 @@ abstract class DeviantArt :
     }
 
     private fun parseArtDetails(document: Document): SManga = SManga.create().apply {
+        status = SManga.COMPLETED
+
         // Update higher resolution thumbnail
         thumbnail_url = document.selectFirst("img[property=contentUrl]")?.getImgAttr()
-        status = SManga.COMPLETED
+        description = DESCRIPTION_GUIDE
+
+        val link = ART_LINK_REGEX.find(document.location())?.groupValues?.get(1)
+            ?: document.location()
+        setUrlWithoutDomain(link)
+        title = document.title()
+
+        try {
+            val script = document.selectFirst("script:containsData(__INITIAL_STATE__)")?.data() ?: return@apply
+            val matchResult = INITIAL_STATE_REGEX.find(script)?.groupValues ?: return@apply
+            val jsonString = matchResult[1]
+                .replace("\\\"", "\"")
+                .replace("\\\'", "\'")
+                .replace("\\\\", "\\")
+
+            val entities = jsonString.parseAs<StateContent>().entities
+            val deviationId = ART_ID_REGEX.find(link)?.groupValues?.get(1) ?: return@apply
+            val deviation = entities.deviation.getObjectOrNull(deviationId)?.parseAs<DeviationState>() ?: return@apply
+            val user = entities.user.getObjectOrNull(deviation.author.toString())?.parseAs<Author>()
+            val author = user?.username
+            setUrlWithoutDomain(deviation.url)
+            title = deviation.title
+            deviation.media.getCoverUrl()?.let { thumbnail_url = it }
+            author?.let {
+                this.author = it
+                genre = "gallery:$it, by:$it"
+            }
+        } catch (e: SerializationException) {
+            Log.w("DeviantArt", "Error parsing JSON", e)
+        }
     }
 
     private suspend fun fetchGalleryChapterList(manga: SManga): List<SChapter> {
@@ -510,6 +551,8 @@ abstract class DeviantArt :
         CategoryFilter("Category"),
         Filter.Separator(),
         Filter.Header(SEARCH_FORMAT_MSG),
+        Filter.Separator(),
+        Filter.Header("Paste full URL into search bar to open gallery/art."),
     )
 
     class SortFilter : SelectFilter("Sort By", sort) {
@@ -555,8 +598,12 @@ abstract class DeviantArt :
         private const val CHAPTER_NAME_PREF = "includeArtIdAsChapterNamePref"
 
         private val GALLERY_QUERY_REGEX = Regex("""gallery:([\w-]+)(?:/(\d+))?""")
-        private val GALLERY_LINK_REGEX = Regex("""(.+gallery/[\w-]+)(?:/[\w-]+)?""")
-        private val RCACHE_REGEX = Regex("""window\.__RCACHE__ = JSON\.parse\("(.+?)"\);""")
+        private val GALLERY_LINK_REGEX = Regex("""(.+/gallery/[\w-]+)(?:/[\w-]+)?""")
+        private val ART_LINK_REGEX = Regex("""(.+/art/[\w-]+)""")
+        private val ART_ID_REGEX = Regex("""-(\d+)""")
+        private val RCACHE_REGEX = Regex("""window\.__RCACHE__ = JSON\.parse\("(\{.+?\})"\);""")
+        private val INITIAL_STATE_REGEX = Regex("""window\.__INITIAL_STATE__ = JSON\.parse\("(\{.+?\})"\);""")
+
         private val IMAGE_ORIGINAL_URL_REGEX = Regex("""/v1(/.*)?(?=\?)""")
         private val STYLE_URL_REGEX = Regex("""background-image\s*:\s*url\('([^']+)'\)""")
     }
