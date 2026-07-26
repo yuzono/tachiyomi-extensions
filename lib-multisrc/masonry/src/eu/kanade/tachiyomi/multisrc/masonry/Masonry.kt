@@ -1,22 +1,25 @@
 package eu.kanade.tachiyomi.multisrc.masonry
 
-import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
+import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
-import eu.kanade.tachiyomi.source.online.HttpSource
+import keiyoushi.network.get
+import keiyoushi.source.KeiSource
 import keiyoushi.utils.asJsoup
 import keiyoushi.utils.firstInstanceOrNull
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import keiyoushi.utils.jsonInstance
+import keiyoushi.utils.parseAs
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.encodeToJsonElement
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.Request
-import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
@@ -29,25 +32,17 @@ import org.jsoup.nodes.Element
  * - Support multiple tags filter
  * - Support video via WebView
  */
-abstract class Masonry : HttpSource() {
+abstract class Masonry : KeiSource() {
     protected open val useAlternativeLatestRequest = false
-
-    override val supportsLatest = true
-
-    override fun headersBuilder() = super.headersBuilder()
-        .set("Referer", "$baseUrl/")
 
     /**
      * /updates/sort/popular/ doesn't support pages on all sites so we use filter instead
      * Some time, it has a bit different content comparing to filter so we still query it
      */
-    override fun popularMangaRequest(page: Int): Request {
-        val url = when (page) {
-            1 -> baseUrl
-            2 -> "$baseUrl/updates/sort/popular/"
-            else -> "$baseUrl/updates/sort/filter/ord/popular/content/0/quality/0/tags/0/mpage/${page - 2}/"
-        }
-        return GET(url, headers)
+    protected open fun popularMangaUrl(page: Int): String = when (page) {
+        1 -> baseUrl
+        2 -> "$baseUrl/updates/sort/popular/"
+        else -> "$baseUrl/updates/sort/filter/ord/popular/content/0/quality/0/tags/0/mpage/${page - 2}/"
     }
 
     protected open val galleryListSelector = ".list-gallery:not(.static)"
@@ -67,14 +62,15 @@ abstract class Masonry : HttpSource() {
         thumbnail_url = element.selectFirst("a img")?.imgAttr()
     }
 
-    override fun popularMangaParse(response: Response): MangasPage {
-        getTags()
-        getModelTags()
-        val document = response.asJsoup()
-        val mangas = document.select(popularMangaSelector())
-            .map(::popularMangaFromElement)
+    protected open fun parseMangaList(document: Document, mangaFromElement: (Element) -> SManga = ::popularMangaFromElement): MangasPage {
+        val mangas = document.select(popularMangaSelector()).map(mangaFromElement)
         val hasNextPage = document.selectFirst(popularMangaNextPageSelector()) != null
         return MangasPage(mangas, hasNextPage)
+    }
+
+    override suspend fun getPopularManga(page: Int): MangasPage {
+        val document = client.get(popularMangaUrl(page)).asJsoup()
+        return parseMangaList(document)
     }
 
     /**
@@ -93,13 +89,13 @@ abstract class Masonry : HttpSource() {
      *   => /archive/page/2/
      *   => /updates/sort/filter/ord/newest/content/0/quality/0/tags/0/mpage/2/
      */
-    override fun latestUpdatesRequest(page: Int) = if (useAlternativeLatestRequest) {
-        alternativeLatestRequest(page)
+    protected open fun latestUpdatesUrl(page: Int): String = if (useAlternativeLatestRequest) {
+        alternativeLatestUrl(page)
     } else {
-        defaultLatestRequest(page)
+        defaultLatestUrl(page)
     }
 
-    private fun defaultLatestRequest(page: Int) = GET("$baseUrl/archive/page/$page/", headers)
+    private fun defaultLatestUrl(page: Int) = "$baseUrl/archive/page/$page/"
 
     /**
      * Some sites doesn't support page for /updates/sort/newest/
@@ -107,9 +103,12 @@ abstract class Masonry : HttpSource() {
      *  - XArt (doesn't have any content at all)
      * This URL is often not showing consistent contents
      */
-    private fun alternativeLatestRequest(page: Int) = GET("$baseUrl/updates/sort/newest/mpage/$page/", headers)
+    private fun alternativeLatestUrl(page: Int) = "$baseUrl/updates/sort/newest/mpage/$page/"
 
-    override fun latestUpdatesParse(response: Response): MangasPage = popularMangaParse(response)
+    override suspend fun getLatestUpdates(page: Int): MangasPage {
+        val document = client.get(latestUpdatesUrl(page)).asJsoup()
+        return parseMangaList(document)
+    }
 
     /**
      * The Uri used to browse for popular/trending/newest galleries:
@@ -123,23 +122,22 @@ abstract class Masonry : HttpSource() {
         else -> "updates"
     }
 
-    override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
+    protected open fun searchMangaUrl(page: Int, query: String, filters: FilterList): HttpUrl {
         val searchType = filters.firstInstanceOrNull<SearchTypeFilter>()?.selected ?: searchTypeOptions.first().second
         return if (query.isNotEmpty()) {
-            val url = "$baseUrl/search/$searchType/".toHttpUrl().newBuilder()
+            "$baseUrl/search/$searchType/".toHttpUrl().newBuilder()
                 .addPathSegment(query.trim())
                 .addPathSegments("mpage/$page/")
                 .build()
-            GET(url, headers)
         } else {
             val sortFilter = filters.firstInstanceOrNull<SortFilter>() ?: SortFilter()
-            val tagsFilter = filters.firstInstanceOrNull<TagsFilter>() ?: TagsFilter(tags)
-            val modelTagsFilter = filters.firstInstanceOrNull<ModelTagsFilter>() ?: ModelTagsFilter(modelTags)
+            val tagsFilter = filters.firstInstanceOrNull<TagsFilter>() ?: TagsFilter(emptyList())
+            val modelTagsFilter = filters.firstInstanceOrNull<ModelTagsFilter>() ?: ModelTagsFilter(emptyList())
             val modelAgeFilter = filters.firstInstanceOrNull<AgesFilter>() ?: AgesFilter()
             val modelCountriesFilter =
-                filters.firstInstanceOrNull<ModelCountriesFilter>() ?: ModelCountriesFilter(modelCountries)
+                filters.firstInstanceOrNull<ModelCountriesFilter>() ?: ModelCountriesFilter(emptyList())
 
-            val url = baseUrl.toHttpUrl().newBuilder().apply {
+            baseUrl.toHttpUrl().newBuilder().apply {
                 when {
                     tagsFilter.state.any { it.state } -> {
                         val tags = tagsFilter.state.filter { it.state }
@@ -243,102 +241,69 @@ abstract class Masonry : HttpSource() {
                     }
                 }
             }.build()
-
-            GET(url, headers)
         }
     }
 
-    override fun searchMangaParse(response: Response): MangasPage {
-        getTags()
-        getModelTags()
+    override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
+        val document = client.get(searchMangaUrl(page, query, filters)).asJsoup()
+        return parseSearchMangaList(document)
+    }
+
+    protected open fun parseSearchMangaList(document: Document): MangasPage {
         val mangaFromElement = when {
             /* Support all three:
              - models browsing /models/ to make each model a title with multiple chapters of her galleries
              - model search /search/model/ to show each gallery as a separated title (just like normal browsing)
              - and model-tag
               They all return model-entries */
-            response.request.url.pathSegments.any { it == "model" || it == "models" || it == "model-tag" } -> ::modelMangaFromElement
+            document.location().toHttpUrl().pathSegments.any { it == "model" || it == "models" || it == "model-tag" } -> ::modelMangaFromElement
 
             else -> ::popularMangaFromElement
         }
 
-        val document = response.asJsoup()
-        val mangas = document.select(popularMangaSelector()).map(mangaFromElement)
-        val hasNextPage = document.selectFirst(popularMangaNextPageSelector()) != null
-        return MangasPage(mangas, hasNextPage)
+        return parseMangaList(document, mangaFromElement)
     }
 
-    private val scope = CoroutineScope(Dispatchers.IO)
-    protected fun launchIO(block: () -> Unit) = scope.launch { block() }
+    /* Filters */
 
-    @Volatile
-    private var tagsFetchAttempt = 0
+    override val supportsFilterFetching = true
 
-    @Volatile
-    private var tagsFetching = false
+    protected open suspend fun fetchTags(): List<Tag> = client.get("$baseUrl/updates/").asJsoup()
+        .select("#filter-a span[data-placeholder='Tags'] span:has(> input)")
+        .map {
+            Tag(
+                it.select("label").text(),
+                it.select("input").attr("value"),
+            )
+        }
 
-    @Volatile
-    private var tags = emptyList<Tag>()
-
-    @Synchronized
-    protected open fun getTags() {
-        if (tags.isNotEmpty() || tagsFetching || tagsFetchAttempt >= 3) return
-        tagsFetching = true
-        tagsFetchAttempt++
-        launchIO {
-            try {
-                tags = client.newCall(GET("$baseUrl/updates/", headers)).execute()
-                    .use { it.asJsoup() }
-                    .select("#filter-a span[data-placeholder='Tags'] span:has(> input)")
-                    .map {
-                        Tag(
-                            it.select("label").text(),
-                            it.select("input").attr("value"),
-                        )
-                    }
-            } catch (_: Exception) {
-            } finally {
-                tagsFetching = false
+    protected open suspend fun fetchModelTagsAndCountries(): Pair<List<Tag>, List<Country>> {
+        val document = client.get("$baseUrl/models/").asJsoup()
+        val modelTags = document.select("#filter-b span[data-placeholder='Tags'] span:has(> input)")
+            .map {
+                Tag(
+                    "M: " + it.select("label").text(),
+                    it.select("input").attr("value"),
+                )
             }
-        }
+        val modelCountries = document.select("#filter-b span[data-placeholder='Country'] span:has(> input)")
+            .map {
+                Country(
+                    it.select("label").text(),
+                    it.select("input").attr("value"),
+                )
+            }
+        return modelTags to modelCountries
     }
 
-    override fun getFilterList(): FilterList {
-        getTags()
-        getModelTags()
-        val filters = mutableListOf(
-            Filter.Header("Below filters are ignored when doing text search except Sort\nText search only support Galleries & Models"),
-            SearchTypeFilter(searchTypeOptions),
-            Filter.Separator(),
-            Filter.Header("Some source might not support Trending"),
-            SortFilter(),
-            Filter.Separator(),
-        )
+    override suspend fun fetchFilterData(): JsonElement = coroutineScope {
+        val tagsDeferred = async { fetchTags() }
+        val modelDeferred = async { fetchModelTagsAndCountries() }
 
-        if (tags.isEmpty()) {
-            filters.add(Filter.Header("Press 'reset' to attempt to load tags"))
-        } else {
-            filters.add(TagsFilter(tags))
-        }
+        val tags = tagsDeferred.await()
+        val (modelTags, modelCountries) = modelDeferred.await()
 
-        filters.add(Filter.Separator())
-        filters.add(Filter.Header("Model filters are ignored when Tags filter is selected.\nTrending is supported if only 1 Model's tag is selected."))
-        if (modelTags.isEmpty()) {
-            filters.add(Filter.Header("Press 'reset' to attempt to load Model tags"))
-        } else {
-            filters.add(ModelTagsFilter(modelTags))
-        }
-        if (modelCountries.isEmpty()) {
-            filters.add(Filter.Header("Press 'reset' to attempt to load Model countries"))
-        } else {
-            filters.add(ModelCountriesFilter(modelCountries))
-        }
-        filters.add(AgesFilter())
-
-        filters.add(Filter.Separator())
-        filters.add(Filter.Header("Open WebView to watch video (chapter with only 1 photo)"))
-
-        return FilterList(filters)
+        jsonInstance.encodeToJsonElement(MasonryFilterData(tags, modelTags, modelCountries))
     }
 
     protected open val searchTypeOptions = listOf(
@@ -346,112 +311,109 @@ abstract class Masonry : HttpSource() {
         Pair("Models", "model"),
     )
 
-    override fun mangaDetailsParse(response: Response): SManga = when {
-        response.request.url.toString().contains("/model/") ->
-            modelMangaDetailsParse(response.asJsoup())
+    override fun getFilterList(data: JsonElement?): FilterList {
+        val filterData = data?.parseAs<MasonryFilterData>()
 
-        else -> {
-            val document = response.asJsoup()
-            SManga.create().apply {
-                document.selectFirst("header#top h1")?.run {
-                    title = text()
-                }
-                document.selectFirst("p.link-btn")?.run {
-                    artist = select("a[href*=/model/]").eachText().joinToString()
-                    author = selectFirst("a")?.text()
-                    genre = (
-                        listOfNotNull(author?.takeIf(String::isNotBlank), artist?.takeIf(String::isNotBlank)) +
-                            select("a[href*=/tag/]").eachText()
-                        ).distinct().joinToString()
-                }
-                description = document.selectFirst("#content > p")?.text()
-                status = SManga.COMPLETED
-                update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
-            }
+        val filters = mutableListOf<Filter<*>>(
+            Filter.Header("Below filters are ignored when doing text search except Sort\nText search only support Galleries & Models"),
+            SearchTypeFilter(searchTypeOptions),
+            Filter.Separator(),
+            Filter.Header("Some source might not support Trending"),
+            SortFilter(),
+        )
+
+        if (filterData != null) {
+            filters += Filter.Separator()
+            filters += TagsFilter(filterData.tags)
+            filters += Filter.Separator()
+            filters += Filter.Header("Model filters are ignored when Tags filter is selected.\nTrending is supported if only 1 Model's tag is selected.")
+            filters += ModelTagsFilter(filterData.modelTags)
+            filters += ModelCountriesFilter(filterData.modelCountries)
+            filters += AgesFilter()
+            filters += Filter.Separator()
+            filters += Filter.Header("Open WebView to watch video (chapter with only 1 photo)")
         }
+
+        return FilterList(filters)
     }
 
-    override fun chapterListRequest(manga: SManga) = when {
-        manga.url.contains("/model/") ->
-            modelChapterListRequest(manga)
-        else ->
-            GET(baseUrl + manga.url, headers)
-    }
+    /* Manga details & chapters */
 
-    override fun chapterListParse(response: Response): List<SChapter> {
-        val document = response.asJsoup()
-        return document.selectFirst(galleryListSelector)?.run {
-            // select separately so if a model doesn't have any content then it will return an empty list
-            select(gallerySelector)
-                .map(::modelChapterFromElement)
-        } ?: document.selectFirst(videoSelector)?.run {
-            listOf(
-                SChapter.create().apply {
-                    name = "Video"
-                    setUrlWithoutDomain(response.request.url.toString())
-                },
+    override suspend fun fetchMangaUpdate(
+        manga: SManga,
+        chapters: List<SChapter>,
+        fetchDetails: Boolean,
+        fetchChapters: Boolean,
+    ): SMangaUpdate = if (manga.url.contains("/model/")) {
+        coroutineScope {
+            val detailsDeferred = if (fetchDetails) async { fetchModelMangaDetails(manga) } else null
+            val chaptersDeferred = if (fetchChapters) async { fetchModelChapterList(manga) } else null
+
+            SMangaUpdate(
+                manga = detailsDeferred?.await() ?: manga,
+                chapters = chaptersDeferred?.await() ?: chapters,
             )
-        } ?: listOf(
-            SChapter.create().apply {
-                name = "Gallery"
-                setUrlWithoutDomain(response.request.url.toString())
-            },
+        }
+    } else {
+        // Details and chapters both come from the same gallery page - fetch it once regardless of flags.
+        val document = client.get(baseUrl + manga.url).asJsoup()
+        SMangaUpdate(
+            manga = parseMangaDetails(document, manga),
+            chapters = parseChapterList(document, manga),
         )
     }
 
-    /* Models */
-    @Volatile
-    private var modelTagsFetchAttempt = 0
-
-    @Volatile
-    private var modelTagsFetching = false
-
-    @Volatile
-    private var modelTags = emptyList<Tag>()
-
-    @Volatile
-    private var modelCountries = emptyList<Country>()
-
-    @Synchronized
-    protected open fun getModelTags() {
-        if ((modelTags.isNotEmpty() && modelCountries.isNotEmpty()) || modelTagsFetching || modelTagsFetchAttempt >= 3) return
-        modelTagsFetching = true
-        modelTagsFetchAttempt++
-        launchIO {
-            try {
-                client.newCall(GET("$baseUrl/models/", headers)).execute()
-                    .use { it.asJsoup() }.run {
-                        modelTags =
-                            select("#filter-b span[data-placeholder='Tags'] span:has(> input)")
-                                .map {
-                                    Tag(
-                                        "M: " + it.select("label").text(),
-                                        it.select("input").attr("value"),
-                                    )
-                                }
-                        modelCountries =
-                            select("#filter-b span[data-placeholder='Country'] span:has(> input)")
-                                .map {
-                                    Country(
-                                        it.select("label").text(),
-                                        it.select("input").attr("value"),
-                                    )
-                                }
-                    }
-            } catch (_: Exception) {
-            } finally {
-                modelTagsFetching = false
-            }
+    protected open fun parseMangaDetails(document: Document, manga: SManga): SManga = SManga.create().apply {
+        url = manga.url
+        document.selectFirst("header#top h1")?.run {
+            title = text()
         }
+        document.selectFirst("p.link-btn")?.run {
+            artist = select("a[href*=/model/]").eachText().joinToString()
+            author = selectFirst("a")?.text()
+            genre = (
+                listOfNotNull(author?.takeIf(String::isNotBlank), artist?.takeIf(String::isNotBlank)) +
+                    select("a[href*=/tag/]").eachText()
+                ).distinct().joinToString()
+        }
+        description = document.selectFirst("#content > p")?.text()
+        status = SManga.COMPLETED
+        update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
     }
 
-    protected open fun modelChapterListRequest(manga: SManga): Request {
-        val url = (baseUrl + manga.url).toHttpUrl().newBuilder().apply {
-            /* Must use sort/latest to get correct title (instead of description),
-              also will list chapters in timely manner */
-            addPathSegments("sort/latest")
-        }.build()
-        return GET(url, headers)
+    protected open fun parseChapterList(document: Document, manga: SManga): List<SChapter> = document.selectFirst(galleryListSelector)?.run {
+        // select separately so if a model doesn't have any content then it will return an empty list
+        select(gallerySelector).map(::modelChapterFromElement)
+    } ?: document.selectFirst(videoSelector)?.let {
+        listOf(
+            SChapter.create().apply {
+                name = "Video"
+                url = manga.url
+            },
+        )
+    } ?: listOf(
+        SChapter.create().apply {
+            name = "Gallery"
+            url = manga.url
+        },
+    )
+
+    /* Models */
+
+    protected open fun modelChapterListUrl(manga: SManga): HttpUrl = (baseUrl + manga.url).toHttpUrl().newBuilder().apply {
+        /* Must use sort/latest to get correct title (instead of description),
+          also will list chapters in timely manner */
+        addPathSegments("sort/latest")
+    }.build()
+
+    protected open suspend fun fetchModelMangaDetails(manga: SManga): SManga {
+        val document = client.get(baseUrl + manga.url).asJsoup()
+        return modelMangaDetailsParse(document, manga)
+    }
+
+    protected open suspend fun fetchModelChapterList(manga: SManga): List<SChapter> {
+        val document = client.get(modelChapterListUrl(manga)).asJsoup()
+        return parseChapterList(document, manga)
     }
 
     protected open fun modelMangaFromElement(element: Element): SManga = SManga.create().apply {
@@ -469,7 +431,8 @@ abstract class Masonry : HttpSource() {
         update_strategy = UpdateStrategy.ALWAYS_UPDATE
     }
 
-    protected open fun modelMangaDetailsParse(document: Document) = SManga.create().apply {
+    protected open fun modelMangaDetailsParse(document: Document, manga: SManga): SManga = SManga.create().apply {
+        url = manga.url
         document.selectFirst("article.module-model")?.run {
             val stats = selectFirst(".header-model")?.also { elm: Element ->
                 val model = elm.selectFirst("h1")?.text() ?: "Model"
@@ -503,14 +466,14 @@ abstract class Masonry : HttpSource() {
         }
     }
 
-    override fun pageListParse(response: Response): List<Page> {
-        val document = response.asJsoup()
-        return pageListParse(document)
+    override suspend fun getPageList(chapter: SChapter): List<Page> {
+        val document = client.get(baseUrl + chapter.url).asJsoup()
+        return parsePageList(document)
     }
 
     /* Pages */
 
-    protected open fun pageListParse(document: Document): List<Page> = document.select(".list-gallery a[href^=https://cdn.], $videoSelector")
+    protected open fun parsePageList(document: Document): List<Page> = document.select(".list-gallery a[href^=https://cdn.], $videoSelector")
         .mapIndexed { idx, img ->
             Page(
                 idx,
@@ -523,8 +486,6 @@ abstract class Masonry : HttpSource() {
                 },
             )
         }
-
-    override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
 
     protected fun Element.imgAttr(): String = when {
         hasAttr("srcset") -> attr("abs:srcset").substringBefore(" ")

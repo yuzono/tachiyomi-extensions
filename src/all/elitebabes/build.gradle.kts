@@ -8,9 +8,8 @@ keiyoushi {
     name = "Elite Babes"
     versionCode = 0
     contentWarning = ContentWarning.NSFW
-    libVersion = "1.4"
+    libVersion = "1.6"
     theme = "masonry"
-    kmkVersionCode = 1
 
     source {
         lang = "all"

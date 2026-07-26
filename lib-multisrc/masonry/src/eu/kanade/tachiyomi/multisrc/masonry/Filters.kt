@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.multisrc.masonry
 
 import eu.kanade.tachiyomi.source.model.Filter
+import kotlinx.serialization.Serializable
 
 abstract class SelectFilter(
     name: String,
@@ -38,6 +39,7 @@ private val sortFilterOptions = listOf(
 
 class SearchTypeFilter(options: List<Pair<String, String>>) : SelectFilter("Browse & Search for", options)
 
+@Serializable
 class Tag(val name: String, val uriPart: String)
 
 class TagCheckBox(name: String, val uriPart: String) : Filter.CheckBox(name)
@@ -46,6 +48,7 @@ class TagsFilter(tags: List<Tag>) : Filter.Group<TagCheckBox>("Tags", tags.map {
 
 class ModelTagsFilter(tags: List<Tag>) : Filter.Group<TagCheckBox>("Model Tags", tags.map { TagCheckBox(it.name, it.uriPart) })
 
+@Serializable
 class Country(val name: String, val uriPart: String)
 
 class CountryCheckBox(name: String, val uriPart: String) : Filter.CheckBox(name)
@@ -58,3 +61,14 @@ private val ageFilterOptions = listOf(Pair("All Ages", "0")) +
     (19..50).map {
         Pair(it.toString(), it.toString())
     }
+
+/**
+ * Cached filter data fetched by [eu.kanade.tachiyomi.multisrc.masonry.Masonry.fetchFilterData].
+ * Extra fields added by subclasses' own filter data are ignored here thanks to `ignoreUnknownKeys`.
+ */
+@Serializable
+class MasonryFilterData(
+    val tags: List<Tag> = emptyList(),
+    val modelTags: List<Tag> = emptyList(),
+    val modelCountries: List<Country> = emptyList(),
+)
