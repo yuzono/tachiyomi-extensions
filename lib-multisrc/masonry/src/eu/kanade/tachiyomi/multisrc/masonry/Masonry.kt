@@ -347,6 +347,8 @@ abstract class Masonry : KeiSource() {
 
     /* Manga details & chapters */
 
+    // TODO: Related & deep-links; fix next page or implement new support; more sites/links
+
     override suspend fun fetchMangaUpdate(
         manga: SManga,
         chapters: List<SChapter>,
