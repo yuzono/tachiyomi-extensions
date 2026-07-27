@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.extension.all.hentai3
 
-import android.content.SharedPreferences
 import android.webkit.CookieManager
 import androidx.preference.PreferenceScreen
 import androidx.preference.SwitchPreferenceCompat
@@ -24,7 +23,7 @@ import keiyoushi.annotation.Source
 import keiyoushi.network.get
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.firstInstanceOrNull
-import keiyoushi.utils.getPreferences
+import keiyoushi.utils.getPreferencesLazy
 import kotlinx.serialization.json.JsonElement
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -139,22 +138,9 @@ abstract class Hentai3 :
         return response
     }
 
-    private val prefs: SharedPreferences by lazy { getPreferences() }
+    private val prefs by getPreferencesLazy()
 
-    private var displayFullTitle: Boolean = prefs.getBoolean("full_title", false)
-
-    override fun setupPreferenceScreen(screen: PreferenceScreen) {
-        SwitchPreferenceCompat(screen.context).apply {
-            key = "full_title"
-            title = "Display full title"
-            setOnPreferenceChangeListener { _, newValue ->
-                displayFullTitle = newValue as Boolean
-                true
-            }
-        }.also(screen::addPreference)
-    }
-
-    // Popular
+    // Popular + Latest
     override suspend fun getPopularManga(page: Int): MangasPage {
         val url = when {
             searchLang.isBlank() -> "$baseUrl/search?q=pages%3A>0&sort=popular-7d&page=$page"
@@ -162,6 +148,11 @@ abstract class Hentai3 :
             else -> "$baseUrl/language/$searchLang/$page?sort=popular-7d"
         }
 
+        return parseMangasPage(client.get(url).asJsoup())
+    }
+
+    override suspend fun getLatestUpdates(page: Int): MangasPage {
+        val url = "$baseUrl/${if (searchLang.isNotEmpty()) "language/$searchLang/$page" else "search?q=pages%3A>0&page=$page"}"
         return parseMangasPage(client.get(url).asJsoup())
     }
 
@@ -176,31 +167,15 @@ abstract class Hentai3 :
     private val popularMangaNextPageSelector = "a[rel=next]"
 
     private fun popularMangaFromElement(element: Element): SManga = SManga.create().apply {
-        title = element.selectFirst("div.title")!!.ownText().replace("\"", "").let {
-            if (displayFullTitle) it.trim() else it.shortenTitle()
-        }
+        title = element.selectFirst("div.title")!!.ownText().replace("\"", "")
+            .shortenTitle()
         setUrlWithoutDomain(element.absUrl("href"))
         thumbnail_url = element.selectFirst(".cover img")!!.let { img ->
             if (img.hasAttr("data-src")) img.attr("abs:data-src") else img.absUrl("src")
         }
     }
 
-    // Related
-    override val supportsRelatedMangas get() = true
-
-    private fun relatedMangaListSelector(): String = popularMangaSelector + if (flagLang.isNotEmpty()) ":has(.flag-$flagLang)" else ""
-
-    override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> = client.get(getMangaUrl(manga)).asJsoup()
-        .select(relatedMangaListSelector()).map(::popularMangaFromElement)
-
-    // Latest
-    override suspend fun getLatestUpdates(page: Int): MangasPage {
-        val url = "$baseUrl/${if (searchLang.isNotEmpty()) "language/$searchLang/$page" else "search?q=pages%3A>0&page=$page"}"
-        return parseMangasPage(client.get(url).asJsoup())
-    }
-
     // Search
-
     override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage = when {
         query.startsWith(PREFIX_ID_SEARCH) -> MangasPage(listOf(searchMangaById(query.removePrefix(PREFIX_ID_SEARCH))), false)
         query.toIntOrNull() != null -> MangasPage(listOf(searchMangaById(query)), false)
@@ -221,14 +196,6 @@ abstract class Hentai3 :
     private suspend fun searchMangaById(id: String): SManga {
         val document = client.get("$baseUrl/d/$id").asJsoup()
         return parseMangaDetails(document).apply { url = "/d/$id" }
-    }
-
-    override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
-        if (url.host != baseUrl.toHttpUrl().host || url.pathSegments.size < 2) {
-            return null
-        }
-
-        return searchMangaById(url.pathSegments[1])
     }
 
     private fun searchMangaRequestUrl(page: Int, query: String, filters: FilterList): HttpUrl {
@@ -295,7 +262,16 @@ abstract class Hentai3 :
 
     data class AdvSearchEntry(val type: String, val text: String, val exclude: Boolean, val specific: String)
 
-    // Details
+    override fun getFilterList(data: JsonElement?) = getFilters()
+
+    // Details + Chapters
+    override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
+        if (url.host != baseUrl.toHttpUrl().host || url.pathSegments.size < 2) {
+            return null
+        }
+
+        return searchMangaById(url.pathSegments[1])
+    }
 
     private fun parseMangaDetails(document: Document): SManga {
         val fullTitle = document.select("#main-info > h1").text()
@@ -329,8 +305,6 @@ abstract class Hentai3 :
         }
     }
 
-    // Chapters
-
     private fun parseChapterList(document: Document, chapterUrl: String): List<SChapter> = listOf(
         SChapter.create().apply {
             name = "Chapter"
@@ -354,8 +328,15 @@ abstract class Hentai3 :
         return SMangaUpdate(updatedManga, updatedChapters)
     }
 
-    // Pages
+    // Related manga
+    override val supportsRelatedMangas get() = true
 
+    private fun relatedMangaListSelector(): String = popularMangaSelector + if (flagLang.isNotEmpty()) ":has(.flag-$flagLang)" else ""
+
+    override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> = client.get(getMangaUrl(manga)).asJsoup()
+        .select(relatedMangaListSelector()).map(::popularMangaFromElement)
+
+    // Pages
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         val images = client.get(getChapterUrl(chapter)).asJsoup().select("#thumbnail-gallery .single-thumb a > img")
         return images.mapIndexed { index, image ->
@@ -364,12 +345,25 @@ abstract class Hentai3 :
         }
     }
 
-    override fun getFilterList(data: JsonElement?) = getFilters()
+    // Preferences
+    private fun String.shortenTitle() = if (displayFullTitle) {
+        this
+    } else {
+        replace(SHORT_TITLE_REGEX, "").trim()
+    }
 
-    private val shortenTitleRegex = Regex("""(\[[^]]*]|[({][^)}]*[)}])""")
-    private fun String.shortenTitle() = this.replace(shortenTitleRegex, "").trim()
+    private val displayFullTitle
+        get() = prefs.getBoolean("full_title", false)
+
+    override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        SwitchPreferenceCompat(screen.context).apply {
+            key = "full_title"
+            title = "Display full title"
+        }.also(screen::addPreference)
+    }
 
     companion object {
-        const val PREFIX_ID_SEARCH = "id:"
+        private val SHORT_TITLE_REGEX = Regex("""(\[[^]]*]|[({][^)}]*[)}])""")
+        private const val PREFIX_ID_SEARCH = "id:"
     }
 }

@@ -10,11 +10,6 @@ keiyoushi {
     contentWarning = ContentWarning.NSFW
     libVersion = "1.6"
 
-    deeplink {
-        host("3hentai.net")
-        path("/d/..*")
-    }
-
     listOf(
         "all", "en", "ja", "ko", "zh", "mo", "es", "pt", "id", "jv",
         "tl", "vi", "th", "my", "tr", "ru", "uk", "pl", "fi", "de",
@@ -26,5 +21,9 @@ keiyoushi {
             // lang changed from po to pl, id kept from before the rename
             if (it == "pl") id = 7940950215101782907L
         }
+    }
+
+    deeplink {
+        path("/d/..*")
     }
 }
