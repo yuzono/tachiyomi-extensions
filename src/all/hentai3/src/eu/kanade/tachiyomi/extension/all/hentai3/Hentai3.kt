@@ -11,33 +11,33 @@ import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getNumPages
 import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getTagDescription
 import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getTags
 import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getTime
-import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.asObservableSuccess
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
+import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
-import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.annotation.Source
-import keiyoushi.lib.randomua.addRandomUAPreference
+import keiyoushi.network.get
+import keiyoushi.source.KeiSource
 import keiyoushi.utils.firstInstanceOrNull
 import keiyoushi.utils.getPreferences
+import kotlinx.serialization.json.JsonElement
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import okhttp3.Response
+import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
-import rx.Observable
 import java.io.IOException
 
 @Source
 abstract class Hentai3 :
-    HttpSource(),
+    KeiSource(),
     ConfigurableSource {
 
     private val searchLang: String
@@ -106,8 +106,6 @@ abstract class Hentai3 :
             else -> ""
         }
 
-    override val supportsLatest = true
-
     private val webViewCookieManager: CookieManager by lazy { CookieManager.getInstance() }
 
     val cookies
@@ -124,15 +122,9 @@ abstract class Hentai3 :
             }
             ?: emptyList()
 
-    override val client: OkHttpClient by lazy {
-        network.client.newBuilder()
-            .addNetworkInterceptor(::authorizationInterceptor)
-            .build()
+    override fun OkHttpClient.Builder.configureClient(): OkHttpClient.Builder = apply {
+        addNetworkInterceptor(::authorizationInterceptor)
     }
-
-    override fun headersBuilder() = super.headersBuilder()
-        .set("Referer", "$baseUrl/")
-        .set("Origin", baseUrl)
 
     fun authorizationInterceptor(chain: Interceptor.Chain): Response {
         val request = chain.request().newBuilder()
@@ -160,31 +152,28 @@ abstract class Hentai3 :
                 true
             }
         }.also(screen::addPreference)
-
-        screen.addRandomUAPreference()
     }
 
     // Popular
-    override fun popularMangaRequest(page: Int): Request = GET(
-        when {
+    override suspend fun getPopularManga(page: Int): MangasPage {
+        val url = when {
             searchLang.isBlank() -> "$baseUrl/search?q=pages%3A>0&sort=popular-7d&page=$page"
             page == 1 -> "$baseUrl/language/$searchLang?sort=popular-7d"
             else -> "$baseUrl/language/$searchLang/$page?sort=popular-7d"
-        },
-        headers,
-    )
+        }
 
-    override fun popularMangaParse(response: Response): MangasPage {
-        val doc = response.asJsoup()
+        return parseMangasPage(client.get(url).asJsoup())
+    }
 
-        val mangas = doc.select(popularMangaSelector()).map(::popularMangaFromElement)
-        val hasNextPage = doc.selectFirst(popularMangaNextPageSelector()) != null
+    private fun parseMangasPage(document: Document): MangasPage {
+        val mangas = document.select(popularMangaSelector).map(::popularMangaFromElement)
+        val hasNextPage = document.selectFirst(popularMangaNextPageSelector) != null
 
         return MangasPage(mangas, hasNextPage)
     }
 
-    private fun popularMangaSelector() = "a[href*=/d/]"
-    private fun popularMangaNextPageSelector() = "a[rel=next]"
+    private val popularMangaSelector = "a[href*=/d/]"
+    private val popularMangaNextPageSelector = "a[rel=next]"
 
     private fun popularMangaFromElement(element: Element): SManga = SManga.create().apply {
         title = element.selectFirst("div.title")!!.ownText().replace("\"", "").let {
@@ -196,53 +185,53 @@ abstract class Hentai3 :
         }
     }
 
-    private fun relatedMangaListSelector(): String = popularMangaSelector() + if (flagLang.isNotEmpty()) ":has(.flag-$flagLang)" else ""
+    // Related
+    override val supportsRelatedMangas get() = true
 
-    override fun relatedMangaListParse(response: Response): List<SManga> = response.asJsoup()
+    private fun relatedMangaListSelector(): String = popularMangaSelector + if (flagLang.isNotEmpty()) ":has(.flag-$flagLang)" else ""
+
+    override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> = client.get(getMangaUrl(manga)).asJsoup()
         .select(relatedMangaListSelector()).map(::popularMangaFromElement)
 
     // Latest
-    override fun latestUpdatesRequest(page: Int): Request = GET("$baseUrl/${if (searchLang.isNotEmpty()) "language/$searchLang/$page" else "search?q=pages%3A>0&page=$page"}", headers)
-
-    override fun latestUpdatesParse(response: Response): MangasPage = popularMangaParse(response)
+    override suspend fun getLatestUpdates(page: Int): MangasPage {
+        val url = "$baseUrl/${if (searchLang.isNotEmpty()) "language/$searchLang/$page" else "search?q=pages%3A>0&page=$page"}"
+        return parseMangasPage(client.get(url).asJsoup())
+    }
 
     // Search
 
-    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
-        if (query.startsWith("https://")) {
-            val url = query.toHttpUrl()
-            if (url.host != baseUrl.toHttpUrl().host || url.pathSegments.size < 2) {
-                throw Exception("Unsupported url")
-            }
-            val id = url.pathSegments[1]
-            return fetchSearchManga(page, "$PREFIX_ID_SEARCH$id", filters)
-        }
+    override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage = when {
+        query.startsWith(PREFIX_ID_SEARCH) -> MangasPage(listOf(searchMangaById(query.removePrefix(PREFIX_ID_SEARCH))), false)
+        query.toIntOrNull() != null -> MangasPage(listOf(searchMangaById(query)), false)
+        else -> {
+            val response = client.get(searchMangaRequestUrl(page, query, filters))
+            val document = response.asJsoup()
 
-        return when {
-            query.startsWith(PREFIX_ID_SEARCH) -> {
-                val id = query.removePrefix(PREFIX_ID_SEARCH)
-                client.newCall(searchMangaByIdRequest(id))
-                    .asObservableSuccess()
-                    .map { response -> searchMangaByIdParse(response, id) }
+            if (response.request.url.toString().contains("/login") &&
+                document.select("input[value=Login to my account]").isNotEmpty()
+            ) {
+                throw Exception("Log in via WebView to view favorites")
             }
-            query.toIntOrNull() != null -> {
-                client.newCall(searchMangaByIdRequest(query))
-                    .asObservableSuccess()
-                    .map { response -> searchMangaByIdParse(response, query) }
-            }
-            else -> super.fetchSearchManga(page, query, filters)
+
+            parseMangasPage(document)
         }
     }
 
-    private fun searchMangaByIdRequest(id: String) = GET("$baseUrl/d/$id", headers)
-
-    private fun searchMangaByIdParse(response: Response, id: String): MangasPage {
-        val details = mangaDetailsParse(response)
-        details.url = "/d/$id"
-        return MangasPage(listOf(details), false)
+    private suspend fun searchMangaById(id: String): SManga {
+        val document = client.get("$baseUrl/d/$id").asJsoup()
+        return parseMangaDetails(document).apply { url = "/d/$id" }
     }
 
-    override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
+    override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
+        if (url.host != baseUrl.toHttpUrl().host || url.pathSegments.size < 2) {
+            return null
+        }
+
+        return searchMangaById(url.pathSegments[1])
+    }
+
+    private fun searchMangaRequestUrl(page: Int, query: String, filters: FilterList): HttpUrl {
         val filterList = if (filters.isEmpty()) getFilterList() else filters
         val queries = (
             listOfNotNull(
@@ -264,15 +253,13 @@ abstract class Hentai3 :
             "$baseUrl/search"
         }
 
-        val url = searchURL.toHttpUrl().newBuilder().apply {
+        return searchURL.toHttpUrl().newBuilder().apply {
             addQueryParameter("q", queries.ifEmpty { "pages:>0" })
             addQueryParameter("page", offsetPage.toString())
             filterList.firstInstanceOrNull<SelectFilter>()?.let { f ->
                 addQueryParameter("sort", f.getValue())
             }
-        }
-
-        return GET(url.build(), headers)
+        }.build()
     }
 
     private fun combineQuery(filters: FilterList): List<String> {
@@ -308,23 +295,9 @@ abstract class Hentai3 :
 
     data class AdvSearchEntry(val type: String, val text: String, val exclude: Boolean, val specific: String)
 
-    override fun searchMangaParse(response: Response): MangasPage {
-        if (response.request.url.toString().contains("/login")) {
-            val document = response.asJsoup()
-            if (document.select("input[value=Login to my account]").isNotEmpty()) {
-                throw Exception("Log in via WebView to view favorites")
-            }
-        }
-
-        return popularMangaParse(response)
-    }
-
     // Details
 
-    override fun getMangaUrl(manga: SManga) = "$baseUrl${manga.url}"
-
-    override fun mangaDetailsParse(response: Response): SManga {
-        val document = response.asJsoup()
+    private fun parseMangaDetails(document: Document): SManga {
         val fullTitle = document.select("#main-info > h1").text()
             .replace("\"", "").trim()
 
@@ -358,29 +331,40 @@ abstract class Hentai3 :
 
     // Chapters
 
-    override fun chapterListParse(response: Response): List<SChapter> {
-        val doc = response.asJsoup()
-        return listOf(
-            SChapter.create().apply {
-                name = "Chapter"
-                setUrlWithoutDomain(response.request.url.toString())
-                date_upload = getTime(doc)
-            },
-        )
+    private fun parseChapterList(document: Document, chapterUrl: String): List<SChapter> = listOf(
+        SChapter.create().apply {
+            name = "Chapter"
+            setUrlWithoutDomain(chapterUrl)
+            date_upload = getTime(document)
+        },
+    )
+
+    override suspend fun fetchMangaUpdate(
+        manga: SManga,
+        chapters: List<SChapter>,
+        fetchDetails: Boolean,
+        fetchChapters: Boolean,
+    ): SMangaUpdate {
+        val mangaUrl = getMangaUrl(manga)
+        val document = client.get(mangaUrl).asJsoup()
+
+        val updatedManga = parseMangaDetails(document).apply { url = manga.url }
+        val updatedChapters = parseChapterList(document, mangaUrl)
+
+        return SMangaUpdate(updatedManga, updatedChapters)
     }
 
     // Pages
 
-    override fun pageListParse(response: Response): List<Page> {
-        val images = response.asJsoup().select("#thumbnail-gallery .single-thumb a > img")
+    override suspend fun getPageList(chapter: SChapter): List<Page> {
+        val images = client.get(getChapterUrl(chapter)).asJsoup().select("#thumbnail-gallery .single-thumb a > img")
         return images.mapIndexed { index, image ->
             val imageUrl = image.attr("abs:data-src")
             Page(index, imageUrl = imageUrl.replace("t.", "."))
         }
     }
 
-    override fun getFilterList() = getFilters()
-    override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
+    override fun getFilterList(data: JsonElement?) = getFilters()
 
     private val shortenTitleRegex = Regex("""(\[[^]]*]|[({][^)}]*[)}])""")
     private fun String.shortenTitle() = this.replace(shortenTitleRegex, "").trim()

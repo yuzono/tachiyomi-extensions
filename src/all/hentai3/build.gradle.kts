@@ -6,10 +6,9 @@ plugins {
 
 keiyoushi {
     name = "3Hentai"
-    versionCode = 3
+    versionCode = 7
     contentWarning = ContentWarning.NSFW
-    libVersion = "1.4"
-    kmkVersionCode = 3
+    libVersion = "1.6"
 
     deeplink {
         host("3hentai.net")
@@ -28,9 +27,4 @@ keiyoushi {
             if (it == "pl") id = 7940950215101782907L
         }
     }
-}
-
-dependencies {
-
-    implementation(project(":lib:randomua"))
 }
