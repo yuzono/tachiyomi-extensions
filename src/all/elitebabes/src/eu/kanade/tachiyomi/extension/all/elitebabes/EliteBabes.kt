@@ -90,9 +90,9 @@ abstract class EliteBabes : Masonry() {
 
     private class HighlightsFilter(highlights: List<Pair<String, String>>) : SelectFilter("Highlights", highlights)
 
-    class ChannelFilter(channels: List<Tag>) : SelectFilter("Channels", channels.map { it.name to it.uriPart })
+    class ChannelFilter(channels: List<Tag> = emptyList()) : SelectFilter("Channels", channels.map { it.name to it.uriPart })
 
-    class BoardFilter(boards: List<Tag>) : SelectFilter("Boards", boards.map { it.name to it.uriPart })
+    class BoardFilter(boards: List<Tag> = emptyList()) : SelectFilter("Boards", boards.map { it.name to it.uriPart })
 
     private suspend fun fetchChannels(): List<Tag> = listOf(Tag("Off", "")) +
         client.get("$baseUrl/erotic-art-channels/").asJsoup()
@@ -116,8 +116,11 @@ abstract class EliteBabes : Masonry() {
 
     @Serializable
     class EliteBabesFilterData(
+        @Suppress("unused")
         val tags: List<Tag> = emptyList(),
+        @Suppress("unused")
         val modelTags: List<Tag> = emptyList(),
+        @Suppress("unused")
         val modelCountries: List<Country> = emptyList(),
         val channels: List<Tag> = emptyList(),
         val boards: List<Tag> = emptyList(),
@@ -166,8 +169,8 @@ abstract class EliteBabes : Masonry() {
 
     override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
         val highlightsFilter = filters.firstInstanceOrNull<HighlightsFilter>() ?: HighlightsFilter(highlights)
-        val channelFilter = filters.firstInstanceOrNull<ChannelFilter>() ?: ChannelFilter(emptyList())
-        val boardFilter = filters.firstInstanceOrNull<BoardFilter>() ?: BoardFilter(emptyList())
+        val channelFilter = filters.firstInstanceOrNull<ChannelFilter>() ?: ChannelFilter()
+        val boardFilter = filters.firstInstanceOrNull<BoardFilter>() ?: BoardFilter()
         val sortFilter = filters.firstInstanceOrNull<SortFilter>() ?: SortFilter()
 
         val document = when {
@@ -238,7 +241,7 @@ abstract class EliteBabes : Masonry() {
                 /* Handle filter for highlights */
                 MangasPage(
                     mangas = document.select("div.item a[href]:has(img)")
-                        .map { element -> highlightMangaFromElement(element) },
+                        .map(::highlightMangaFromElement),
                     hasNextPage = false,
                 )
             }
@@ -255,7 +258,7 @@ abstract class EliteBabes : Masonry() {
             requestUrl.contains("/(e|pins|list_item)/".toRegex()) -> {
                 val mangas =
                     document.select("$galleryListSelector > li:not(:has(.icon-play, a[href*='/video/']))")
-                        .map { element -> pinMangaFromElement(element) }
+                        .map(::pinMangaFromElement)
                 val hasNextPage = document.selectFirst(popularMangaNextPageSelector()) != null
                 MangasPage(mangas, hasNextPage)
             }
@@ -335,13 +338,13 @@ abstract class EliteBabes : Masonry() {
             super.parseChapterList(document, manga)
     }
 
-    override fun parsePageList(document: Document): List<Page> {
+    override fun pageListParse(document: Document): List<Page> {
         val isPin = document.select("link[href*='/pin/']").isNotEmpty()
         return if (isPin) {
             document.select(".list-gallery-wide figure img[src^=https://cdn.]")
                 .mapIndexed { idx, img -> Page(idx, imageUrl = img.imgAttr()) }
         } else {
-            super.parsePageList(document)
+            super.pageListParse(document)
         }
     }
 }

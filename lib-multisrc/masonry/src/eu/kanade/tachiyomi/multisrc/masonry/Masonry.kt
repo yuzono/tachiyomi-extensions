@@ -12,13 +12,11 @@ import keiyoushi.network.get
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.asJsoup
 import keiyoushi.utils.firstInstanceOrNull
-import keiyoushi.utils.jsonInstance
 import keiyoushi.utils.parseAs
+import keiyoushi.utils.toJsonElement
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.encodeToJsonElement
-import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
@@ -45,34 +43,6 @@ abstract class Masonry : KeiSource() {
         else -> "$baseUrl/updates/sort/filter/ord/popular/content/0/quality/0/tags/0/mpage/${page - 2}/"
     }
 
-    protected open val galleryListSelector = ".list-gallery:not(.static)"
-    protected open val gallerySelector = "figure"
-    protected open val videoTitleSelector = ".icon-play, a[href*='/video/']"
-    protected open val videoSelector = "video[poster^=https://cdn.]"
-    protected open fun popularMangaSelector() = "$galleryListSelector $gallerySelector"
-
-    // Add fake selector for updates/sort/popular because it only has 1 page
-    protected open fun popularMangaNextPageSelector() = ".pagination-a li.next, main#content .link-btn a.overlay-a[href='/updates/sort/popular/']"
-
-    protected open fun popularMangaFromElement(element: Element): SManga = SManga.create().apply {
-        element.selectFirst(".img-overlay > p > a")!!.run {
-            setUrlWithoutDomain(absUrl("href"))
-            title = text()
-        }
-        thumbnail_url = element.selectFirst("a img")?.imgAttr()
-    }
-
-    protected open fun parseMangaList(document: Document, mangaFromElement: (Element) -> SManga = ::popularMangaFromElement): MangasPage {
-        val mangas = document.select(popularMangaSelector()).map(mangaFromElement)
-        val hasNextPage = document.selectFirst(popularMangaNextPageSelector()) != null
-        return MangasPage(mangas, hasNextPage)
-    }
-
-    override suspend fun getPopularManga(page: Int): MangasPage {
-        val document = client.get(popularMangaUrl(page)).asJsoup()
-        return parseMangaList(document)
-    }
-
     /**
      * Archive is sorted as post's ID
      *
@@ -88,22 +58,62 @@ abstract class Masonry : KeiSource() {
      * /updates/sort/newest/mpage/2/ is similar to
      *   => /archive/page/2/
      *   => /updates/sort/filter/ord/newest/content/0/quality/0/tags/0/mpage/2/
-     */
-    protected open fun latestUpdatesUrl(page: Int): String = if (useAlternativeLatestRequest) {
-        alternativeLatestUrl(page)
-    } else {
-        defaultLatestUrl(page)
-    }
-
-    private fun defaultLatestUrl(page: Int) = "$baseUrl/archive/page/$page/"
-
-    /**
-     * Some sites doesn't support page for /updates/sort/newest/
+     *
+     * Some sites don't support page for /updates/sort/newest/
      *  - JoyMii
      *  - XArt (doesn't have any content at all)
+     *  - FemJoy
+     *  - FTVHunter
      * This URL is often not showing consistent contents
      */
-    private fun alternativeLatestUrl(page: Int) = "$baseUrl/updates/sort/newest/mpage/$page/"
+    protected open fun latestUpdatesUrl(page: Int): String = if (useAlternativeLatestRequest) {
+        "$baseUrl/updates/sort/newest/mpage/$page/"
+    } else {
+        "$baseUrl/archive/page/$page/"
+    }
+
+    protected open val galleryListSelector = ".list-gallery:not(.static)"
+    protected open val gallerySelector = "figure"
+    protected open val videoTitleSelector = ".icon-play, a[href*='/video/']"
+    protected open val videoSelector = "video[poster^=https://cdn.]"
+    protected open fun popularMangaSelector() = "$galleryListSelector $gallerySelector"
+
+    // Add fake selector for updates/sort/popular because it only has 1 page
+    protected open fun popularMangaNextPageSelector() = ".pagination-a li.next, main#content .link-btn a.overlay-b[href='/sort/popular/']"
+
+    protected open fun popularMangaFromElement(element: Element): SManga = SManga.create().apply {
+        element.selectFirst("a")!!.run {
+            setUrlWithoutDomain(absUrl("href"))
+            title = attr("title").ifBlank { element.selectFirst(".img-overlay > p")!!.text() }
+        }
+        thumbnail_url = element.selectFirst("a img")?.imgAttr()
+    }
+
+    protected open fun modelMangaFromElement(element: Element): SManga = SManga.create().apply {
+        element.selectFirst(".img-overlay > p > a")!!.run {
+            val model = text()
+            artist = model
+            author = name
+            title = "$model @$name"
+            setUrlWithoutDomain(absUrl("href"))
+        }
+        element.selectFirst("a > img")?.run {
+            thumbnail_url = imgAttr()
+        }
+        status = SManga.ONGOING
+        update_strategy = UpdateStrategy.ALWAYS_UPDATE
+    }
+
+    protected open fun parseMangaList(document: Document, mangaFromElement: (Element) -> SManga = ::popularMangaFromElement): MangasPage {
+        val mangas = document.select(popularMangaSelector()).map(mangaFromElement)
+        val hasNextPage = document.selectFirst(popularMangaNextPageSelector()) != null
+        return MangasPage(mangas, hasNextPage)
+    }
+
+    override suspend fun getPopularManga(page: Int): MangasPage {
+        val document = client.get(popularMangaUrl(page)).asJsoup()
+        return parseMangaList(document)
+    }
 
     override suspend fun getLatestUpdates(page: Int): MangasPage {
         val document = client.get(latestUpdatesUrl(page)).asJsoup()
@@ -113,7 +123,7 @@ abstract class Masonry : KeiSource() {
     /**
      * The Uri used to browse for popular/trending/newest galleries:
      * - <domain>/models/
-     * - <domain>/updates/
+     * - <domain>/updates/ (redirected to <domain>/)
      *
      * @param searchType is value of [searchTypeOptions]
      */
@@ -122,20 +132,25 @@ abstract class Masonry : KeiSource() {
         else -> "updates"
     }
 
-    protected open fun searchMangaUrl(page: Int, query: String, filters: FilterList): HttpUrl {
+    protected open val searchTypeOptions = listOf(
+        Pair("Galleries", "post"),
+        Pair("Models", "model"),
+    )
+
+    override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
         val searchType = filters.firstInstanceOrNull<SearchTypeFilter>()?.selected ?: searchTypeOptions.first().second
-        return if (query.isNotEmpty()) {
+        val url = if (query.isNotEmpty()) {
             "$baseUrl/search/$searchType/".toHttpUrl().newBuilder()
                 .addPathSegment(query.trim())
                 .addPathSegments("mpage/$page/")
                 .build()
         } else {
             val sortFilter = filters.firstInstanceOrNull<SortFilter>() ?: SortFilter()
-            val tagsFilter = filters.firstInstanceOrNull<TagsFilter>() ?: TagsFilter(emptyList())
-            val modelTagsFilter = filters.firstInstanceOrNull<ModelTagsFilter>() ?: ModelTagsFilter(emptyList())
+            val tagsFilter = filters.firstInstanceOrNull<TagsFilter>() ?: TagsFilter()
+            val modelTagsFilter = filters.firstInstanceOrNull<ModelTagsFilter>() ?: ModelTagsFilter()
             val modelAgeFilter = filters.firstInstanceOrNull<AgesFilter>() ?: AgesFilter()
             val modelCountriesFilter =
-                filters.firstInstanceOrNull<ModelCountriesFilter>() ?: ModelCountriesFilter(emptyList())
+                filters.firstInstanceOrNull<ModelCountriesFilter>() ?: ModelCountriesFilter()
 
             baseUrl.toHttpUrl().newBuilder().apply {
                 when {
@@ -156,7 +171,7 @@ abstract class Masonry : KeiSource() {
                         } else {
                             // Use: /updates/sort/filter/ord/<popular|newest>/content/<pix/vid>/quality/0/tags/<tag>+<tag>/mpage/<#>/
                             addPathSegments("updates/sort/filter/ord")
-                            addPathSegment(if (sortFilter.selected == "newest") "newest" else "popular")
+                            addPathSegment(sortFilter.selected.takeIf { it == "newest" } ?: "popular")
                             addPathSegments("content/0/quality/0")
                             addPathSegment("tags")
                             addPathSegment(tags.joinToString("+") { it.uriPart })
@@ -188,7 +203,7 @@ abstract class Masonry : KeiSource() {
                             // Use: /models/sort/filter/ord/<popular|newest>/age/<#>/country/<name>+<name>/tags/<tag>+<tag>/mpage/<#>/
                             val modelCountries = modelCountriesFilter.state.filter { it.state }
                             addPathSegments("models/sort/filter/ord")
-                            addPathSegment(if (sortFilter.selected == "newest") "newest" else "popular")
+                            addPathSegment(sortFilter.selected.takeIf { it == "newest" } ?: "popular")
                             addPathSegment("age")
                             addPathSegment(modelAgeFilter.selected)
                             addPathSegment("country")
@@ -242,10 +257,8 @@ abstract class Masonry : KeiSource() {
                 }
             }.build()
         }
-    }
 
-    override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
-        val document = client.get(searchMangaUrl(page, query, filters)).asJsoup()
+        val document = client.get(url).asJsoup()
         return parseSearchMangaList(document)
     }
 
@@ -303,13 +316,8 @@ abstract class Masonry : KeiSource() {
         val tags = tagsDeferred.await()
         val (modelTags, modelCountries) = modelDeferred.await()
 
-        jsonInstance.encodeToJsonElement(MasonryFilterData(tags, modelTags, modelCountries))
+        MasonryFilterData(tags, modelTags, modelCountries).toJsonElement()
     }
-
-    protected open val searchTypeOptions = listOf(
-        Pair("Galleries", "post"),
-        Pair("Models", "model"),
-    )
 
     override fun getFilterList(data: JsonElement?): FilterList {
         val filterData = data?.parseAs<MasonryFilterData>()
@@ -320,10 +328,10 @@ abstract class Masonry : KeiSource() {
             Filter.Separator(),
             Filter.Header("Some source might not support Trending"),
             SortFilter(),
+            Filter.Separator(),
         )
 
         if (filterData != null) {
-            filters += Filter.Separator()
             filters += TagsFilter(filterData.tags)
             filters += Filter.Separator()
             filters += Filter.Header("Model filters are ignored when Tags filter is selected.\nTrending is supported if only 1 Model's tag is selected.")
@@ -356,11 +364,21 @@ abstract class Masonry : KeiSource() {
         }
     } else {
         // Details and chapters both come from the same gallery page - fetch it once regardless of flags.
-        val document = client.get(baseUrl + manga.url).asJsoup()
+        val document = client.get(getMangaUrl(manga)).asJsoup()
         SMangaUpdate(
             manga = parseMangaDetails(document, manga),
             chapters = parseChapterList(document, manga),
         )
+    }
+
+    protected open suspend fun fetchModelChapterList(manga: SManga): List<SChapter> {
+        val url = getMangaUrl(manga).toHttpUrl().newBuilder().apply {
+            /* Must use sort/latest to get correct title (instead of description),
+              also will list chapters in timely manner */
+            addPathSegments("sort/latest")
+        }.build()
+        val document = client.get(url).asJsoup()
+        return parseChapterList(document, manga)
     }
 
     protected open fun parseMangaDetails(document: Document, manga: SManga): SManga = SManga.create().apply {
@@ -381,6 +399,31 @@ abstract class Masonry : KeiSource() {
         update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
     }
 
+    protected open suspend fun fetchModelMangaDetails(manga: SManga): SManga {
+        val document = client.get(getMangaUrl(manga)).asJsoup()
+        return SManga.create().apply {
+            url = manga.url
+            document.selectFirst("article.module-model")?.run {
+                val stats = selectFirst(".header-model")?.also { elm: Element ->
+                    val model = elm.selectFirst("h1")?.text() ?: "Model"
+                    artist = model
+                    title = "$model @$name"
+                }
+                    ?.select("ul.list-inline li")
+                    ?.eachText()?.joinToString()
+                description = "$stats\n" +
+                    select("p.read-more, div.module-more > p, div.module-more ul li")
+                        .eachText().joinToString("\n")
+            }
+            genre = (
+                listOf(artist) + document.select("article.module-model + p a[href*=/model-tag/]")
+                    .eachText().map { "M: $it" }
+                ).joinToString()
+            status = SManga.ONGOING
+            update_strategy = UpdateStrategy.ALWAYS_UPDATE
+        }
+    }
+
     protected open fun parseChapterList(document: Document, manga: SManga): List<SChapter> = document.selectFirst(galleryListSelector)?.run {
         // select separately so if a model doesn't have any content then it will return an empty list
         select(gallerySelector).map(::modelChapterFromElement)
@@ -398,60 +441,6 @@ abstract class Masonry : KeiSource() {
         },
     )
 
-    /* Models */
-
-    protected open fun modelChapterListUrl(manga: SManga): HttpUrl = (baseUrl + manga.url).toHttpUrl().newBuilder().apply {
-        /* Must use sort/latest to get correct title (instead of description),
-          also will list chapters in timely manner */
-        addPathSegments("sort/latest")
-    }.build()
-
-    protected open suspend fun fetchModelMangaDetails(manga: SManga): SManga {
-        val document = client.get(baseUrl + manga.url).asJsoup()
-        return modelMangaDetailsParse(document, manga)
-    }
-
-    protected open suspend fun fetchModelChapterList(manga: SManga): List<SChapter> {
-        val document = client.get(modelChapterListUrl(manga)).asJsoup()
-        return parseChapterList(document, manga)
-    }
-
-    protected open fun modelMangaFromElement(element: Element): SManga = SManga.create().apply {
-        element.selectFirst(".img-overlay > p > a")!!.run {
-            val model = text()
-            artist = model
-            author = name
-            title = "$model @$name"
-            setUrlWithoutDomain(absUrl("href"))
-        }
-        element.selectFirst("a > img")?.run {
-            thumbnail_url = imgAttr()
-        }
-        status = SManga.ONGOING
-        update_strategy = UpdateStrategy.ALWAYS_UPDATE
-    }
-
-    protected open fun modelMangaDetailsParse(document: Document, manga: SManga): SManga = SManga.create().apply {
-        url = manga.url
-        document.selectFirst("article.module-model")?.run {
-            val stats = selectFirst(".header-model")?.also { elm: Element ->
-                val model = elm.selectFirst("h1")?.text() ?: "Model"
-                artist = model
-                title = "$model @$name"
-            }
-                ?.select("ul.list-inline li")
-                ?.eachText()?.joinToString()
-            description = "$stats\n" +
-                select("p.read-more, div.module-more > p, div.module-more ul li")
-                    .eachText().joinToString("\n")
-        }
-        genre = (
-            listOf(artist) + document.select("article.module-model + p a[href*=/model-tag/]")
-                .eachText().map { "M: $it" }
-            ).joinToString()
-        status = SManga.ONGOING
-    }
-
     /**
      * This is mainly used for model as a manga with each of her galleries as a chapter
      */
@@ -466,14 +455,14 @@ abstract class Masonry : KeiSource() {
         }
     }
 
-    override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val document = client.get(baseUrl + chapter.url).asJsoup()
-        return parsePageList(document)
-    }
-
     /* Pages */
 
-    protected open fun parsePageList(document: Document): List<Page> = document.select(".list-gallery a[href^=https://cdn.], $videoSelector")
+    override suspend fun getPageList(chapter: SChapter): List<Page> {
+        val document = client.get(getChapterUrl(chapter)).asJsoup()
+        return pageListParse(document)
+    }
+
+    protected open fun pageListParse(document: Document): List<Page> = document.select(".list-gallery a[href^=https://cdn.], $videoSelector")
         .mapIndexed { idx, img ->
             Page(
                 idx,
@@ -487,7 +476,7 @@ abstract class Masonry : KeiSource() {
             )
         }
 
-    protected fun Element.imgAttr(): String = when {
+    protected fun Element.imgAttr(): String? = when {
         hasAttr("srcset") -> attr("abs:srcset").substringBefore(" ")
         hasAttr("data-cfsrc") -> attr("abs:data-cfsrc")
         hasAttr("data-src") -> attr("abs:data-src")

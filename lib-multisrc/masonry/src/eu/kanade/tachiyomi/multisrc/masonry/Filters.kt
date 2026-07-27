@@ -14,7 +14,7 @@ abstract class SelectFilter(
 }
 
 class SortFilter : SelectFilter("Sort by", sortFilterOptions) {
-    fun getUriPartIfNeeded(channel: String) = when (channel) {
+    fun getUriPartIfNeeded(part: String) = when (part) {
         "updates" -> {
             when (selected) {
                 "trending" -> "" // Trending
@@ -44,16 +44,16 @@ class Tag(val name: String, val uriPart: String)
 
 class TagCheckBox(name: String, val uriPart: String) : Filter.CheckBox(name)
 
-class TagsFilter(tags: List<Tag>) : Filter.Group<TagCheckBox>("Tags", tags.map { TagCheckBox(it.name, it.uriPart) })
+class TagsFilter(tags: List<Tag> = emptyList()) : Filter.Group<TagCheckBox>("Tags", tags.map { TagCheckBox(it.name, it.uriPart) })
 
-class ModelTagsFilter(tags: List<Tag>) : Filter.Group<TagCheckBox>("Model Tags", tags.map { TagCheckBox(it.name, it.uriPart) })
+class ModelTagsFilter(tags: List<Tag> = emptyList()) : Filter.Group<TagCheckBox>("Model Tags", tags.map { TagCheckBox(it.name, it.uriPart) })
 
 @Serializable
 class Country(val name: String, val uriPart: String)
 
 class CountryCheckBox(name: String, val uriPart: String) : Filter.CheckBox(name)
 
-class ModelCountriesFilter(countries: List<Country>) : Filter.Group<CountryCheckBox>("Countries", countries.map { CountryCheckBox(it.name, it.uriPart) })
+class ModelCountriesFilter(countries: List<Country> = emptyList()) : Filter.Group<CountryCheckBox>("Countries", countries.map { CountryCheckBox(it.name, it.uriPart) })
 
 class AgesFilter : SelectFilter("Age", ageFilterOptions)
 
