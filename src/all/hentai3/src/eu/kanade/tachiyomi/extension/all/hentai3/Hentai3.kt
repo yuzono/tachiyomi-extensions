@@ -199,7 +199,7 @@ abstract class Hentai3 :
     }
 
     private suspend fun searchMangaById(id: String): SManga {
-        if (id.toIntOrNull() == null) throw UnsupportedOperationException("ID not found")
+        if (id.toIntOrNull() == null) throw Exception("Incorrect ID")
         val document = client.get("$baseUrl/d/$id").asJsoup()
         return parseMangaDetails(document)
     }
