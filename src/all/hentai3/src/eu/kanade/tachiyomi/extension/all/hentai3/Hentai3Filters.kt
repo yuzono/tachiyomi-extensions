@@ -26,6 +26,8 @@ fun getFilters(): FilterList = FilterList(
     TextFilter("Pages", "pages"),
     OffsetPageFilter(),
     FavoriteFilter(),
+    Filter.Separator(),
+    Filter.Header("Search manga directly with `id:<code>`"),
 )
 
 internal open class TextFilter(name: String, val type: String, val specific: String = "") : Filter.Text(name)
