@@ -77,7 +77,7 @@ abstract class Hentai3 :
     private val flagLang: String
         get() = when (lang) {
             "all" -> ""
-            "en" -> "en"
+            "en" -> "eng"
             "ja" -> "jpn"
             "ko" -> "kor"
             "zh" -> "zho"
