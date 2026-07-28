@@ -9,7 +9,6 @@ keiyoushi {
     versionCode = 11
     contentWarning = ContentWarning.MIXED
     libVersion = "1.6"
-    kmkVersionCode = 1
 
     source {
         lang = "all"
