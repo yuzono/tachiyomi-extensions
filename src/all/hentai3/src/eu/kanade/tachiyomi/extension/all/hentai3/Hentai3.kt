@@ -338,7 +338,11 @@ abstract class Hentai3 :
     // Related manga
     override val supportsRelatedMangas = true
 
-    private fun relatedMangaListSelector(): String = popularMangaSelector + if (flagLang.isNotEmpty()) ":has(.flag-$flagLang)" else ""
+    private fun relatedMangaListSelector(): String = if (flagLang.isNotEmpty()) {
+        "$popularMangaSelector:has(.title.flag-$flagLang), $popularMangaSelector:has(.title:not(.flag))"
+    } else {
+        popularMangaSelector
+    }
 
     override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> = client.get(getMangaUrl(manga)).asJsoup()
         .select(relatedMangaListSelector()).map(::popularMangaFromElement)
