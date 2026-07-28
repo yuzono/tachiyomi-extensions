@@ -188,10 +188,10 @@ abstract class Hentai3 :
             val response = client.get(url)
             val document = response.asJsoup()
 
-            if (url.toString().contains("/login") &&
+            if (response.request.url.toString().contains("/login") &&
                 document.select("input[value=Login to my account]").isNotEmpty()
             ) {
-                throw Exception("Log in via WebView to view favorites")
+                throw IOException("Log in via WebView to view favorites")
             }
 
             parseMangasPage(document)
