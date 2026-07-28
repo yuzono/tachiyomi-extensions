@@ -7,9 +7,9 @@ plugins {
 keiyoushi {
     name = "MissKon"
     versionCode = 5
+    kmkVersionCode = 10
     contentWarning = ContentWarning.NSFW
     libVersion = "1.6"
-    kmkVersionCode = 10
 
     source {
         lang = "all"

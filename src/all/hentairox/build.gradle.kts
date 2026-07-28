@@ -9,8 +9,8 @@ keiyoushi {
     versionCode = 0
     contentWarning = ContentWarning.NSFW
     libVersion = "1.4"
-    theme = "galleryadults"
     kmkVersionCode = 1
+    theme = "galleryadults"
 
     listOf("en", "ja", "zh", "all").forEach { language ->
         source {
