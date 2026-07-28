@@ -5,9 +5,9 @@ import androidx.preference.PreferenceScreen
 import androidx.preference.SwitchPreferenceCompat
 import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getArtists
 import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getCodes
+import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getDescriptions
 import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getGroups
 import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getNumPages
-import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getTagDescription
 import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getTags
 import eu.kanade.tachiyomi.extension.all.hentai3.Hentai3Utils.getTime
 import eu.kanade.tachiyomi.source.ConfigurableSource
@@ -143,17 +143,22 @@ abstract class Hentai3 :
     // Popular + Latest
     override suspend fun getPopularManga(page: Int): MangasPage {
         val url = when {
-            searchLang.isBlank() -> "$baseUrl/search?q=pages%3A>0&sort=popular-7d&page=$page"
+            searchLang.isEmpty() -> "$baseUrl/search?q=pages%3A>0&sort=popular-7d&page=$page"
             page == 1 -> "$baseUrl/language/$searchLang?sort=popular-7d"
             else -> "$baseUrl/language/$searchLang/$page?sort=popular-7d"
         }
-
-        return parseMangasPage(client.get(url).asJsoup())
+        val doc = client.get(url).asJsoup()
+        return parseMangasPage(doc)
     }
 
     override suspend fun getLatestUpdates(page: Int): MangasPage {
-        val url = "$baseUrl/${if (searchLang.isNotEmpty()) "language/$searchLang/$page" else "search?q=pages%3A>0&page=$page"}"
-        return parseMangasPage(client.get(url).asJsoup())
+        val url = if (searchLang.isNotEmpty()) {
+            "$baseUrl/language/$searchLang/$page"
+        } else {
+            "$baseUrl/search?q=pages%3A>0&page=$page"
+        }
+        val doc = client.get(url).asJsoup()
+        return parseMangasPage(doc)
     }
 
     private fun parseMangasPage(document: Document): MangasPage {
@@ -167,23 +172,22 @@ abstract class Hentai3 :
     private val popularMangaNextPageSelector = "a[rel=next]"
 
     private fun popularMangaFromElement(element: Element): SManga = SManga.create().apply {
-        title = element.selectFirst("div.title")!!.ownText().replace("\"", "")
+        title = element.selectFirst("div.title")!!.ownText()
+            .replace("\"", "")
             .shortenTitle()
         setUrlWithoutDomain(element.absUrl("href"))
-        thumbnail_url = element.selectFirst(".cover img")!!.let { img ->
-            if (img.hasAttr("data-src")) img.attr("abs:data-src") else img.absUrl("src")
-        }
+        thumbnail_url = element.selectFirst(".cover img")?.getImage()
     }
 
     // Search
     override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage = when {
         query.startsWith(PREFIX_ID_SEARCH) -> MangasPage(listOf(searchMangaById(query.removePrefix(PREFIX_ID_SEARCH))), false)
-        query.toIntOrNull() != null -> MangasPage(listOf(searchMangaById(query)), false)
         else -> {
-            val response = client.get(searchMangaRequestUrl(page, query, filters))
+            val url = searchMangaRequestUrl(page, query, filters)
+            val response = client.get(url)
             val document = response.asJsoup()
 
-            if (response.request.url.toString().contains("/login") &&
+            if (url.toString().contains("/login") &&
                 document.select("input[value=Login to my account]").isNotEmpty()
             ) {
                 throw Exception("Log in via WebView to view favorites")
@@ -194,8 +198,9 @@ abstract class Hentai3 :
     }
 
     private suspend fun searchMangaById(id: String): SManga {
+        if (id.toIntOrNull() == null) throw UnsupportedOperationException("ID not found")
         val document = client.get("$baseUrl/d/$id").asJsoup()
-        return parseMangaDetails(document).apply { url = "/d/$id" }
+        return parseMangaDetails(document)
     }
 
     private fun searchMangaRequestUrl(page: Int, query: String, filters: FilterList): HttpUrl {
@@ -262,46 +267,47 @@ abstract class Hentai3 :
 
     data class AdvSearchEntry(val type: String, val text: String, val exclude: Boolean, val specific: String)
 
-    override fun getFilterList(data: JsonElement?) = getFilters()
+    override fun getFilterList(data: JsonElement?): FilterList = getFilters()
 
     // Details + Chapters
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
-        if (url.host != baseUrl.toHttpUrl().host || url.pathSegments.size < 2) {
-            return null
-        }
+        if (url.host != baseUrl.toHttpUrl().host) return null
+        if (url.pathSegments.getOrNull(0) != "d") return null
 
-        return searchMangaById(url.pathSegments[1])
+        return url.pathSegments.getOrNull(1)?.let { searchMangaById(it) }
     }
 
     private fun parseMangaDetails(document: Document): SManga {
         val fullTitle = document.select("#main-info > h1").text()
             .replace("\"", "").trim()
+        val shortTitle = document.select("#main-info > h1 > span").text()
+            .replace("\"", "").trim()
+            .takeIf { !displayFullTitle && it.isNotEmpty() }
 
         return SManga.create().apply {
-            val authors = getGroups(document) ?: ""
-            val artists = getArtists(document) ?: ""
+            setUrlWithoutDomain(document.location())
+
+            val authors = getGroups(document)
+            val artists = getArtists(document)
             initialized = true
 
-            title = if (displayFullTitle) {
-                fullTitle
-            } else {
-                document.select("#main-info > h1 > span").text()
-                    .replace("\"", "").trim()
-                    .ifBlank { fullTitle.shortenTitle() }
-            }
-            author = authors.ifEmpty { artists }
-            artist = artists.ifEmpty { authors }
+            title = shortTitle ?: fullTitle.shortenTitle()
+
+            author = authors ?: artists
+            artist = artists ?: authors
+
             val code = getCodes(document)
             // Some people want these additional details in description
             description = "Full English and Japanese titles:\n"
                 .plus("$fullTitle\n\n")
                 .plus(code ?: "")
                 .plus("Pages: ${getNumPages(document)}\n")
-                .plus(getTagDescription(document))
+                .plus(getDescriptions(document))
             genre = getTags(document)
-            thumbnail_url = document.select("#main-cover img").attr("data-src")
-            update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
+
+            thumbnail_url = document.selectFirst("#main-cover img")?.getImage()
             status = SManga.COMPLETED
+            update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
         }
     }
 
@@ -322,14 +328,14 @@ abstract class Hentai3 :
         val mangaUrl = getMangaUrl(manga)
         val document = client.get(mangaUrl).asJsoup()
 
-        val updatedManga = parseMangaDetails(document).apply { url = manga.url }
+        val updatedManga = parseMangaDetails(document)
         val updatedChapters = parseChapterList(document, mangaUrl)
 
         return SMangaUpdate(updatedManga, updatedChapters)
     }
 
     // Related manga
-    override val supportsRelatedMangas get() = true
+    override val supportsRelatedMangas = true
 
     private fun relatedMangaListSelector(): String = popularMangaSelector + if (flagLang.isNotEmpty()) ":has(.flag-$flagLang)" else ""
 
@@ -338,16 +344,18 @@ abstract class Hentai3 :
 
     // Pages
     override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val images = client.get(getChapterUrl(chapter)).asJsoup().select("#thumbnail-gallery .single-thumb a > img")
-        return images.mapIndexed { index, image ->
-            val imageUrl = image.attr("abs:data-src")
-            Page(index, imageUrl = imageUrl.replace("t.", "."))
-        }
+        val doc = client.get(getChapterUrl(chapter)).asJsoup()
+        return doc.select("#thumbnail-gallery .single-thumb a > img")
+            .mapIndexed { index, image ->
+                Page(index, imageUrl = image.getImage())
+            }
     }
+
+    private fun Element.getImage(): String = attr("abs:data-src").ifEmpty { absUrl("src") }.replace("t.", ".")
 
     // Preferences
     private fun String.shortenTitle() = if (displayFullTitle) {
-        this
+        trim()
     } else {
         replace(SHORT_TITLE_REGEX, "").trim()
     }
