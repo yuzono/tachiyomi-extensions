@@ -27,7 +27,7 @@ internal object Hentai3Utils {
         }
     }
 
-    fun getTagDescription(document: Document): String {
+    fun getDescriptions(document: Document): String {
         val stringBuilder = StringBuilder()
 
         // "a[href*=/category/]"
@@ -35,8 +35,17 @@ internal object Hentai3Utils {
         if (categories.isNotEmpty()) {
             stringBuilder.append("Categories: ")
             stringBuilder.append(categories.joinToString { it.cleanTag() })
-            stringBuilder.append("\n\n")
+            stringBuilder.append("\n")
         }
+
+        // "a[href*=/group/]"
+        val groups = getGroups(document)
+        if (!groups.isNullOrBlank()) {
+            stringBuilder.append("Groups: ")
+            stringBuilder.append(groups)
+            stringBuilder.append("\n")
+        }
+        stringBuilder.append("\n")
 
         // "a[href*=/series/]"
         val series = document.select("#main-info > div.tag-container:contains(Series) > .filter-elem > a.name")
@@ -80,10 +89,6 @@ internal object Hentai3Utils {
 
         return SimpleDateFormat("yyyy-MM-dd HH:mm:ssZ", Locale.getDefault()).tryParse(timeString)
     }
-
-//    val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZZZZZ", Locale.ENGLISH).apply {
-//        timeZone = TimeZone.getTimeZone("UTC")
-//    }
 
     fun getCodes(document: Document): String? {
         val codes = document.select("#main-info > h3 > strong")
