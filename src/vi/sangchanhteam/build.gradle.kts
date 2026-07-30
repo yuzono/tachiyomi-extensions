@@ -5,19 +5,19 @@ plugins {
 }
 
 keiyoushi {
-    name = "Voyce.Me"
-    versionCode = 7
+    name = "SangChanhTeam"
+    versionCode = 1
     contentWarning = ContentWarning.SAFE
     libVersion = "1.6"
 
     source {
-        name = "VoyceMe"
-        lang = "en"
-        baseUrl = "https://www.voyce.me"
-        id = 4815322300278778429L
+        lang = "vi"
+        baseUrl {
+            custom("https://sangchanhteam.com")
+        }
     }
 
     deeplink {
-        path("/series/..*")
+        path("/truyen/..*")
     }
 }
