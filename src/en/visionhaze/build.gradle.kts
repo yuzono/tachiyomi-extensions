@@ -5,14 +5,17 @@ plugins {
 }
 
 keiyoushi {
-    name = "Read Attack on Titan Shingeki no Kyojin Manga"
-    versionCode = 7
+    name = "Vision Haze"
+    versionCode = 1
     contentWarning = ContentWarning.SAFE
-    libVersion = "1.4"
-    theme = "mangacatalog"
+    libVersion = "1.6"
 
     source {
+        baseUrl = "https://www.visionhaze.com"
         lang = "en"
-        baseUrl = "https://ww12.readsnk.com"
+    }
+
+    deeplink {
+        path("/..*")
     }
 }
