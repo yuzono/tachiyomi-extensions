@@ -5,14 +5,13 @@ plugins {
 }
 
 keiyoushi {
-    name = "ChoChoX"
+    name = "Oduto"
     versionCode = 1
-    contentWarning = ContentWarning.NSFW
+    contentWarning = ContentWarning.SAFE
     libVersion = "1.6"
-    theme = "vercomics"
 
     source {
-        lang = "es"
-        baseUrl = "https://chochox.com"
+        baseUrl = "https://nb19u.blogspot.com"
+        lang = "ar"
     }
 }
