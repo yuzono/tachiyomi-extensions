@@ -5,13 +5,13 @@ plugins {
 }
 
 keiyoushi {
-    name = "Manga Tales"
-    versionCode = 4
+    name = "Alpha Manga"
+    versionCode = 1
     contentWarning = ContentWarning.SAFE
     libVersion = "1.6"
 
     source {
-        lang = "ar"
-        baseUrl = "https://www.mangatales.com"
+        lang = "en"
+        baseUrl = "https://www.alpha-manga.com"
     }
 }
