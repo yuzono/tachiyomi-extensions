@@ -123,7 +123,7 @@ jobs:
       needs.build.result != 'cancelled' &&
       needs.prepare.outputs.delete != '[]'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
     steps:
       - name: Download APK artifacts
         if: needs.build.result == 'success'
@@ -154,7 +154,7 @@ jobs:
         run: |
           cd repo
           pip install protobuf
-          python ../${{ github.ref_name }}/.github/scripts/publish-repo.py "$DELETE" "$GITHUB_SHA"
+          python -u ../${{ github.ref_name }}/.github/scripts/publish-repo.py "$DELETE" "$GITHUB_SHA"
 
       - name: Deploy repo
         uses: EndBug/add-and-commit@290ea2c423ad77ca9c62ae0f5b224379612c0321 # v10
