@@ -150,11 +150,10 @@ jobs:
       - name: Publish repo
         env:
           DELETE: ${{ needs.prepare.outputs.delete }}
-          GH_TOKEN: ${{ secrets.BOT_PAT }}
         run: |
           cd repo
           pip install protobuf
-          python -u ../${{ github.ref_name }}/.github/scripts/publish-repo.py "$DELETE" "$GITHUB_SHA"
+          python ../${{ github.ref_name }}/.github/scripts/publish-apk.py "$DELETE"
 
       - name: Deploy repo
         uses: EndBug/add-and-commit@290ea2c423ad77ca9c62ae0f5b224379612c0321 # v10
@@ -164,21 +163,40 @@ jobs:
           # committer_name: github-actions[bot]
           # committer_email: github-actions[bot]@users.noreply.github.com
 
-      - name: Sync repo
+      - name: Clean up
+        run: |
+          rm -rf repo
+          curl https://purge.jsdelivr.net/gh/yuzono/tachiyomi-repo@repo/index.min.json
+          curl https://purge.jsdelivr.net/gh/yuzono/tachiyomi-repo@repo/index.json
+          curl https://purge.jsdelivr.net/gh/yuzono/tachiyomi-repo@repo/index.pb
+
+      - name: Checkout repo branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: yuzono/manga-repo
+          token: ${{ secrets.BOT_PAT }}
+          ref: repo
+          path: repo
+          persist-credentials: true
+
+      - name: Publish and deploy repo
         env:
           COMMIT_MESSAGE: ${{ needs.prepare.outputs.latestCommitMessage }}
+          DELETE: ${{ needs.prepare.outputs.delete }}
+          GH_TOKEN: ${{ secrets.BOT_PAT }}
         run: |
           cd repo
+          pip install protobuf
+          python -u ../${{ github.ref_name }}/.github/scripts/publish-repo.py "$DELETE" "$GITHUB_SHA"
           git config user.name "Yūzōnō"
           git config user.email "yuzono@users.noreply.github.com"
-          git remote set-url origin https://github.com/yuzono/manga-repo.git
-          git fetch origin
-          git reset origin/repo
-          git add -A
-          git commit --amend -m "$COMMIT_MESSAGE" --no-sign --allow-empty || echo "No changes to commit"
-          git push origin HEAD:repo --force
-          curl https://purge.jsdelivr.net/gh/yuzono/manga-repo@repo/index.min.json
-          curl https://purge.jsdelivr.net/gh/yuzono/manga-repo@repo/index.json
-          curl https://purge.jsdelivr.net/gh/yuzono/manga-repo@repo/index.pb
-          curl https://purge.jsdelivr.net/gh/yuzono/manga-repo@repo/index.beta.json
-          curl https://purge.jsdelivr.net/gh/yuzono/manga-repo@repo/index.beta.pb
+          git status
+          if [ -n "$(git status --porcelain)" ]; then
+            git add .
+            git commit -m "$COMMIT_MESSAGE"
+            git push
+            curl https://purge.jsdelivr.net/gh/yuzono/manga-repo@repo/index.json
+            curl https://purge.jsdelivr.net/gh/yuzono/manga-repo@repo/index.pb
+          else
+            echo "No changes to commit"
+          fi
