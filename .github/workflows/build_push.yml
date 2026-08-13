@@ -150,10 +150,11 @@ jobs:
       - name: Publish repo
         env:
           DELETE: ${{ needs.prepare.outputs.delete }}
+          GH_TOKEN: ${{ secrets.BOT_PAT }}
         run: |
           cd repo
           pip install protobuf
-          python ../${{ github.ref_name }}/.github/scripts/publish-repo.py "$DELETE"
+          python ../${{ github.ref_name }}/.github/scripts/publish-repo.py "$DELETE" "$GITHUB_SHA"
 
       - name: Deploy repo
         uses: EndBug/add-and-commit@290ea2c423ad77ca9c62ae0f5b224379612c0321 # v10
@@ -179,3 +180,5 @@ jobs:
           curl https://purge.jsdelivr.net/gh/yuzono/manga-repo@repo/index.min.json
           curl https://purge.jsdelivr.net/gh/yuzono/manga-repo@repo/index.json
           curl https://purge.jsdelivr.net/gh/yuzono/manga-repo@repo/index.pb
+          curl https://purge.jsdelivr.net/gh/yuzono/manga-repo@repo/index.beta.json
+          curl https://purge.jsdelivr.net/gh/yuzono/manga-repo@repo/index.beta.pb
