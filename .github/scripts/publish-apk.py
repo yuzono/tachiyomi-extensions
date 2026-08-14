@@ -21,7 +21,7 @@ REPO_JAR_DIR.mkdir(parents=True, exist_ok=True)
 
 APK_BASE_URL = "https://cdn.jsdelivr.net/gh/yuzono/tachiyomi-repo@repo/apk"
 JAR_BASE_URL = "https://raw.githubusercontent.com/yuzono/tachiyomi-repo/repo/jar"
-ICON_BASE_URL = "https://cdn.jsdelivr.net/gh/yuzono/tachiyomi-extensions@master"
+ICON_BASE_URL = "https://cdn.jsdelivr.net/gh/yuzono/tachiyomi-extensions@main"
 
 to_delete: list[str] = json.loads(sys.argv[1])
 
