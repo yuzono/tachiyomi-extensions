@@ -19,7 +19,7 @@ ARTIFACTS_DIR = Path.home() / "apk-artifacts"
 REPO_DIR = Path.cwd()
 
 ICON_BASE_URL = "https://cdn.jsdelivr.net/gh/yuzono/tachiyomi-extensions@master"
-REPO_NAME = "yuzono/manga-repo"
+REPO_NAME = "cuong-tran/manga-repo"
 RELEASE_BASE_URL = f"https://github.com/{REPO_NAME}/releases/download"
 ASSET_LIMIT = 495  # Actual limit is 1000 but we upload 2 items per extension.
 RETRY_ATTEMPTS = 4

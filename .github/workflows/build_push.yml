@@ -173,7 +173,7 @@ jobs:
       - name: Checkout repo branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: yuzono/manga-repo
+          repository: cuong-tran/manga-repo
           token: ${{ secrets.BOT_PAT }}
           ref: repo
           path: repo
@@ -195,8 +195,8 @@ jobs:
             git add .
             git commit -m "$COMMIT_MESSAGE"
             git push
-            curl https://purge.jsdelivr.net/gh/yuzono/manga-repo@repo/index.json
-            curl https://purge.jsdelivr.net/gh/yuzono/manga-repo@repo/index.pb
+            curl https://purge.jsdelivr.net/gh/cuong-tran/manga-repo@repo/index.json
+            curl https://purge.jsdelivr.net/gh/cuong-tran/manga-repo@repo/index.pb
           else
             echo "No changes to commit"
           fi
