@@ -4,7 +4,7 @@ on:
   push:
     branches:
       # - main
-      - master
+      - main
     paths:
       - '**'
       - '!**.md'
@@ -170,12 +170,12 @@ jobs:
           cd repo
           git config user.name "Yūzōnō"
           git config user.email "yuzono@users.noreply.github.com"
-          git remote set-url origin https://github.com/yuzono/manga-repo.git
+          git remote set-url origin https://github.com/cuong-tran/manga-repo.git
           git fetch origin
           git reset origin/repo
           git add -A
           git commit --amend -m "$COMMIT_MESSAGE" --no-sign --allow-empty || echo "No changes to commit"
           git push origin HEAD:repo --force
-          curl https://purge.jsdelivr.net/gh/yuzono/manga-repo@repo/index.min.json
-          curl https://purge.jsdelivr.net/gh/yuzono/manga-repo@repo/index.json
-          curl https://purge.jsdelivr.net/gh/yuzono/manga-repo@repo/index.pb
+          curl https://purge.jsdelivr.net/gh/cuong-tran/manga-repo@repo/index.min.json
+          curl https://purge.jsdelivr.net/gh/cuong-tran/manga-repo@repo/index.json
+          curl https://purge.jsdelivr.net/gh/cuong-tran/manga-repo@repo/index.pb

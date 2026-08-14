@@ -22,7 +22,7 @@ jobs:
             echo "Deleting branch ${branch_name}"
             git push origin --delete $branch_name
           else
-            echo "Skipping deletion of main or master branch"
+            echo "Skipping deletion of main or main branch"
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

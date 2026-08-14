@@ -40,7 +40,7 @@ jobs:
           existing-check-enabled: true
           existing-check-labels: |
             ["Source request", "Domain changed"]
-          existing-check-repo-url: https://raw.githubusercontent.com/yuzono/manga-repo/repo/index.json
+          existing-check-repo-url: https://raw.githubusercontent.com/cuong-tran/manga-repo/repo/index.json
 
           url-search-sections: |
             ["Source link", "Source new URL"]

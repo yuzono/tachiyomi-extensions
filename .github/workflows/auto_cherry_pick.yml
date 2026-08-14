@@ -26,17 +26,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Clone master
+      - name: Clone main
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: master
-          path: master
+          ref: main
+          path: main
           fetch-depth: 100
           token: ${{ secrets.BOT_PAT }}
 
       - name: Cherry-picking
         run: |
-          cd master
+          cd main
 
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
@@ -58,7 +58,7 @@ jobs:
             upcoming_changes_hash+=("$line")
           done <<< "$upcoming_changes"
 
-          git checkout master
+          git checkout main
           echo "Last commit: `git log -1 --oneline`"
           # Loop through indices in reverse order
           for (( i=${#upcoming_changes_hash[@]}; i>=0; i-- )); do
@@ -77,7 +77,7 @@ jobs:
 
       - name: Merging keiyoushi-upstream to keiyoushi
         run: |
-          cd master
+          cd main
           git checkout keiyoushi
           echo "Last commit: `git log -1 --oneline`"
           latest_commit_hash=${{ env.LATEST_HASH }}
@@ -88,29 +88,29 @@ jobs:
 
           echo "Last commit: `git log -1 --oneline`"
 
-      # - name: Merging master to merge-keiyoushi
+      # - name: Merging main to merge-keiyoushi
       #   run: |
-      #     cd master
+      #     cd main
       #     git fetch origin merge-keiyoushi
       #     git checkout merge-keiyoushi
       #     echo "Last commit: `git log -1 --oneline`"
-      #     echo "Merging 'master' into merge-keiyoushi"
-      #     git merge --no-edit master
+      #     echo "Merging 'main' into merge-keiyoushi"
+      #     git merge --no-edit main
       #     echo "Last commit: `git log -1 --oneline`"
 
       # - name: Merging keiyoushi-upstream to merge-keiyoushi
       #   run: |
-      #     cd master
+      #     cd main
       #     echo "Merging 'keiyoushi-upstream/main' into merge-keiyoushi"
       #     git merge --no-edit keiyoushi-upstream/main
       #     echo "Last commit: `git log -1 --oneline`"
 
       - name: Pushing to repo
         run: |
-          cd master
-          git checkout master
+          cd main
+          git checkout main
           echo "Last commit: `git log -1 --oneline`"
-          echo "Pushing 'master' to repo"
+          echo "Pushing 'main' to repo"
           git push
           git checkout keiyoushi
           echo "Last commit: `git log -1 --oneline`"
