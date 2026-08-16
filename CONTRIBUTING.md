@@ -15,7 +15,6 @@ or fix them directly by submitting a Pull Request.
   - [Prerequisites](#prerequisites)
     - [Tools](#tools)
     - [Cloning the repository](#cloning-the-repository)
-    - [Non-cone mode (Deprecated/Discouraged)](#non-cone-mode-deprecateddiscouraged)
   - [Getting help](#getting-help)
   - [Writing an extension](#writing-an-extension)
     - [Setting up a new Gradle module](#setting-up-a-new-gradle-module)
@@ -41,6 +40,7 @@ or fix them directly by submitting a Pull Request.
         - [Protobuf parsing and serialization - `parseAsProto` / `toRequestBodyProto`](#protobuf-parsing-and-serialization---parseasproto--torequestbodyproto)
         - [Date parsing - `tryParse` helpers](#date-parsing---tryparse-helpers)
         - [HTTP requests - `OkHttpClient.get` / `post` / `put` / `head`](#http-requests---okhttpclientget--post--put--head)
+        - [Custom cookies - `addCookie`](#custom-cookies---addcookie)
         - [WebView execution - `runWebView` / `getLocalStorage`](#webview-execution---runwebview--getlocalstorage)
         - [Filter helpers - `firstInstance` / `firstInstanceOrNull`](#filter-helpers---firstinstance--firstinstanceornull)
         - [SharedPreferences - `getPreferences` / `getPreferencesLazy`](#sharedpreferences---getpreferences--getpreferenceslazy)
@@ -105,7 +105,7 @@ that existing contributors will not actively teach these to you.
 ### Tools
 
 - [Android Studio](https://developer.android.com/studio)
-- Emulator or phone with developer options enabled and a recent version of Komikku installed
+- Emulator or phone with developer options enabled and a recent version of Mihon installed
 - [Icon Generator](https://as280093.github.io/AndroidAssetStudio/icons-launcher.html)
 - [Try jsoup](https://try.jsoup.org/)
 
@@ -184,28 +184,28 @@ navigate and build. This will also reduce disk usage and network traffic.
    git remote add upstream <yuzono-url>
    # optionally disable push to upstream
    git remote set-url --push upstream no_pushing
-   # optionally fetch master only (ignore all other branches)
-   git config remote.upstream.fetch "+refs/heads/master:refs/remotes/upstream/master"
+   # optionally fetch main only (ignore all other branches)
+   git config remote.upstream.fetch "+refs/heads/main:refs/remotes/upstream/main"
    # update remotes
    git remote update
-   # track master of upstream instead of fork
-   git branch master -u upstream/master
+   # track main of upstream instead of fork
+   git branch main -u upstream/main
    ```
 
 4. Useful configurations. (optional)
 
-  ```bash
-  # prune obsolete remote branches on fetch
-  git config remote.origin.prune true
-  # fast-forward only when pulling master branch
-  git config pull.ff only
-  # Add an alias to sync master branch without fetching useless blobs.
-  # If you run `git pull` to fast-forward in a blobless clone like this,
-  # all blobs (files) in the new commits are still fetched regardless of
-  # sparse rules, which makes the local repo accumulate unused files.
-  # Use `git sync-master` to avoid this. Be careful if you have changes
-  # on master branch, which is bad practice.
-  git config alias.sync-master '!git switch master && git fetch upstream && git reset --keep FETCH_HEAD'
+   ```bash
+   # prune obsolete remote branches on fetch
+   git config remote.origin.prune true
+   # fast-forward only when pulling main branch
+   git config pull.ff only
+   # Add an alias to sync main branch without fetching useless blobs.
+   # If you run `git pull` to fast-forward in a blobless clone like this,
+   # all blobs (files) in the new commits are still fetched regardless of
+   # sparse rules, which makes the local repo accumulate unused files.
+   # Use `git sync-main` to avoid this. Be careful if you have changes
+   # on main branch, which is bad practice.
+   git config alias.sync-main '!git switch main && git fetch upstream && git reset --keep FETCH_HEAD'
    ```
 
 5. Later, if you change the sparse checkout filter, run `git sparse-checkout reapply`.
@@ -497,37 +497,36 @@ The generated `ExtensionGenerated` class implements `SourceFactory` automaticall
 
 #### Extension API
 
-Extensions rely on [extensions-lib](https://github.com/komikku-app/extensions-lib), which provides
-some interfaces and stubs from the [app](https://github.com/komikku-app/komikku) for compilation
-purposes. The actual implementations can be found [in the Komikku source code](https://github.com/komikku-app/komikku/tree/master/app/src/master/java/eu/kanade/tachiyomi/source).
+Extensions rely on [extensions-lib](https://github.com/tachiyomiorg/extensions-lib), which provides
+some interfaces and stubs from the [app](https://github.com/mihonapp/mihon) for compilation
+purposes. The actual implementations can be found [in the Mihon source code](https://github.com/mihonapp/mihon/tree/main/app/src/main/java/eu/kanade/tachiyomi/source).
 Referencing the actual implementation will help with understanding extensions' call flow.
 
 #### lib tools
 
 The `lib/` directory contains reusable Gradle modules that solve common problems shared across
-multiple extensions, such as cookie injection, image descrambling, JavaScript deobfuscation, and
-more. Before implementing something from scratch, check whether an existing lib already covers your
+multiple extensions, such as image descrambling, JavaScript deobfuscation, and more. Before
+implementing something from scratch, check whether an existing lib already covers your
 use case. Each lib is self-documented via KDoc comments and/or a README in its own folder.
 
 #### Available libs
 
 | Module                                                                                                    | Description                                                                             |
 |-----------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------|
-| [`lib-cookieinterceptor`](https://github.com/yuzono/tachiyomi-extensions/tree/master/lib/cookieinterceptor) | Injects cookies into OkHttp requests for a given domain                                 |
-| [`lib-cryptoaes`](https://github.com/yuzono/tachiyomi-extensions/tree/master/lib/cryptoaes)                 | AES-CBC decryption compatible with CryptoJS; JSFuck deobfuscation                       |
-| [`lib-dataimage`](https://github.com/yuzono/tachiyomi-extensions/tree/master/lib/dataimage)                 | Decodes base64 `data:image` strings into mock URLs that OkHttp can handle               |
-| [`lib-e4p`](https://github.com/yuzono/tachiyomi-extensions/tree/master/lib/e4p)                             | Decodes and decrypts E4P-format manga page archives (TIFF/XEBP)                         |
-| [`lib-i18n`](https://github.com/yuzono/tachiyomi-extensions/tree/master/lib/i18n)                           | Internationalization helper (`Intl`) for multi-language UI strings in extensions        |
-| [`lib-lzstring`](https://github.com/yuzono/tachiyomi-extensions/tree/master/lib/lzstring)                   | LZ-String decompression and compression                                                 |
-| [`lib-publus`](https://github.com/yuzono/tachiyomi-extensions/tree/master/lib/publus)                       | Handles Publus DRM-protected reader decryption, unscrambling, and page loading          |
-| [`lib-randomua`](https://github.com/yuzono/tachiyomi-extensions/tree/master/lib/randomua)                   | Fetches and rotates real-world User-Agent strings (requires overriding `getMangaUrl()`) |
-| [`lib-secretstream`](https://github.com/yuzono/tachiyomi-extensions/tree/master/lib/secretstream)           | ChaCha20/Poly1305/X25519 cryptography for secret-stream encrypted sources               |
-| [`lib-seedrandom`](https://github.com/yuzono/tachiyomi-extensions/tree/master/lib/seedrandom)               | Seeded deterministic pseudo-random number generation (ARC4-based)                       |
-| [`lib-speedbinb`](https://github.com/yuzono/tachiyomi-extensions/tree/master/lib/speedbinb)                 | Processes, decrypts, and descrambles SpeedBinb reader payloads                          |
-| [`lib-synchrony`](https://github.com/yuzono/tachiyomi-extensions/tree/master/lib/synchrony)                 | JavaScript deobfuscation via the Synchrony engine (QuickJS sandbox)                     |
-| [`lib-textinterceptor`](https://github.com/yuzono/tachiyomi-extensions/tree/master/lib/textinterceptor)     | Renders plain text or HTML as a PNG image page                                          |
-| [`lib-unpacker`](https://github.com/yuzono/tachiyomi-extensions/tree/master/lib/unpacker)                   | Unpacks Dean Edwards-packed JavaScript; substring extraction helpers                    |
-| [`lib-zipinterceptor`](https://github.com/yuzono/tachiyomi-extensions/tree/master/lib/zipinterceptor)       | Decodes, stitches, and processes multi-page ZIP/AVIF/SVG image archives                 |
+| [`lib-cryptoaes`](https://github.com/yuzono/tachiyomi-extensions/tree/main/lib/cryptoaes)                 | AES-CBC decryption compatible with CryptoJS; JSFuck deobfuscation                       |
+| [`lib-dataimage`](https://github.com/yuzono/tachiyomi-extensions/tree/main/lib/dataimage)                 | Decodes base64 `data:image` strings into mock URLs that OkHttp can handle               |
+| [`lib-e4p`](https://github.com/yuzono/tachiyomi-extensions/tree/main/lib/e4p)                             | Decodes and decrypts E4P-format manga page archives (TIFF/XEBP)                         |
+| [`lib-i18n`](https://github.com/yuzono/tachiyomi-extensions/tree/main/lib/i18n)                           | Internationalization helper (`Intl`) for multi-language UI strings in extensions        |
+| [`lib-lzstring`](https://github.com/yuzono/tachiyomi-extensions/tree/main/lib/lzstring)                   | LZ-String decompression and compression                                                 |
+| [`lib-publus`](https://github.com/yuzono/tachiyomi-extensions/tree/main/lib/publus)                       | Handles Publus DRM-protected reader decryption, unscrambling, and page loading          |
+| [`lib-randomua`](https://github.com/yuzono/tachiyomi-extensions/tree/main/lib/randomua)                   | Fetches and rotates real-world User-Agent strings (requires overriding `getMangaUrl()`) |
+| [`lib-secretstream`](https://github.com/yuzono/tachiyomi-extensions/tree/main/lib/secretstream)           | ChaCha20/Poly1305/X25519 cryptography for secret-stream encrypted sources               |
+| [`lib-seedrandom`](https://github.com/yuzono/tachiyomi-extensions/tree/main/lib/seedrandom)               | Seeded deterministic pseudo-random number generation (ARC4-based)                       |
+| [`lib-speedbinb`](https://github.com/yuzono/tachiyomi-extensions/tree/main/lib/speedbinb)                 | Processes, decrypts, and descrambles SpeedBinb reader payloads                          |
+| [`lib-synchrony`](https://github.com/yuzono/tachiyomi-extensions/tree/main/lib/synchrony)                 | JavaScript deobfuscation via the Synchrony engine (QuickJS sandbox)                     |
+| [`lib-textinterceptor`](https://github.com/yuzono/tachiyomi-extensions/tree/main/lib/textinterceptor)     | Renders plain text or HTML as a PNG image page                                          |
+| [`lib-unpacker`](https://github.com/yuzono/tachiyomi-extensions/tree/main/lib/unpacker)                   | Unpacks Dean Edwards-packed JavaScript; substring extraction helpers                    |
+| [`lib-zipinterceptor`](https://github.com/yuzono/tachiyomi-extensions/tree/main/lib/zipinterceptor)       | Decodes, stitches, and processes multi-page ZIP/AVIF/SVG image archives                 |
 
 > [!IMPORTANT]
 > If your module uses `:lib:randomua`, the Spotless check requires your extension to override the `getMangaUrl()` method in your main class, or the build will fail.
@@ -776,6 +775,47 @@ val response = client.post(url, headers, body)
 - `get`/`head` also take a `cacheControl` (defaults to a 10-minute max-age).
 - Always wrap the returned `Response` in `response.use { ... }` or consume it with `parseAs`/`asJsoup`, which close it for you.
 
+##### Custom cookies - `addCookie`
+
+Use `keiyoushi.network.addCookie` on an `OkHttpClient.Builder` to inject custom cookies while
+preserving unrelated cookies already attached to the request. If the request already contains a
+cookie with the same name, the configured value replaces it. Inside an `HttpSource`, the domain
+defaults to the source's current `baseUrl` and is resolved again for every request, so generated
+mirror and custom-URL preferences keep working after a runtime change:
+
+```kotlin
+import keiyoushi.network.addCookie
+
+override val client = network.client.newBuilder()
+    .addCookie(
+        listOf(
+            "adult" to "1",
+            "reader" to "web",
+            "quality" to "high",
+        ),
+    )
+    .build()
+```
+
+Pass a lambda when cookie values must also be resolved for every request:
+
+```kotlin
+.addCookie { listOf("locale" to localePreference()) }
+```
+
+For a domain unrelated to `baseUrl`, pass a domain lambda. Calls can be chained to configure
+multiple domains; configurations are checked in call order and the first matching domain is used:
+
+```kotlin
+network.client.newBuilder()
+    .addCookie("site-cookie" to "1")
+    .addCookie({ apiUrl.toHttpUrl().host }, "api-cookie" to "1")
+    .build()
+```
+
+Do not manually set the `Cookie` header for this purpose. Doing so replaces all existing cookies,
+including Cloudflare cookies set through WebView, which can break login and challenge solving.
+
 ##### WebView execution - `runWebView` / `getLocalStorage`
 
 When a source needs a real browser environment (e.g. to solve a JS challenge, run obfuscated
@@ -980,7 +1020,7 @@ val imageBytes = client.readZipEntry(zipUrl, entry, headers).buffer().readByteAr
 #### Additional dependencies
 
 If you find yourself needing additional functionality, you can add more dependencies to your `build.gradle.kts`
-file. Many of [the dependencies](https://github.com/komikku-app/komikku/blob/master/app/build.gradle.kts)
+file. Many of [the dependencies](https://github.com/mihonapp/mihon/blob/main/app/build.gradle.kts)
 from the app are exposed to extensions by default.
 
 > [!NOTE]
@@ -996,7 +1036,7 @@ the main app has at the expense of app size.
 
 > [!IMPORTANT]
 > Using `compileOnly` restricts you to versions that must be compatible with those used in
-> [the latest stable version of the app](https://github.com/komikku-app/komikku/releases/latest).
+> [the latest stable version of the app](https://github.com/mihonapp/mihon/releases/latest).
 
 ### Extension main class
 
@@ -1140,7 +1180,7 @@ Behavior `KeiSource` gives you for free:
 - **Never call `client.newCall(...).execute()` directly from a suspend function:** Use the suspend `OkHttpClient.get`/`post`/`put`/`head` helpers instead (see [HTTP requests](#http-requests---okhttpclientget--post--put--head)); they suspend properly instead of blocking a thread. This doesn't apply to genuinely synchronous, non-suspend callback contexts (an `OkHttp` interceptor, a WebView bridge, or the `fetch` callback passed to `readZipDirectory`/`readZipEntry`), where there's no suspend context to hook into and a blocking `.execute()` is expected - see [ZIP streaming](#zip-streaming---readzipdirectory--readzipentry) for an example.
 - **Pass `HttpUrl` directly:** `client.get`/`post`/`put`/`head` and the `GET()`/`POST()` builders all accept an `HttpUrl` object. Do not call `.toString()` on a built `HttpUrl` before passing it.
 - **Use `HttpUrl` for URL manipulation:** When parsing or extracting parts of a URL, prefer using `HttpUrl` methods (like `pathSegments` property, `encodedPathSegments`, or `queryParameter("id")`) over manual string splitting (e.g., `.split("/")`) or regex. This ensures proper separation of concerns and protects against unexpected inputs-such as URL fragments or query parameters-without you needing to manually account for all edge cases.
-- **Use `CookieInterceptor` for custom cookies:** When you need to inject custom cookies into requests, use the `lib-cookieinterceptor` dependency instead of manually adding `Cookie` headers. Manually setting the `Cookie` header overrides all cookies (including Cloudflare cookies set via WebView), breaking login and challenge solving.
+- **Use `addCookie` for custom cookies:** See [Custom cookies - `addCookie`](#custom-cookies---addcookie). Do not manually add `Cookie` headers: doing so can discard unrelated cookies already attached to the request, whereas `addCookie` preserves them and replaces only cookies with matching names.
 
 ### Extension call flow
 
@@ -1772,7 +1812,7 @@ dependency itself. If you explicitly changed `core/`, run `./gradlew :core:lintR
 
 ## Submitting the changes
 
-When you feel confident about your changes, submit a new Pull Request for review. We encourage following a [GitHub Standard Fork & Pull Request Workflow](https://gist.github.com/Chaser324/ce0505fbed06b947d962); avoid committing directly to `master` and always create a new branch for your changes.
+When you feel confident about your changes, submit a new Pull Request for review. We encourage following a [GitHub Standard Fork & Pull Request Workflow](https://gist.github.com/Chaser324/ce0505fbed06b947d962); avoid committing directly to `main` and always create a new branch for your changes.
 
 If you prefer using Git GUI-based tools, refer to [this guide](https://learntodroid.com/how-to-use-git-and-github-in-android-studio/)
 about Git integration in Android Studio. Specifically, check the "How to Contribute to an Existing
