@@ -18,7 +18,7 @@ keiyoushi {
         baseUrl {
             mirrors(
                 "https://rouman5.com",
-                "https://roum27.xyz",
+                "https://roum28.xyz",
             )
         }
     }
