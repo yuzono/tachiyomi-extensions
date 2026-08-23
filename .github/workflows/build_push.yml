@@ -159,7 +159,7 @@ jobs:
           python ../${{ github.ref_name }}/.github/scripts/publish-apk.py "$DELETE"
 
       - name: Deploy repo
-        uses: EndBug/add-and-commit@290ea2c423ad77ca9c62ae0f5b224379612c0321 # v10
+        uses: EndBug/add-and-commit@cc9c08ba6c8df3b93a8f2db63e89b98368ae2ae8 # v11
         with:
           message: "${{ needs.prepare.outputs.latestCommitMessage }}"
           cwd: "./repo"
