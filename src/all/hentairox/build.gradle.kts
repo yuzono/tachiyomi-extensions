@@ -8,8 +8,7 @@ keiyoushi {
     name = "HentaiRox"
     versionCode = 0
     contentWarning = ContentWarning.NSFW
-    libVersion = "1.4"
-    kmkVersionCode = 1
+    libVersion = "1.6"
     theme = "galleryadults"
 
     listOf("en", "ja", "zh", "all").forEach { language ->

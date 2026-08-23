@@ -4,8 +4,7 @@ plugins {
 
 keiyoushi {
     baseVersionCode = 9
-    libVersion = "1.4"
-    kmkBaseVersionCode = 1
+    libVersion = "1.6"
 
     deeplink {
         path("/g.*/..*/")
