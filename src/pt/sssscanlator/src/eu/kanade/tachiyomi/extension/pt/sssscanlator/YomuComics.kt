@@ -14,8 +14,8 @@ import keiyoushi.utils.extractNextJs
 import keiyoushi.utils.parseAs
 import keiyoushi.utils.stringOrNull
 import keiyoushi.utils.toJsonElement
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
 import okhttp3.Headers
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -30,7 +30,7 @@ abstract class YomuComics : KeiSource() {
 
     override suspend fun getPopularManga(page: Int): MangasPage = getMangaList(page, sort = "popular")
 
-    override suspend fun getLatestUpdates(page: Int): MangasPage = getMangaList(page, sort = "recent")
+    override suspend fun getLatestUpdates(page: Int): MangasPage = getMangaList(page, sort = "newest")
 
     override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage = getMangaList(page, query, filters)
 
@@ -40,13 +40,12 @@ abstract class YomuComics : KeiSource() {
         filters: FilterList = FilterList(),
         sort: String? = null,
     ): MangasPage {
-        val url = "$baseUrl/api/library".toHttpUrl().newBuilder()
+        val url = "$baseUrl/search".toHttpUrl().newBuilder()
             .addQueryParameter("page", page.toString())
-            .addQueryParameter("limit", PAGE_SIZE.toString())
             .apply {
                 sort?.let { addQueryParameter("sort", it) }
                 if (query.isNotBlank()) {
-                    addQueryParameter("search", query)
+                    addQueryParameter("q", query)
                 }
                 filters.filterIsInstance<UrlFilter>()
                     .filterNot { sort != null && it is SortFilter }
@@ -54,8 +53,12 @@ abstract class YomuComics : KeiSource() {
             }
             .build()
 
-        val result = client.get(url).parseAs<JsonObject>()
-        return decrypting { result.toMangasPage() }
+        val series = client.get(url, rscHeaders).extractNextJs<JsonArray>(::isSeriesList)
+            ?: throw Exception("Não foi possível ler a lista de obras")
+
+        val mangas = series.filter(::isSeriesEntry).map { it.parseAs<LibraryMangaDto>().toSManga() }
+
+        return MangasPage(mangas, mangas.size >= PAGE_SIZE)
     }
 
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
@@ -75,7 +78,7 @@ abstract class YomuComics : KeiSource() {
         fetchChapters: Boolean,
     ): SMangaUpdate {
         val body = client.get(baseUrl + manga.url, rscHeaders).use { it.body.string() }
-        val series = decrypting { body.parseSeriesPage() }
+        val series = body.parseSeriesPage()
 
         return SMangaUpdate(manga = series.manga, chapters = series.chapters)
     }
@@ -85,31 +88,7 @@ abstract class YomuComics : KeiSource() {
             .extractNextJs<ChapterPayloadDto>()
             ?: throw Exception("Não foi possível ler as páginas do capítulo")
 
-        return decrypting { payload.pages }
-    }
-
-    /** The site rotates its payload obfuscation every few weeks, so it is re-read on the first failure. */
-    private suspend fun <T> decrypting(block: () -> T): T = try {
-        block()
-    } catch (_: PayloadException) {
-        PayloadCipher.scheme = fetchScheme()
-        block()
-    }
-
-    private suspend fun fetchScheme(): PayloadScheme {
-        val search = client.get("$baseUrl/search").use { it.body.string() }
-        val slug = MANGA_SLUG_REGEX.find(search)?.groupValues?.get(1)
-            ?: throw Exception("Nenhuma obra encontrada para inspecionar o site")
-
-        val page = client.get("$baseUrl/obra/$slug", rscHeaders).use { it.body.string() }
-
-        return CHUNK_REGEX.findAll(page)
-            .map { it.value }
-            .distinct()
-            .firstNotNullOfOrNull { chunk ->
-                PayloadCipher.schemeFrom(client.get("$baseUrl/_next/$chunk").use { it.body.string() })
-            }
-            ?: throw Exception("Não foi possível descobrir como o site está cifrando as respostas")
+        return payload.pages
     }
 
     override val supportsFilterFetching: Boolean get() = true
@@ -136,7 +115,5 @@ abstract class YomuComics : KeiSource() {
     companion object {
         private const val PAGE_SIZE = 30
         private val MANGA_PATH_SEGMENTS = listOf("obra", "ler")
-        private val MANGA_SLUG_REGEX = """/obra/([a-z0-9-]+)""".toRegex()
-        private val CHUNK_REGEX = """static/chunks/[^"\\]+\.js""".toRegex()
     }
 }
