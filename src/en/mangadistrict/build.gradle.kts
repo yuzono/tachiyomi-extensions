@@ -10,7 +10,7 @@ keiyoushi {
     contentWarning = ContentWarning.MIXED
     libVersion = "1.4"
     kmkVersionCode = 1
-    theme = "madara"
+    theme = "madaralegacy"
 
     source {
         lang = "en"
