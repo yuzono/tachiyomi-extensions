@@ -5,19 +5,19 @@ plugins {
 }
 
 keiyoushi {
-    name = "MangaLivre.org"
-    versionCode = 7
+    name = "TruyenTini"
+    versionCode = 1
     contentWarning = ContentWarning.MIXED
     libVersion = "1.6"
+    theme = "madara"
 
     source {
-        lang = "pt-BR"
-        baseUrl = "https://mangalivre.org"
+        lang = "vi"
+        baseUrl {
+            custom("https://truyentini.net")
+        }
     }
-
     deeplink {
-        host("mangalivre.org")
-        path("/manga/..*")
-        path("/ler/..*")
+        path("/truyen/..*")
     }
 }
