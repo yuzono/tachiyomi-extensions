@@ -5,26 +5,22 @@ plugins {
 }
 
 keiyoushi {
-    name = "Comix"
-    versionCode = 38
+    name = "CuuTruyen"
+    versionCode = 1
     contentWarning = ContentWarning.MIXED
     libVersion = "1.6"
 
     source {
-        lang = "en"
+        lang = "vi"
         baseUrl {
             mirrors(
-                "https://comix.to",
-                "https://comix.ws",
+                "https://cuutruyen.net",
+                "https://hetcuutruyen.net",
             )
         }
     }
 
     deeplink {
-        host("comix.to")
-        host("www.comix.to")
-        host("comix.ws")
-        host("www.comix.ws")
-        path("/title/..*")
+        path("/mangas/.*")
     }
 }
