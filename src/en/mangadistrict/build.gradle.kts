@@ -8,9 +8,8 @@ keiyoushi {
     name = "Manga District"
     versionCode = 17
     contentWarning = ContentWarning.MIXED
-    libVersion = "1.4"
-    kmkVersionCode = 1
-    theme = "madaralegacy"
+    libVersion = "1.6"
+    theme = "madara"
 
     source {
         lang = "en"
