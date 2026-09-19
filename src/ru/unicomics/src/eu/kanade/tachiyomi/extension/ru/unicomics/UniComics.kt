@@ -12,13 +12,13 @@ import keiyoushi.annotation.Source
 import keiyoushi.network.rateLimit
 import keiyoushi.utils.asJsoup
 import okhttp3.Headers
-import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Element
 import rx.Observable
+import rx.schedulers.Schedulers
 import kotlin.time.Duration.Companion.seconds
 
 @Source
@@ -58,7 +58,8 @@ abstract class UniComics : HttpSource() {
         return SManga.create().apply {
             this.title = title
             setUrlWithoutDomain(url)
-            thumbnail_url = element.selectFirst(".comic-image-link img, img")?.absUrl("src")
+            thumbnail_url = element.selectFirst(".comic-image-link img")?.absUrl("src")
+                ?: element.selectFirst(".comic-thumb img, .cover-series img")?.absUrl("src")
         }
     }
 
@@ -75,15 +76,12 @@ abstract class UniComics : HttpSource() {
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
         if (query.isNotEmpty()) {
-            val url = HttpUrl.Builder()
-                .scheme("https")
-                .host("yandex.ru")
-                .addPathSegments("search/site/")
-                .addQueryParameter("searchid", "14915852")
-                .addQueryParameter("text", query)
-                .addQueryParameter("web", "0")
-                .addQueryParameter("l10n", "ru")
-                .addQueryParameter("p", (page - 1).toString())
+            // The site has no real search backend (/map ignores the search param),
+            // so filtering and pagination happen client-side in searchMangaParse.
+            // Round-trip query and page through the request URL for the parser.
+            val url = "$baseUrl/map".toHttpUrl().newBuilder()
+                .addQueryParameter("search", query)
+                .addQueryParameter("page", page.toString())
                 .build()
             return GET(url, headers)
         }
@@ -110,28 +108,6 @@ abstract class UniComics : HttpSource() {
     override fun searchMangaParse(response: Response): MangasPage {
         val document = response.asJsoup()
 
-        if (response.request.url.host.contains("yandex")) {
-            if (document.selectFirst(".CheckboxCaptcha, .captcha__captcha") != null) {
-                throw Exception("Пройдите капчу Yandex в WebView (слишком много запросов)")
-            }
-
-            val mangas = document.select(".b-serp-item__title-link").mapNotNull { a ->
-                val href = a.absUrl("href")
-                if (!href.contains("unicomics.ru")) return@mapNotNull null
-
-                val urlString = href.replace("/comics/issue/", "/comics/series/")
-                    .replace("/comics/online/", "/comics/series/")
-                val seriesUrl = ISSUE_REGEX.replace(urlString, "")
-
-                SManga.create().apply {
-                    setUrlWithoutDomain(seriesUrl)
-                    title = a.text().substringBefore(" (").substringBefore(" №")
-                }
-            }
-            val hasNext = document.selectFirst(".b-pager__next") != null
-            return MangasPage(mangas.distinctBy { it.url }, hasNext)
-        }
-
         if (response.request.url.encodedPath.contains(PATH_EVENTS)) {
             val mangas = document.select(".events-grid .event-card, .list_events").mapNotNull { element ->
                 val a = element.selectFirst("a") ?: return@mapNotNull null
@@ -148,9 +124,40 @@ abstract class UniComics : HttpSource() {
             return MangasPage(mangas, false)
         }
 
+        if (response.request.url.encodedPath.contains("/map")) {
+            val queryLower = response.request.url.queryParameter("search")?.lowercase().orEmpty()
+            val queryTokens = QUERY_TOKEN_REGEX.findAll(queryLower).map { it.value }.toList()
+            if (queryTokens.isEmpty()) return MangasPage(emptyList(), false)
+
+            // Filter before dedup: /map lists every series twice (RU and EN titles
+            // sharing one slug), so a query matching only one variant must survive.
+            val filtered = document.select("a[href^=/comics/series/]").mapNotNull { a ->
+                val href = a.attr("href")
+                if (!href.startsWith("/comics/series/")) return@mapNotNull null
+                val title = a.text().trim()
+                if (title.isEmpty()) return@mapNotNull null
+                val titleLower = title.lowercase()
+                val hrefLower = href.lowercase()
+                if (queryTokens.all { token -> titleLower.contains(token) || hrefLower.contains(token) }.not()) {
+                    return@mapNotNull null
+                }
+
+                SManga.create().apply {
+                    setUrlWithoutDomain(href)
+                    this.title = title
+                }
+            }.distinctBy { it.url }
+
+            val page = response.request.url.queryParameter("page")?.toIntOrNull()?.coerceAtLeast(1) ?: 1
+            val fromIndex = (page - 1) * SEARCH_PAGE_SIZE
+            if (fromIndex >= filtered.size) return MangasPage(emptyList(), false)
+            val toIndex = minOf(fromIndex + SEARCH_PAGE_SIZE, filtered.size)
+            return MangasPage(filtered.subList(fromIndex, toIndex), toIndex < filtered.size)
+        }
+
         val mangas = document.select(".comics-grid .comic-card").mapNotNull { element ->
             popularMangaFromElement(element)
-        }
+        }.distinctBy { it.url }
         val hasNextPage = document.selectFirst("select.mobilePageSelector option[selected] ~ option") != null
 
         return MangasPage(mangas, hasNextPage)
@@ -177,7 +184,33 @@ abstract class UniComics : HttpSource() {
         }
         return client.newCall(searchMangaRequest(page, query, filters))
             .asObservableSuccess()
-            .map { response -> searchMangaParse(response) }
+            .flatMap { response ->
+                val mangasPage = searchMangaParse(response)
+                if (mangasPage.mangas.none { it.thumbnail_url.isNullOrEmpty() }) {
+                    return@flatMap Observable.just(mangasPage)
+                }
+                // /map entries carry no covers, fetch them with bounded parallelism.
+                // Results that already have thumbnails (filter/browse searches) skip this.
+                Observable.from(mangasPage.mangas.mapIndexed { index, manga -> index to manga })
+                    .flatMap({ (index, manga) ->
+                        Observable.fromCallable {
+                            if (manga.thumbnail_url.isNullOrEmpty()) {
+                                try {
+                                    client.newCall(GET("$baseUrl${manga.url}", headers)).execute().use { detailResponse ->
+                                        manga.thumbnail_url = mangaDetailsParse(detailResponse).thumbnail_url
+                                    }
+                                } catch (e: Exception) {
+                                    // keep the result, just without a cover
+                                }
+                            }
+                            index to manga
+                        }.subscribeOn(Schedulers.io())
+                    }, COVER_FETCH_CONCURRENCY)
+                    .toList()
+                    .map { enriched ->
+                        MangasPage(enriched.sortedBy { it.first }.map { it.second }, mangasPage.hasNextPage)
+                    }
+            }
     }
 
     override fun mangaDetailsParse(response: Response): SManga = SManga.create().apply {
@@ -310,6 +343,9 @@ abstract class UniComics : HttpSource() {
         private const val PATH_URL = "/comics/series/"
         private const val PATH_PUBLISHERS = "/comics/publishers"
         private const val PATH_EVENTS = "/comics/events"
+        private const val SEARCH_PAGE_SIZE = 30
+        private const val COVER_FETCH_CONCURRENCY = 5
+        private val QUERY_TOKEN_REGEX = "[\\p{L}\\p{N}]+".toRegex()
 
         private val ISSUE_REGEX = "-\\d+/?$".toRegex()
         private val CHAPTER_NUMBER_REGEX = "№\\s*(\\d+(?:\\.\\d+)?)".toRegex()
