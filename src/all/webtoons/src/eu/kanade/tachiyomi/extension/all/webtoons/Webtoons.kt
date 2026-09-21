@@ -156,7 +156,7 @@ abstract class Webtoons :
 
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
         if (url.host != baseUrl.toHttpUrl().host) return null
-        val titleNo = url.queryParameter("title_no") ?: return null
+        val titleNo = url.queryParameter("title_no")?.takeIf(::isTitleNo) ?: return null
         val path = url.pathSegments
         if (path.size < 3) return null
 
@@ -174,10 +174,12 @@ abstract class Webtoons :
         val parts = rest.split(":")
         if (parts.size != 3) return MangasPage(emptyList(), false)
         val (type, lang, titleNo) = parts
-        if (lang != langCode) return MangasPage(emptyList(), false)
+        if (lang != langCode || !isTitleNo(titleNo)) return MangasPage(emptyList(), false)
 
         return MangasPage(listOf(resolve(mangaFor(type, titleNo))), false)
     }
+
+    private fun isTitleNo(value: String) = value.isNotEmpty() && value.all(Char::isDigit)
 
     private fun mangaFor(type: String, titleNo: String) = SManga.create().apply {
         url = buildString {
