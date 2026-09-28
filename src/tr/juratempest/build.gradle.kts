@@ -5,17 +5,17 @@ plugins {
 }
 
 keiyoushi {
-    name = "MangaKuro"
-    versionCode = 3
-    contentWarning = ContentWarning.MIXED
+    name = "JuraTempest"
+    versionCode = 2
+    contentWarning = ContentWarning.SAFE
     libVersion = "1.6"
 
     source {
-        lang = "ja"
-        baseUrl = "https://mangakuro.net"
+        lang = "tr"
+        baseUrl = "https://juratempe.st"
     }
 
     deeplink {
-        path("/manga/..*")
+        path("/explore/..*")
     }
 }
