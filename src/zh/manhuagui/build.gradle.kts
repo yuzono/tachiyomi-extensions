@@ -6,10 +6,9 @@ plugins {
 
 keiyoushi {
     name = "ManHuaGui"
-    versionCode = 28
+    versionCode = 0
     contentWarning = ContentWarning.MIXED
-    libVersion = "1.4"
-    kmkVersionCode = 3
+    libVersion = "1.6"
 
     source {
         name = "漫画柜"
