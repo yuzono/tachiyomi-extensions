@@ -133,7 +133,25 @@ abstract class UniComics : KeiSource() {
         val fromIndex = (page - 1) * SEARCH_PAGE_SIZE
         if (fromIndex >= filtered.size) return MangasPage(emptyList(), false)
         val toIndex = minOf(fromIndex + SEARCH_PAGE_SIZE, filtered.size)
-        return MangasPage(filtered.subList(fromIndex, toIndex), toIndex < filtered.size)
+        val pageItems = filtered.subList(fromIndex, toIndex)
+
+        // The /map page carries no cover images, so the current page's covers are
+        // fetched from the series detail pages concurrently. The results live on the
+        // cached SManga objects, so revisiting the page does not refetch them.
+        coroutineScope {
+            pageItems.map { manga ->
+                async {
+                    runCatching {
+                        val detail = client.get(baseUrl + manga.url).asJsoup()
+                        manga.thumbnail_url = detail
+                            .selectFirst(".cover-series img, .cover-series-mobile img, .issue-cover img")
+                            ?.absUrl("src")
+                    }
+                }
+            }.awaitAll()
+        }
+
+        return MangasPage(pageItems, toIndex < filtered.size)
     }
 
     // The events grid is a single page on the site (no pagination).
