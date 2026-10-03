@@ -92,12 +92,18 @@ abstract class UniComics : KeiSource() {
      * lists every series (RU and EN titles), so the query is matched client-side
      * against those titles and paginated locally.
      */
-    // The filtered /map list is cached per query: the map page is identical for every
-    // page call, so only page 1 refetches and reparses it; deeper pages slice the cache.
+    // The filtered /map list is cached per normalized query: the map page is identical
+    // for every page call, so only page 1 refetches and reparses it; deeper pages slice
+    // the cache. Expired entries are evicted on write, so per-instance memory stays
+    // bounded by the distinct queries of one session.
     private val mapSearchCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<SManga>>>()
 
     private suspend fun searchByMap(query: String, page: Int): MangasPage {
-        val filtered = mapSearchCache[query]
+        val cacheKey = cacheKeyFor(query)
+        mapSearchCache.entries.removeIf { (_, value) ->
+            System.currentTimeMillis() - value.first >= MAP_CACHE_TTL_MS
+        }
+        val filtered = mapSearchCache[cacheKey]
             ?.takeIf { (timestamp, _) -> System.currentTimeMillis() - timestamp < MAP_CACHE_TTL_MS }
             ?.second
             ?: run {
@@ -126,7 +132,7 @@ abstract class UniComics : KeiSource() {
                     }
                 }.distinctBy { it.url }
 
-                mapSearchCache[query] = System.currentTimeMillis() to list
+                mapSearchCache[cacheKey] = System.currentTimeMillis() to list
                 list
             }
 
@@ -172,6 +178,9 @@ abstract class UniComics : KeiSource() {
         }
         return MangasPage(mangas, false)
     }
+
+    // Queries differing only in case or spacing map to one cache entry.
+    private fun cacheKeyFor(query: String): String = QUERY_TOKEN_REGEX.findAll(query.lowercase()).joinToString(" ") { it.value }
 
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
         val titleid = url.pathSegments.getOrNull(2) ?: return null
