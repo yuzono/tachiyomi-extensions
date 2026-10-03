@@ -73,9 +73,7 @@ abstract class UniComics : KeiSource() {
 
         when {
             query.isNotEmpty() -> return searchByMap(query, page)
-            (events?.state ?: 0) > 0 -> return MangasPage(emptyList(), false).also {
-                throw Exception("Фильтр «События» не поддерживает пагинацию: выберите тайтл на /map")
-            }
+            (events?.state ?: 0) > 0 -> return getEvents(page)
             (publisher?.state ?: 0) > 0 -> {
                 val publisherName = publisher!!.urls[publisher.state]
                 val document = client.get("$baseUrl$PATH_PUBLISHERS/$publisherName/page/$page").asJsoup()
@@ -94,36 +92,67 @@ abstract class UniComics : KeiSource() {
      * lists every series (RU and EN titles), so the query is matched client-side
      * against those titles and paginated locally.
      */
+    // The filtered /map list is cached per query: the map page is identical for every
+    // page call, so only page 1 refetches and reparses it; deeper pages slice the cache.
+    private val mapSearchCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<SManga>>>()
+
     private suspend fun searchByMap(query: String, page: Int): MangasPage {
-        val document = client.get("$baseUrl/map?search=$query").asJsoup()
+        val filtered = mapSearchCache[query]
+            ?.takeIf { (timestamp, _) -> System.currentTimeMillis() - timestamp < MAP_CACHE_TTL_MS }
+            ?.second
+            ?: run {
+                val document = client.get("$baseUrl/map").asJsoup()
 
-        val queryLower = query.lowercase()
-        val queryTokens = QUERY_TOKEN_REGEX.findAll(queryLower).map { it.value }.toList()
-        if (queryTokens.isEmpty()) return MangasPage(emptyList(), false)
+                val queryLower = query.lowercase()
+                val queryTokens = QUERY_TOKEN_REGEX.findAll(queryLower).map { it.value }.toList()
+                if (queryTokens.isEmpty()) return MangasPage(emptyList(), false)
 
-        // Filter before dedup: /map lists every series twice (RU and EN titles
-        // sharing one slug), so a query matching only one variant must survive.
-        val filtered = document.select("a[href^=/comics/series/]").mapNotNull { a ->
-            val href = a.attr("href")
-            if (!href.startsWith("/comics/series/")) return@mapNotNull null
-            val title = a.text().trim()
-            if (title.isEmpty()) return@mapNotNull null
-            val titleLower = title.lowercase()
-            val hrefLower = href.lowercase()
-            if (queryTokens.all { token -> titleLower.contains(token) || hrefLower.contains(token) }.not()) {
-                return@mapNotNull null
+                // Filter before dedup: /map lists every series twice (RU and EN titles
+                // sharing one slug), so a query matching only one variant must survive.
+                val list = document.select("a[href^=/comics/series/]").mapNotNull { a ->
+                    val href = a.attr("href")
+                    if (!href.startsWith("/comics/series/")) return@mapNotNull null
+                    val title = a.text().trim()
+                    if (title.isEmpty()) return@mapNotNull null
+                    val titleLower = title.lowercase()
+                    val hrefLower = href.lowercase()
+                    if (queryTokens.all { token -> titleLower.contains(token) || hrefLower.contains(token) }.not()) {
+                        return@mapNotNull null
+                    }
+
+                    SManga.create().apply {
+                        setUrlWithoutDomain(href)
+                        this.title = title
+                    }
+                }.distinctBy { it.url }
+
+                mapSearchCache[query] = System.currentTimeMillis() to list
+                list
             }
-
-            SManga.create().apply {
-                setUrlWithoutDomain(href)
-                this.title = title
-            }
-        }.distinctBy { it.url }
 
         val fromIndex = (page - 1) * SEARCH_PAGE_SIZE
         if (fromIndex >= filtered.size) return MangasPage(emptyList(), false)
         val toIndex = minOf(fromIndex + SEARCH_PAGE_SIZE, filtered.size)
         return MangasPage(filtered.subList(fromIndex, toIndex), toIndex < filtered.size)
+    }
+
+    // The events grid is a single page on the site (no pagination).
+    private suspend fun getEvents(page: Int): MangasPage {
+        if (page > 1) return MangasPage(emptyList(), false)
+        val document = client.get("$baseUrl$PATH_EVENTS").asJsoup()
+        val mangas = document.select(".events-grid .event-card, .list_events").mapNotNull { element ->
+            val a = element.selectFirst("a") ?: return@mapNotNull null
+            val url = a.absUrl("href").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            val title = element.selectFirst(".comic-title-ru, .event-title")?.text()?.takeIf { it.isNotEmpty() }
+                ?: a.text().takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+
+            SManga.create().apply {
+                setUrlWithoutDomain(url)
+                this.title = title
+                thumbnail_url = element.selectFirst("img")?.absUrl("src")
+            }
+        }
+        return MangasPage(mangas, false)
     }
 
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
@@ -305,6 +334,7 @@ abstract class UniComics : KeiSource() {
         private val ISSUE_REGEX = "-\\d+/?$".toRegex()
         private val QUERY_TOKEN_REGEX = "[\\p{L}\\p{N}]+".toRegex()
         private const val SEARCH_PAGE_SIZE = 30
+        private const val MAP_CACHE_TTL_MS = 10 * 60 * 1000L
         private val CHAPTER_NUMBER_REGEX = "№\\s*(\\d+(?:\\.\\d+)?)".toRegex()
         private val PAGINATOR_REGEX = "new Paginator\\(['\"].*?['\"],\\s*(\\d+),\\s*\\d+,\\s*\\d+,\\s*['\"](.*?)['\"]\\)".toRegex()
     }
