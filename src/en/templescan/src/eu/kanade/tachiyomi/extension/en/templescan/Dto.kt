@@ -7,24 +7,23 @@ import java.text.ParseException
 import java.text.SimpleDateFormat
 import java.util.Locale
 
+// Fields the site renames to short keys are declared under their logical names; the payload is
+// remapped before decoding, so these stay valid across key rotations. See [RscKeys].
 @Serializable
 class BrowseSeries(
-    @SerialName("series_slug") private val slug: String,
     val title: String,
+    @SerialName("series_slug") val slug: String,
     @SerialName("alternative_names") val alternativeNames: String? = null,
-    private val thumbnail: String? = null,
+    val thumbnail: String? = null,
+    val badge: String? = null,
     val status: String? = null,
     @SerialName("update_chapter") private val updatedAt: String? = null,
     @SerialName("created_at") private val createdAt: String? = null,
     @SerialName("total_views") val views: Long = 0,
 ) {
-    val updated: Long by lazy {
-        dateFormat.tryParse(updatedAt)
-    }
+    val updated: Long by lazy { dateFormat.tryParse(updatedAt) }
 
-    val created: Long by lazy {
-        dateFormat.tryParse(createdAt)
-    }
+    val created: Long by lazy { dateFormat.tryParse(createdAt) }
 
     fun toSManga() = SManga.create().apply {
         url = "/comic/$slug"
@@ -33,54 +32,51 @@ class BrowseSeries(
     }
 }
 
+/** schema.org `ComicSeries` JSON-LD block embedded in the detail page. */
 @Serializable
-class SeriesDetails(
-    @SerialName("series_slug") val slug: String,
-    val title: String,
-    val thumbnail: String? = null,
-    val author: String? = null,
-    val studio: String? = null,
-    @SerialName("release_year") val year: String? = null,
-    @SerialName("alternative_names") val alternativeNames: String? = null,
-    val adult: Boolean = false,
-    val badge: String? = null,
-    val status: String? = null,
+class ComicSeriesLd(
+    @SerialName("@type") private val type: String? = null,
+    val name: String? = null,
     val description: String? = null,
-    @SerialName("tag_series") val tags: List<TagWrapper>? = emptyList(),
-    @SerialName("Season") val seasons: List<Chapters>? = emptyList(),
+    val image: String? = null,
+    val author: Author? = null,
+    val alternateName: String? = null,
+    val genre: List<String>? = null,
 ) {
     @Serializable
-    class Chapters(
-        @SerialName("Chapter") val chapters: List<Chapter>,
+    class Author(val name: String? = null)
+
+    val isSeries: Boolean get() = type == "ComicSeries"
+}
+
+@Serializable
+class SeriesData(
+    @SerialName("Season") private val seasons: List<Season>? = null,
+) {
+    val chapters: List<Chapter> get() = seasons.orEmpty().flatMap { it.chapters }
+
+    @Serializable
+    class Season(
+        @SerialName("Chapter") private val items: List<Chapter>? = null,
     ) {
-        @Serializable
-        class Chapter(
-            @SerialName("chapter_name") val name: String,
-            @SerialName("chapter_title") val title: String? = null,
-            @SerialName("chapter_slug") val slug: String,
-            val price: Int,
-            @SerialName("created_at") private val createdAt: String? = null,
-        ) {
-            val created: Long by lazy {
-                dateFormat.tryParse(createdAt)
-            }
-        }
+        val chapters: List<Chapter> get() = items.orEmpty()
+    }
+
+    @Serializable
+    class Chapter(
+        @SerialName("chapter_name") val name: String,
+        @SerialName("chapter_title") val title: String? = null,
+        @SerialName("chapter_slug") val slug: String,
+        val price: Int = 0,
+        @SerialName("created_at") private val createdAt: String? = null,
+    ) {
+        val created: Long by lazy { dateFormat.tryParse(createdAt) }
     }
 }
 
 @Serializable
-class TagWrapper(
-    val tag: Tag,
-)
-
-@Serializable
-class Tag(
-    val name: String,
-)
-
-@Serializable
 class PagesList(
-    val pages: List<String>,
+    val images: List<String>,
 )
 
 private val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ENGLISH)
