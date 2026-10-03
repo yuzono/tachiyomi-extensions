@@ -100,6 +100,8 @@ abstract class UniComics : KeiSource() {
 
     private suspend fun searchByMap(query: String, page: Int): MangasPage {
         val cacheKey = cacheKeyFor(query)
+        if (cacheKey.isBlank()) return MangasPage(emptyList(), false)
+
         mapSearchCache.entries.removeIf { (_, value) ->
             System.currentTimeMillis() - value.first >= MAP_CACHE_TTL_MS
         }
@@ -109,8 +111,7 @@ abstract class UniComics : KeiSource() {
             ?: run {
                 val document = client.get("$baseUrl/map").asJsoup()
 
-                val queryLower = query.lowercase()
-                val queryTokens = QUERY_TOKEN_REGEX.findAll(queryLower).map { it.value }.toList()
+                val queryTokens = QUERY_TOKEN_REGEX.findAll(cacheKey).map { it.value }.toList()
                 if (queryTokens.isEmpty()) return MangasPage(emptyList(), false)
 
                 // Filter before dedup: /map lists every series twice (RU and EN titles
