@@ -146,6 +146,9 @@ abstract class UniComics : KeiSource() {
         // cached SManga objects, so revisiting the page does not refetch them.
         coroutineScope {
             pageItems.map { manga ->
+                // A cached page is returned on every revisit: only entries without a
+                // cover (first pass, or a previously failed lookup) hit the network.
+                if (!manga.thumbnail_url.isNullOrEmpty()) return@map async { }
                 async {
                     runCatching {
                         val detail = client.get(baseUrl + manga.url).asJsoup()
