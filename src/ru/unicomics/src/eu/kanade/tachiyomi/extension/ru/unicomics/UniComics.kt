@@ -71,75 +71,59 @@ abstract class UniComics : KeiSource() {
         val events = filters.firstInstanceOrNull<GetEventsList>()
         val publisher = filters.firstInstanceOrNull<Publishers>()
 
-        val url = when {
-            query.isNotEmpty() -> HttpUrl.Builder()
-                .scheme("https")
-                .host("yandex.ru")
-                .addPathSegments("search/site/")
-                .addQueryParameter("searchid", "14915852")
-                .addQueryParameter("text", query)
-                .addQueryParameter("web", "0")
-                .addQueryParameter("l10n", "ru")
-                .addQueryParameter("p", (page - 1).toString())
-                .build().toString()
-
-            (events?.state ?: 0) > 0 -> "$baseUrl$PATH_EVENTS"
+        when {
+            query.isNotEmpty() -> return searchByMap(query, page)
+            (events?.state ?: 0) > 0 -> return MangasPage(emptyList(), false).also {
+                throw Exception("Фильтр «События» не поддерживает пагинацию: выберите тайтл на /map")
+            }
             (publisher?.state ?: 0) > 0 -> {
                 val publisherName = publisher!!.urls[publisher.state]
-                "$baseUrl$PATH_PUBLISHERS/$publisherName/page/$page"
+                val document = client.get("$baseUrl$PATH_PUBLISHERS/$publisherName/page/$page").asJsoup()
+                val mangas = document.select(".comics-grid .comic-card").mapNotNull(::popularMangaFromElement)
+                val hasNextPage = document.selectFirst("select.mobilePageSelector option[selected] ~ option") != null
+                return MangasPage(mangas, hasNextPage)
             }
 
             else -> return getPopularManga(page)
         }
-
-        return searchMangaParse(client.get(url).asJsoup())
     }
 
-    private fun searchMangaParse(document: Document): MangasPage {
-        if (document.location().contains("yandex")) {
-            if (document.selectFirst(".CheckboxCaptcha, .captcha__captcha") != null) {
-                throw Exception("Пройдите капчу Yandex в WebView (слишком много запросов)")
+    /**
+     * The site's own search is a Yandex SiteSearch widget rendered client-side, and
+     * scraping the Yandex SERP is captcha-bound and query-dependent. The /map page
+     * lists every series (RU and EN titles), so the query is matched client-side
+     * against those titles and paginated locally.
+     */
+    private suspend fun searchByMap(query: String, page: Int): MangasPage {
+        val document = client.get("$baseUrl/map?search=$query").asJsoup()
+
+        val queryLower = query.lowercase()
+        val queryTokens = QUERY_TOKEN_REGEX.findAll(queryLower).map { it.value }.toList()
+        if (queryTokens.isEmpty()) return MangasPage(emptyList(), false)
+
+        // Filter before dedup: /map lists every series twice (RU and EN titles
+        // sharing one slug), so a query matching only one variant must survive.
+        val filtered = document.select("a[href^=/comics/series/]").mapNotNull { a ->
+            val href = a.attr("href")
+            if (!href.startsWith("/comics/series/")) return@mapNotNull null
+            val title = a.text().trim()
+            if (title.isEmpty()) return@mapNotNull null
+            val titleLower = title.lowercase()
+            val hrefLower = href.lowercase()
+            if (queryTokens.all { token -> titleLower.contains(token) || hrefLower.contains(token) }.not()) {
+                return@mapNotNull null
             }
 
-            val mangas = document.select(".b-serp-item__title-link").mapNotNull { a ->
-                val href = a.absUrl("href")
-                if (!href.contains("unicomics.ru")) return@mapNotNull null
-
-                val urlString = href.replace("/comics/issue/", "/comics/series/")
-                    .replace("/comics/online/", "/comics/series/")
-                val seriesUrl = ISSUE_REGEX.replace(urlString, "")
-
-                SManga.create().apply {
-                    setUrlWithoutDomain(seriesUrl)
-                    title = a.text().substringBefore(" (").substringBefore(" №")
-                }
+            SManga.create().apply {
+                setUrlWithoutDomain(href)
+                this.title = title
             }
-            val hasNext = document.selectFirst(".b-pager__next") != null
-            return MangasPage(mangas.distinctBy { it.url }, hasNext)
-        }
+        }.distinctBy { it.url }
 
-        if (document.location().contains(PATH_EVENTS)) {
-            val mangas = document.select(".events-grid .event-card, .list_events").mapNotNull { element ->
-                val a = element.selectFirst("a") ?: return@mapNotNull null
-                val url = a.absUrl("href").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
-                val title = element.selectFirst(".comic-title-ru, .event-title")?.text()?.takeIf { it.isNotEmpty() }
-                    ?: a.text().takeIf { it.isNotEmpty() } ?: return@mapNotNull null
-
-                SManga.create().apply {
-                    setUrlWithoutDomain(url)
-                    this.title = title
-                    thumbnail_url = element.selectFirst("img")?.absUrl("src")
-                }
-            }
-            return MangasPage(mangas, false)
-        }
-
-        val mangas = document.select(".comics-grid .comic-card").mapNotNull { element ->
-            popularMangaFromElement(element)
-        }
-        val hasNextPage = document.selectFirst("select.mobilePageSelector option[selected] ~ option") != null
-
-        return MangasPage(mangas, hasNextPage)
+        val fromIndex = (page - 1) * SEARCH_PAGE_SIZE
+        if (fromIndex >= filtered.size) return MangasPage(emptyList(), false)
+        val toIndex = minOf(fromIndex + SEARCH_PAGE_SIZE, filtered.size)
+        return MangasPage(filtered.subList(fromIndex, toIndex), toIndex < filtered.size)
     }
 
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
@@ -319,6 +303,8 @@ abstract class UniComics : KeiSource() {
         private const val PATH_EVENTS = "/comics/events"
 
         private val ISSUE_REGEX = "-\\d+/?$".toRegex()
+        private val QUERY_TOKEN_REGEX = "[\\p{L}\\p{N}]+".toRegex()
+        private const val SEARCH_PAGE_SIZE = 30
         private val CHAPTER_NUMBER_REGEX = "№\\s*(\\d+(?:\\.\\d+)?)".toRegex()
         private val PAGINATOR_REGEX = "new Paginator\\(['\"].*?['\"],\\s*(\\d+),\\s*\\d+,\\s*\\d+,\\s*['\"](.*?)['\"]\\)".toRegex()
     }
