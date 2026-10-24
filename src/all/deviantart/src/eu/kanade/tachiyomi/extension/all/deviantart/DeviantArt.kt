@@ -524,12 +524,6 @@ abstract class DeviantArt :
         }.also(screen::addPreference)
     }
 
-    private val catalogSearchQuery
-        get() = preferences.getString(CATALOG_SEARCH_QUERY_PREF, "") ?: ""
-
-    private val catalogCategory
-        get() = preferences.getString(CATALOG_CATEGORY_PREF, "") ?: ""
-
     private enum class ArtistInTitle(val text: String) {
         NEVER("Never"),
         ALWAYS("Always"),
@@ -541,6 +535,18 @@ abstract class DeviantArt :
             val defaultValue = ALWAYS
         }
     }
+
+    private val SharedPreferences.artistInTitle
+        get() = getString(ArtistInTitle.PREF_KEY, ArtistInTitle.defaultValue.name)
+
+    private val SharedPreferences.includeArtIdInChapterName
+        get() = getBoolean(CHAPTER_NAME_PREF, true)
+
+    private val catalogSearchQuery
+        get() = preferences.getString(CATALOG_SEARCH_QUERY_PREF, "") ?: ""
+
+    private val catalogCategory
+        get() = preferences.getString(CATALOG_CATEGORY_PREF, "") ?: ""
 
     // ============================== Filters =====================================
 
@@ -575,12 +581,6 @@ abstract class DeviantArt :
     }
 
     private class CategoryFilter(name: String) : Filter.Text(name)
-
-    private val SharedPreferences.artistInTitle
-        get() = getString(ArtistInTitle.PREF_KEY, ArtistInTitle.defaultValue.name)
-
-    private val SharedPreferences.includeArtIdInChapterName
-        get() = getBoolean(CHAPTER_NAME_PREF, true)
 
     companion object {
         private const val SEARCH_FORMAT_MSG = "Browse user's gallery by searching for `gallery:{username}` or `gallery:{username}/{folderId}`\n" +
