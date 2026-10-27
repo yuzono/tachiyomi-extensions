@@ -14,7 +14,7 @@ class Deviation(
     val publishedTime: String, // "2024-01-03T03:17:25-0800"
     val isMature: Boolean,
     val author: Author,
-    val media: Media,
+    val media: DeviationMedia,
 )
 
 @Serializable
@@ -27,7 +27,7 @@ class DeviationState(
     val publishedTime: String, // "2024-01-03T03:17:25-0800"
     val isMature: Boolean,
     val author: Int,
-    val media: Media,
+    val media: DeviationMedia,
 )
 
 @Serializable
@@ -39,13 +39,13 @@ class Author(
 )
 
 @Serializable
-class Media(
+class DeviationMedia(
     private val baseUri: String?, // "https://images-wixmp-ed30a86b8c4ca887773594c2.wixmp.com/f/8460dab0-bcab-49e8-bbae-18dc5c677b55/dgnxoqd-054db8b2-5baf-41f3-809f-39b94925415b.jpg"
     private val prettyName: String?, // "beach__58__by_shw67_dgnxoqd"
     private val token: List<String>? = null,
     // "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1cm46YXBwOjdlMGQxODg5ODIyNjQzNzNhNWYwZDQxNWVhMGQyNmUwIiwiaXNzIjoidXJuOmFwcDo3ZTBkMTg4OTgyMjY0MzczYTVmMGQ0MTVlYTBkMjZlMCIsIm9iaiI6W1t7ImhlaWdodCI6Ijw9MTgwMCIsInBhdGgiOiJcL2ZcLzg0NjBkYWIwLWJjYWItNDllOC1iYmFlLTE4ZGM1YzY3N2I1NVwvZGdueG9xZC0wNTRkYjhiMi01YmFmLTQxZjMtODA5Zi0zOWI5NDkyNTQxNWIuanBnIiwid2lkdGgiOiI8PTEyMDAifV1dLCJhdWQiOlsidXJuOnNlcnZpY2U6aW1hZ2Uub3BlcmF0aW9ucyJdfQ.aF5SPOVJhAKAMgJxReo14ywf5upUjQg4_e56npVlLeo",
     // "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1cm46YXBwOjdlMGQxODg5ODIyNjQzNzNhNWYwZDQxNWVhMGQyNmUwIiwiaXNzIjoidXJuOmFwcDo3ZTBkMTg4OTgyMjY0MzczYTVmMGQ0MTVlYTBkMjZlMCIsIm9iaiI6W1t7InBhdGgiOiJcL2ZcLzg0NjBkYWIwLWJjYWItNDllOC1iYmFlLTE4ZGM1YzY3N2I1NVwvZGdueG9xZC0wNTRkYjhiMi01YmFmLTQxZjMtODA5Zi0zOWI5NDkyNTQxNWIuanBnIn1dXSwiYXVkIjpbInVybjpzZXJ2aWNlOmZpbGUuZG93bmxvYWQiXX0.V6UcjpOb2UYTe0inj8ffUkLNWR6zlwRyZ1_4VKyp4GQ"
-    private val types: List<MediaType>?,
+    private val types: List<DeviationMediaType>?,
 ) {
     fun getCoverUrl(): String? = token
         ?.let { "$baseUri${getPreview()}?token=${token.random()}" }
@@ -74,7 +74,7 @@ class Media(
 }
 
 @Serializable
-class MediaType(
+class DeviationMediaType(
     val t: String, // fullview, social_preview, preview, 400T
     val c: String?, // path segments: /v1/fill/w_1600,h_2400,q_80,strp/<prettyName>-fullview.jpg
     val h: Int, // height
@@ -103,11 +103,11 @@ class CollectionInfo(
 @Serializable
 class StateContent(
     @SerialName("@@entities")
-    val entities: Entities,
+    val entities: StateEntities,
 )
 
 @Serializable
-class Entities(
+class StateEntities(
     val user: JsonObject,
     val deviation: JsonObject,
 )

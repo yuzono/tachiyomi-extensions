@@ -29,6 +29,7 @@ import kotlinx.serialization.json.JsonElement
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
@@ -50,16 +51,17 @@ abstract class DeviantArt :
     private val backendBaseUrl = "https://backend.deviantart.com"
     private fun backendBuilder() = backendBaseUrl.toHttpUrl().newBuilder()
 
+    private val dateFormat by lazy { DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.ENGLISH) }
+    private val dateFormatZ by lazy { DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US) }
+
     private val baseUrlHost by lazy { baseUrl.toHttpUrl().host }
     private val backendBaseUrlHost by lazy { backendBaseUrl.toHttpUrl().host }
     override fun OkHttpClient.Builder.configureClient(): OkHttpClient.Builder = apply {
         rateLimit(30, 1.minutes) { it.host == baseUrlHost }
         // rateLimit(5, 1.minutes) { it.host == backendBaseUrlHost }
         rateLimit(30, 5.minutes) { it.host == backendBaseUrlHost }
+        addInterceptor(OriginalImageInterceptor())
     }
-
-    private val dateFormat by lazy { DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.ENGLISH) }
-    private val dateFormatZ by lazy { DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US) }
 
     private fun queryBuilder(page: Int): HttpUrl.Builder = backendBuilder()
         .addPathSegment("rss.xml")
@@ -140,23 +142,22 @@ abstract class DeviantArt :
     // ============================== Search ===================================
 
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
-        if (url.host != baseUrl.toHttpUrl().host) return null
-
-        val type = url.pathSegments.getOrNull(1)?.takeIf { it in listOf("gallery", "art") } ?: return null
-        val username = url.pathSegments.getOrNull(0) ?: return null
-        val folderId = url.pathSegments.getOrNull(2) ?: return null
-
-        val link = "$baseUrl/$username/$type/$folderId"
+        val path = url.toGalleryPath(baseUrl) ?: return getArtByUrl(url)
+        val link = "$baseUrl$path"
         val document = client.get(link).asJsoup()
-        return when (type) {
-            "gallery" -> {
-                parseGalleryDetails(document, link)
-            }
-            "art" -> {
-                parseArtDetails(document)
-            }
-            else -> null
-        }
+
+        return parseGalleryDetails(document, link)
+    }
+
+    private suspend fun getArtByUrl(url: HttpUrl): SManga? {
+        if (url.host != baseUrl.toHttpUrl().host) return null
+        if (url.pathSegments.getOrNull(1) != "art") return null
+
+        val username = url.pathSegments[0]
+        val artId = url.pathSegments.getOrNull(2) ?: return null
+        val document = client.get("$baseUrl/$username/art/$artId").asJsoup()
+
+        return parseArtDetails(document)
     }
 
     override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
@@ -454,26 +455,22 @@ abstract class DeviantArt :
     // ============================== Pages =====================================
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val document = client.get(getChapterUrl(chapter)).asJsoup()
-        val buttons = document.selectFirst("[draggable=false]")?.children()
-        return if (buttons == null) {
-            val imageUrl = document.selectFirst("img[fetchpriority=high]")?.absUrl("src")
-                ?: document.selectFirst(".v-poster")?.attr("style")?.let { STYLE_URL_REGEX.find(it)?.groupValues?.get(1) }
-            listOf(imageUrl)
-        } else {
-            // The art which has multiple images inside
-            buttons.map { button ->
-                button.selectFirst("img")?.absUrl("src")
-            }
-        }.mapIndexed { i, imgUrl ->
-            // Remove everything past "/v1/" to get original instead of thumbnail
-            // But need to preserve the query parameter where the token is
-            val imageUrl = imgUrl?.replaceFirst(IMAGE_ORIGINAL_URL_REGEX, "")
-            Page(i, imageUrl = imageUrl)
-        }
+        val url = getChapterUrl(chapter).toHttpUrl()
+        val document = client.get(url).asJsoup()
+        val pages = document.parsePages(url.pathSegments.last().substringAfterLast('-'))
+        if (pages.first().imageUrl != null) return pages
+
+        // Video art has no image, use its poster instead
+        val posterUrl = document.selectFirst(".v-poster")?.attr("style")
+            ?.let { STYLE_URL_REGEX.find(it)?.groupValues?.get(1) }
+        return listOf(createImagePage(0, posterUrl))
     }
 
     override suspend fun getImageUrl(page: Page) = throw Exception("Open Webview to view this")
+
+    override fun imageRequest(page: Page): Request = super.imageRequest(page).newBuilder()
+        .tag(Page::class.java, page)
+        .build()
 
     private fun Response.asJsoupXml(): Document = Jsoup.parse(body.string(), request.url.toString(), Parser.xmlParser())
 
@@ -603,7 +600,6 @@ abstract class DeviantArt :
         private val RCACHE_REGEX = Regex("""window\.__RCACHE__ = JSON\.parse\("(\{.+?\})"\);""")
         private val INITIAL_STATE_REGEX = Regex("""window\.__INITIAL_STATE__ = JSON\.parse\("(\{.+?\})"\);""")
 
-        private val IMAGE_ORIGINAL_URL_REGEX = Regex("""/v1(/.*)?(?=\?)""")
         private val STYLE_URL_REGEX = Regex("""background-image\s*:\s*url\('([^']+)'\)""")
     }
 }
