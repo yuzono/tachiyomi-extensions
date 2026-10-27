@@ -217,7 +217,7 @@ jobs:
           DELETE: ${{ needs.prepare.outputs.delete }}
         run: |
           cd repo
-          pip install protobuf
+          python -m pip install --user --upgrade protobuf
           python ../${{ github.ref_name }}/.github/scripts/publish-apk.py "$DELETE"
 
       - name: Deploy repo
@@ -252,7 +252,7 @@ jobs:
           GH_TOKEN: ${{ secrets.BOT_PAT }}
         run: |
           cd repo
-          pip install protobuf
+          python -m pip install --user --upgrade protobuf
           python -u ../${{ github.ref_name }}/.github/scripts/publish-repo.py "$DELETE" "$GITHUB_SHA" "$FULL_REBUILD"
           git config user.name "Yūzōnō"
           git config user.email "yuzono@users.noreply.github.com"
