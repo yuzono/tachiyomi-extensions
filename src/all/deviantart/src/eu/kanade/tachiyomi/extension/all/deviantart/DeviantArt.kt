@@ -468,7 +468,7 @@ abstract class DeviantArt :
 
     override suspend fun getImageUrl(page: Page) = throw Exception("Open Webview to view this")
 
-    override fun imageRequest(page: Page): Request = super.imageRequest(page).newBuilder()
+    override fun getImageRequest(page: Page): Request = super.getImageRequest(page).newBuilder()
         .tag(Page::class.java, page)
         .build()
 
