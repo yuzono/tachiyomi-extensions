@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.extension.pt.xxxyaoi
 import android.webkit.WebResourceResponse
 import eu.kanade.tachiyomi.multisrc.madara.MadaraNoAjax
 import keiyoushi.annotation.Source
+import keiyoushi.network.Fetch
 import keiyoushi.network.get
 import keiyoushi.network.rateLimit
 import keiyoushi.utils.asJsoup
@@ -25,14 +26,7 @@ abstract class XXXYaoi : MadaraNoAjax() {
 
     override fun OkHttpClient.Builder.configureClient() = rateLimit(3, 1.seconds)
 
-    override fun Headers.Builder.configureHeaders() = set("Upgrade-Insecure-Requests", "1")
-        .set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-        .set("Sec-GPC", "1")
-        .set("Sec-Fetch-User", "?1")
-        .set("Sec-Fetch-Site", "none")
-        .set("Sec-Fetch-Mode", "navigate")
-        .set("Sec-Fetch-Dest", "document")
-        .set("Priority", "u=0, i")
+    override fun Headers.Builder.configureHeaders() = set("Sec-GPC", "1")
         .set("Pragma", "no-cache")
 
     override val mangaSubString = "bl"
@@ -57,7 +51,7 @@ abstract class XXXYaoi : MadaraNoAjax() {
     }
 
     override suspend fun fetchChapterDocument(chapterUrl: String): Document {
-        val html = client.get(chapterUrl).body.string()
+        val html = client.get(chapterUrl, Fetch.DOCUMENT).body.string()
         val rendered = try {
             runWebView<String> {
                 userAgent = headers["User-Agent"].orEmpty()

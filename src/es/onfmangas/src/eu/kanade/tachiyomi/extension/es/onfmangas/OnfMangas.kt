@@ -78,8 +78,6 @@ abstract class OnfMangas :
         }
     }
 
-    override val imageFetch = Fetch.IMAGE
-
     override val supportsFilterFetching = true
 
     private val authorPlaceholders = setOf("Autor Desconocido", "Desconocido", "Sin dato")
@@ -182,7 +180,6 @@ abstract class OnfMangas :
     // uploads.mangadex.org serves a placeholder image with either header
     override fun getImageRequest(page: Page): Request = super.getImageRequest(page).newBuilder()
         .removeHeader("Referer")
-        .removeHeader("Origin")
         .build()
 
     override suspend fun fetchFilterData(): JsonElement {

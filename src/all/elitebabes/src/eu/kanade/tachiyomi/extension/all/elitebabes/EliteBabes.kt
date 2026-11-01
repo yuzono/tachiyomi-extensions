@@ -11,6 +11,7 @@ import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import keiyoushi.annotation.Source
+import keiyoushi.network.Fetch
 import keiyoushi.network.get
 import keiyoushi.utils.asJsoup
 import keiyoushi.utils.firstInstanceOrNull
@@ -77,7 +78,7 @@ abstract class EliteBabes : Masonry() {
 
     class ChannelFilter(channels: List<Tag> = emptyList()) : SelectFilter("Channels", listOf(Pair("Off", "")) + channels.map { it.name to it.uriPart })
 
-    private suspend fun fetchChannels(): List<Tag> = client.get("$baseUrl/erotic-art-channels/").asJsoup()
+    private suspend fun fetchChannels(): List<Tag> = client.get("$baseUrl/erotic-art-channels/", Fetch.DOCUMENT).asJsoup()
         .select("#tagsList li > a")
         .map {
             Tag(
@@ -137,7 +138,7 @@ abstract class EliteBabes : Masonry() {
         val sortFilter = filters.firstInstanceOrNull<SortFilter>() ?: SortFilter()
 
         return when {
-            highlightsFilter.selected != "-" -> parseHighlights(client.get(highlightsFilter.selected).asJsoup())
+            highlightsFilter.selected != "-" -> parseHighlights(client.get(highlightsFilter.selected, Fetch.DOCUMENT).asJsoup())
             channelFilter.selected.isNotEmpty() -> getListingPage("${channelFilter.selected}/s/${sortFilter.selected}/", page)
             else -> super.getSearchMangaList(page, query, filters)
         }

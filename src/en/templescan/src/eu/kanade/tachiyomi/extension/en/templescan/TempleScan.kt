@@ -51,8 +51,6 @@ abstract class TempleScan :
         rateLimit(1)
     }
 
-    override val imageFetch = Fetch.IMAGE
-
     private val challengeMutex = Mutex()
 
     private var challengePassedAt = 0L

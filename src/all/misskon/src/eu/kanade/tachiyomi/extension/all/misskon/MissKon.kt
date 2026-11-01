@@ -15,6 +15,7 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import keiyoushi.annotation.Source
+import keiyoushi.network.Fetch
 import keiyoushi.network.get
 import keiyoushi.network.rateLimit
 import keiyoushi.source.KeiSource
@@ -75,7 +76,7 @@ abstract class MissKon :
     // endregion
 
     // region latest
-    override suspend fun getLatestUpdates(page: Int): MangasPage = parseMangaListPage(client.get("$baseUrl/page/$page"))
+    override suspend fun getLatestUpdates(page: Int): MangasPage = parseMangaListPage(client.get("$baseUrl/page/$page", Fetch.DOCUMENT))
     // endregion
 
     // region Search
@@ -86,7 +87,7 @@ abstract class MissKon :
         when {
             query.isNotBlank() -> {
                 if (listOf("photo", "photos", "video", "videos").contains(query.trim())) {
-                    return parseMangaListPage(client.get("$baseUrl/search"))
+                    return parseMangaListPage(client.get("$baseUrl/search", Fetch.DOCUMENT))
                 }
                 if (page > 1) {
                     url.addPathSegment("page")
@@ -109,7 +110,7 @@ abstract class MissKon :
 
             else -> return getLatestUpdates(page)
         }
-        return parseMangaListPage(client.get(url.build()))
+        return parseMangaListPage(client.get(url.build(), Fetch.DOCUMENT))
     }
 
     private fun parseMangaListPage(response: Response): MangasPage {
@@ -127,7 +128,7 @@ abstract class MissKon :
         fetchDetails: Boolean,
         fetchChapters: Boolean,
     ): SMangaUpdate {
-        val document = client.get(getMangaUrl(manga)).asJsoup()
+        val document = client.get(getMangaUrl(manga), Fetch.DOCUMENT).asJsoup()
         val updatedManga = parseMangaDetails(document)
         val updatedChapters = parseChapterList(document, manga.url)
         return SMangaUpdate(updatedManga, updatedChapters)
@@ -193,7 +194,7 @@ abstract class MissKon :
     override val supportsRelatedMangas get() = true
 
     override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> {
-        val document = client.get(getMangaUrl(manga)).asJsoup()
+        val document = client.get(getMangaUrl(manga), Fetch.DOCUMENT).asJsoup()
         return document.select(".content > .yarpp-related a.yarpp-thumbnail").map { element ->
             SManga.create().apply {
                 setUrlWithoutDomain(element.attr("abs:href"))
@@ -208,7 +209,7 @@ abstract class MissKon :
     private val imageListSelector = "div.post-inner > div.entry > p > img"
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val document = client.get(getChapterUrl(chapter)).asJsoup()
+        val document = client.get(getChapterUrl(chapter), Fetch.DOCUMENT).asJsoup()
         return if (preferences.splitPages) {
             pageListParse(document)
         } else {
@@ -230,7 +231,7 @@ abstract class MissKon :
         coroutineScope {
             chapterPage += pages.map { url ->
                 async(Dispatchers.IO) {
-                    parseImageList(client.get(url).asJsoup())
+                    parseImageList(client.get(url, Fetch.DOCUMENT).asJsoup())
                 }
             }.awaitAll().flatten()
         }
@@ -254,7 +255,7 @@ abstract class MissKon :
 
     override val supportsFilterFetching get() = true
 
-    override suspend fun fetchFilterData(): JsonElement = client.get("$baseUrl/sets/").asJsoup()
+    override suspend fun fetchFilterData(): JsonElement = client.get("$baseUrl/sets/", Fetch.DOCUMENT).asJsoup()
         .select(".entry .tag-counterz a[href*=/tag/]")
         .map {
             Pair(

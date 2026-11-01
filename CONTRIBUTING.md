@@ -818,8 +818,8 @@ val response = client.post("$baseUrl/api/search", apiHeaders, Fetch.XHR, body)
   for you.
 - With a `User-Agent` that names neither Chrome nor Firefox (an app's own API client) no browser headers are added,
   so a `Fetch` is fine there too.
-- `get` and `post` without a `Fetch` are deprecated; they send the request as built, like `Fetch.NONE`. `put` and
-  `head` send it as built too.
+- `get` and `post` always take a `Fetch`; pass `Fetch.NONE` for a request that has to go out as built. `put` and
+  `head` send it as built.
 - For a request the helpers don't cover (another method, or one built from another request), build the `Request`
   yourself and send it with `client.call(request)`, which takes `ensureSuccess` too. It goes out as built unless you
   set a `Fetch` on the builder with `.fetch(Fetch.XHR)` and so on.
@@ -1055,7 +1055,7 @@ val request = graphQLGet(
 Inside a `KeiSource`, use the suspend `OkHttpClient` overload instead: it sends the request and
 returns the `Response`, taking the source's own `headers` when none are passed. `ensureSuccess`
 behaves as in [HTTP requests](#http-requests---okhttpclientget--post--put--head), and it
-additionally takes a `cacheControl`, defaulting to a 10-minute max-age, and a `fetch`, defaulting to `Fetch.NONE`.
+additionally takes a `cacheControl`, defaulting to a 10-minute max-age, and a required `fetch`, passed by name.
 
 ```kotlin
 val data = client.graphQLGet(
@@ -1362,7 +1362,7 @@ Optional overrides (each has a working default; override only when your source n
 | `fun getHomeUrl(): String`                                            | Returns `baseUrl`.                                              | The browse screen's "Open in WebView" action should land somewhere other than `baseUrl` (e.g. the source's real site differs from the API host used as `baseUrl`).                                      |
 | `suspend fun getImageUrl(page: Page): String`                         | Not called unless a `Page.imageUrl` is empty.                   | A page's image URL can't be determined upfront in `getPageList` and must be resolved lazily once the chapter is opened - see [Chapter Pages](#chapter-pages). Make your request with `client` and return the URL directly. |
 | `fun getImageRequest(page: Page): Request`                            | A GET of `page.imageUrl` with `headers`.                        | The image needs other headers or a different URL. A GET without a `Fetch` is sent with `imageFetch`. See [Browser headers](#browser-headers). |
-| `val imageFetch: Fetch`                                               | `Fetch.NONE`.                                                   | The site's page images or covers need browser image headers: `Fetch.IMAGE` sends them.                                                                                                  |
+| `val imageFetch: Fetch`                                               | `Fetch.IMAGE`.                                                  | The site's page images or covers must go out as built, without browser image headers: `Fetch.NONE`.                                                                                     |
 | `fun getMangaUrl(manga: SManga): String`                              | Returns `baseUrl + manga.url`.                                  | That doesn't land on the manga's real page. Since `SManga.url` is recommended to hold just an ID/slug rather than a full relative path (see [Misc notes](#misc-notes)), the default concatenation often isn't a valid path by itself - override to build the real URL from the ID/slug (e.g. `"$baseUrl/manga/${manga.url}"`).      |
 | `fun getChapterUrl(chapter: SChapter): String`                        | Returns `baseUrl + chapter.url`.                                | Same reasoning as `getMangaUrl`, for chapters.                                                                                                                                                            |
 | `suspend fun getMangaByUrl(url: HttpUrl): SManga?`                    | Throws (unimplemented).                                         | Almost always: this backs URL search (pasting/opening a manga link for this source). Return `null` if the URL isn't recognized - leaving this unimplemented means URL search crashes for this source.  |
@@ -1402,11 +1402,11 @@ Behavior `KeiSource` gives you for free:
   - On a `Request.Builder`, set it with `.fetch(Fetch.XHR)` and so on. In an interceptor, change a request with
     `request.newBuilder()`; a new `Request.Builder()` drops its `Fetch`.
   - Page images (GETs from `getImageRequest` without a `Fetch`) and the covers the app loads are sent with
-    `imageFetch`, `Fetch.NONE` by default; override it with `Fetch.IMAGE` to send browser headers. The app's covers are
+    `imageFetch`, `Fetch.IMAGE` by default; override it with `Fetch.NONE` to send them as built. The app's covers are
     recognised as GETs with `Cache-Control: no-store` and no `Fetch`, so don't put that on your own requests without
     one.
-  - Headers a request already has are kept, fetch metadata the source sets itself included, and a request without
-    `Origin` gets none. `from` replaces the `Referer`, also on each redirect.
+  - Headers a request already has are kept, fetch metadata and `Origin` the source sets itself included; `Origin` is
+    otherwise added where browsers send one (requests other than GET and HEAD, cross-origin XHRs). `from` replaces the `Referer`, also on each redirect.
 - **Filter fetching:** if a source needs to fetch its filter options from the network, set
   `supportsFilterFetching = true`, implement `fetchFilterData()` (returns the raw filter data as a
   `JsonElement`, called on a background coroutine, attempted up to 3 times total on failure, and

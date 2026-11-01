@@ -19,7 +19,6 @@ import java.util.Calendar
 
 @Source
 abstract class MGKomik : KeiSource() {
-
     // ============================== Popular ===============================
 
     override suspend fun getPopularManga(page: Int): MangasPage {

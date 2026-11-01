@@ -16,6 +16,7 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import keiyoushi.annotation.Source
+import keiyoushi.network.Fetch
 import keiyoushi.network.get
 import keiyoushi.network.rateLimit
 import keiyoushi.source.KeiSource
@@ -83,7 +84,7 @@ abstract class DeviantArt :
             }
             .build()
 
-        return parseMangaListPage(client.get(url))
+        return parseMangaListPage(client.get(url, Fetch.XHR))
     }
 
     override suspend fun getLatestUpdates(page: Int): MangasPage = throw UnsupportedOperationException(SEARCH_FORMAT_MSG)
@@ -123,7 +124,7 @@ abstract class DeviantArt :
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
         val path = url.toGalleryPath(baseUrl) ?: return getArtByUrl(url)
         val link = "$baseUrl$path"
-        val document = client.get(link).asJsoup()
+        val document = client.get(link, Fetch.DOCUMENT).asJsoup()
 
         return parseGalleryDetails(document, link)
     }
@@ -134,7 +135,7 @@ abstract class DeviantArt :
             val username = matchGroups[1]
             val folderId = matchGroups[2].ifEmpty { "all" }
             val link = "$baseUrl/$username/gallery/$folderId"
-            val document = client.get(link).asJsoup()
+            val document = client.get(link, Fetch.DOCUMENT).asJsoup()
 
             return MangasPage(listOf(parseGalleryDetails(document, link)), false)
         }
@@ -143,7 +144,7 @@ abstract class DeviantArt :
             .addEncodedQueryParameter("q", query.trim())
             .build()
 
-        return parseMangaListPage(client.get(url))
+        return parseMangaListPage(client.get(url, Fetch.XHR))
     }
 
     private suspend fun getArtByUrl(url: HttpUrl): SManga? {
@@ -152,7 +153,7 @@ abstract class DeviantArt :
 
         val username = url.pathSegments[0]
         val artId = url.encodedPathSegments.getOrNull(2) ?: return null
-        val document = client.get("$baseUrl/$username/art/$artId").asJsoup()
+        val document = client.get("$baseUrl/$username/art/$artId", Fetch.DOCUMENT).asJsoup()
 
         return parseArtDetails(document)
     }
@@ -168,7 +169,7 @@ abstract class DeviantArt :
         val link = getMangaUrl(manga)
 
         if (!manga.url.contains("/gallery/")) {
-            val document = client.get(link).asJsoup()
+            val document = client.get(link, Fetch.DOCUMENT).asJsoup()
             return SMangaUpdate(
                 manga = parseArtDetails(document),
                 chapters = parseArtChapterList(document, link),
@@ -180,7 +181,7 @@ abstract class DeviantArt :
 
         coroutineScope {
             val mangaDeferred = if (fetchDetails) {
-                async { parseGalleryDetails(client.get(link).asJsoup(), link) }
+                async { parseGalleryDetails(client.get(link, Fetch.DOCUMENT).asJsoup(), link) }
             } else {
                 null
             }
@@ -252,12 +253,12 @@ abstract class DeviantArt :
             .addQueryParameter("q", query)
             .build()
 
-        val document = client.get(url).asJsoupXml()
+        val document = client.get(url, Fetch.XHR).asJsoupXml()
         val chapterList = parseToChapterList(document).toMutableList()
         var nextUrl = document.selectFirst("[rel=next]")?.absUrl("href")
 
         while (nextUrl != null) {
-            val newDocument = client.get(nextUrl).asJsoupXml()
+            val newDocument = client.get(nextUrl, Fetch.XHR).asJsoupXml()
             chapterList.addAll(parseToChapterList(newDocument))
 
             nextUrl = newDocument.selectFirst("[rel=next]")?.absUrl("href")
@@ -355,7 +356,7 @@ abstract class DeviantArt :
 
     override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> {
         val link = getMangaUrl(manga)
-        val document = client.get(link).asJsoup()
+        val document = client.get(link, Fetch.DOCUMENT).asJsoup()
 
         if (manga.url.contains("/gallery/")) {
             // Return other galleries of this user, from the page's state
@@ -462,7 +463,7 @@ abstract class DeviantArt :
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         val url = getChapterUrl(chapter).toHttpUrl()
-        val document = client.get(url).asJsoup()
+        val document = client.get(url, Fetch.DOCUMENT).asJsoup()
         val deviationId = url.pathSegments.last().substringAfterLast('-')
         val deviation = document.deviationState(deviationId)
         if (deviation == null || !deviation.isVideo) return document.parsePages(deviationId)

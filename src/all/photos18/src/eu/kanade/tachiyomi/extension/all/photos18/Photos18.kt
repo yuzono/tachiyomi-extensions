@@ -12,6 +12,7 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import keiyoushi.annotation.Source
+import keiyoushi.network.Fetch
 import keiyoushi.network.get
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.asJsoup
@@ -39,9 +40,9 @@ abstract class Photos18 :
         followRedirects(false)
     }
 
-    override suspend fun getPopularManga(page: Int): MangasPage = parseMangaList(client.get("$baseUrlWithLang?sort=likes&page=$page"))
+    override suspend fun getPopularManga(page: Int): MangasPage = parseMangaList(client.get("$baseUrlWithLang?sort=likes&page=$page", Fetch.DOCUMENT))
 
-    override suspend fun getLatestUpdates(page: Int): MangasPage = parseMangaList(client.get("$baseUrlWithLang/sort/created?page=$page"))
+    override suspend fun getLatestUpdates(page: Int): MangasPage = parseMangaList(client.get("$baseUrlWithLang/sort/created?page=$page", Fetch.DOCUMENT))
 
     private fun parseMangaList(response: Response): MangasPage {
         val document = response.asJsoup()
@@ -82,7 +83,7 @@ abstract class Photos18 :
             }
         }
 
-        return parseMangaList(client.get(url.build()))
+        return parseMangaList(client.get(url.build(), Fetch.DOCUMENT))
     }
 
     override suspend fun fetchMangaUpdate(
@@ -97,7 +98,7 @@ abstract class Photos18 :
             chapter_number = 0f
         }
         return SMangaUpdate(
-            manga = if (fetchDetails) parseMangaDetails(client.get(getMangaUrl(manga)).asJsoup()) else manga,
+            manga = if (fetchDetails) parseMangaDetails(client.get(getMangaUrl(manga), Fetch.DOCUMENT).asJsoup()) else manga,
             chapters = listOf(chapter),
         )
     }
@@ -109,7 +110,7 @@ abstract class Photos18 :
         val segments = url.pathSegments.dropWhile { it == "zh-hans" }
         val id = segments.getOrNull(1)?.takeIf { segments[0] == "v" && it.isNotEmpty() } ?: return null
         val mangaUrl = "/v/$id"
-        return parseMangaDetails(client.get(baseUrlWithLang + mangaUrl).asJsoup()).apply {
+        return parseMangaDetails(client.get(baseUrlWithLang + mangaUrl, Fetch.DOCUMENT).asJsoup()).apply {
             this.url = mangaUrl
             initialized = true
         }
@@ -133,7 +134,7 @@ abstract class Photos18 :
     }
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val document = client.get(getChapterUrl(chapter)).asJsoup()
+        val document = client.get(getChapterUrl(chapter), Fetch.DOCUMENT).asJsoup()
         val images = document.select("div#content a img")
         return images.mapIndexed { index, image ->
             Page(index, imageUrl = image.attr("src"))
@@ -142,7 +143,7 @@ abstract class Photos18 :
 
     override val supportsRelatedMangas = true
     override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> {
-        val response = client.get(getMangaUrl(manga))
+        val response = client.get(getMangaUrl(manga), Fetch.DOCUMENT)
         return parseMangaList(response).mangas
     }
 
@@ -151,7 +152,7 @@ abstract class Photos18 :
     override val supportsFilterFetching get() = true
 
     override suspend fun fetchFilterData(): JsonElement {
-        val document = client.get("$baseUrlWithLang/node/keywords").asJsoup()
+        val document = client.get("$baseUrlWithLang/node/keywords", Fetch.DOCUMENT).asJsoup()
         return FilterData(
             categories = parseCategories(document),
             keywords = parseKeywords(document),

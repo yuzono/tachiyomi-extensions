@@ -153,8 +153,6 @@ abstract class CatharsisWorld : KeiSource() {
         }
     }
 
-    override val imageFetch = Fetch.IMAGE
-
     override fun getImageRequest(page: Page): Request = super.getImageRequest(page).newBuilder()
         .addHeader("X-Catharsis-Reader", "1")
         .build()

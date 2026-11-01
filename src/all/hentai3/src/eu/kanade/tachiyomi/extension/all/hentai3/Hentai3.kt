@@ -20,6 +20,7 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import keiyoushi.annotation.Source
+import keiyoushi.network.Fetch
 import keiyoushi.network.get
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.asJsoup
@@ -144,7 +145,7 @@ abstract class Hentai3 :
             page == 1 -> "$baseUrl/language/$searchLang?sort=$defaultPopularSort"
             else -> "$baseUrl/language/$searchLang/$page?sort=$defaultPopularSort"
         }
-        val doc = client.get(url).asJsoup()
+        val doc = client.get(url, Fetch.DOCUMENT).asJsoup()
         return parseMangasPage(doc)
     }
 
@@ -154,7 +155,7 @@ abstract class Hentai3 :
         } else {
             "$baseUrl/search?q=pages%3A>0&page=$page"
         }
-        val doc = client.get(url).asJsoup()
+        val doc = client.get(url, Fetch.DOCUMENT).asJsoup()
         return parseMangasPage(doc)
     }
 
@@ -181,7 +182,7 @@ abstract class Hentai3 :
         query.startsWith(PREFIX_ID_SEARCH) -> MangasPage(listOf(searchMangaById(query.removePrefix(PREFIX_ID_SEARCH))), false)
         else -> {
             val url = searchMangaRequestUrl(page, query, filters)
-            val response = client.get(url)
+            val response = client.get(url, Fetch.DOCUMENT)
             val document = response.asJsoup()
 
             if (response.request.url.toString().contains("/login") &&
@@ -196,7 +197,7 @@ abstract class Hentai3 :
 
     private suspend fun searchMangaById(id: String): SManga {
         if (id.toIntOrNull() == null) throw Exception("Incorrect ID")
-        val document = client.get("$baseUrl/d/$id").asJsoup()
+        val document = client.get("$baseUrl/d/$id", Fetch.DOCUMENT).asJsoup()
         return parseMangaDetails(document)
     }
 
@@ -323,7 +324,7 @@ abstract class Hentai3 :
         fetchChapters: Boolean,
     ): SMangaUpdate {
         val mangaUrl = getMangaUrl(manga)
-        val document = client.get(mangaUrl).asJsoup()
+        val document = client.get(mangaUrl, Fetch.DOCUMENT).asJsoup()
 
         val updatedManga = parseMangaDetails(document)
         val updatedChapters = parseChapterList(document, mangaUrl)
@@ -340,12 +341,12 @@ abstract class Hentai3 :
         popularMangaSelector
     }
 
-    override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> = client.get(getMangaUrl(manga)).asJsoup()
+    override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> = client.get(getMangaUrl(manga), Fetch.DOCUMENT).asJsoup()
         .select(relatedMangaListSelector()).map(::popularMangaFromElement)
 
     // Pages
     override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val doc = client.get(getChapterUrl(chapter)).asJsoup()
+        val doc = client.get(getChapterUrl(chapter), Fetch.DOCUMENT).asJsoup()
         return doc.select("#thumbnail-gallery .single-thumb a > img")
             .mapIndexed { index, image ->
                 Page(index, imageUrl = image.getImage())

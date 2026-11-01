@@ -35,8 +35,6 @@ abstract class AethonWebcomics :
 
     override val supportsFilterFetching = true
 
-    override val imageFetch = Fetch.IMAGE
-
     private val preferences by getPreferencesLazy()
 
     override fun OkHttpClient.Builder.configureClient() = rateLimit(2) { it.host == baseUrl.toHttpUrl().host }

@@ -121,7 +121,7 @@ abstract class Masonry : KeiSource() {
     protected suspend fun getListingPage(path: String, page: Int): MangasPage {
         val mangaFromElement = listingMangaFromElement(path)
         val apiUrl = lastListingApiUrl?.takeIf { page > 1 && it.first == path }?.second ?: run {
-            val document = client.get("$baseUrl/$path").asJsoup()
+            val document = client.get("$baseUrl/$path", Fetch.DOCUMENT).asJsoup()
             document.gridApiUrl()
                 ?: return MangasPage(document.select(popularMangaSelector()).map(mangaFromElement), false)
         }
@@ -218,7 +218,7 @@ abstract class Masonry : KeiSource() {
     private suspend fun getSearchPage(page: Int, url: (Int) -> HttpUrl): MangasPage {
         var current = page
         while (true) {
-            val result = parseSearchMangaList(client.get(url(current)).asJsoup())
+            val result = parseSearchMangaList(client.get(url(current), Fetch.DOCUMENT).asJsoup())
             if (result.mangas.isNotEmpty() || !result.hasNextPage) return result
             current++
         }
@@ -262,7 +262,7 @@ abstract class Masonry : KeiSource() {
 
     override val supportsFilterFetching = true
 
-    protected open suspend fun fetchTags(): List<Tag> = client.get("$baseUrl/updates/").asJsoup()
+    protected open suspend fun fetchTags(): List<Tag> = client.get("$baseUrl/updates/", Fetch.DOCUMENT).asJsoup()
         .select("#filter-a section[data-slot=tags] label")
         .map {
             Tag(
@@ -272,7 +272,7 @@ abstract class Masonry : KeiSource() {
         }
 
     // The models filter is only on the models filter listing, not on /models/. Age has its own fixed filter.
-    protected open suspend fun fetchModelFilters(): List<ModelFilterGroup> = client.get("$baseUrl/models/sort/filter/ord/popular/age/0/country/0/tags/0/mpage/1/").asJsoup()
+    protected open suspend fun fetchModelFilters(): List<ModelFilterGroup> = client.get("$baseUrl/models/sort/filter/ord/popular/age/0/country/0/tags/0/mpage/1/", Fetch.DOCUMENT).asJsoup()
         .select("#filter-b section[data-slot=tags], #filter-b section[data-slot=country]")
         .map { section ->
             ModelFilterGroup(
@@ -289,7 +289,7 @@ abstract class Masonry : KeiSource() {
         }
 
     // Boards are user-made pinboards, thousands of them, so offer the trending, newest and top ones shown on /pinboards/
-    protected open suspend fun fetchBoards(): List<Tag> = client.get("$baseUrl/pinboards/").asJsoup()
+    protected open suspend fun fetchBoards(): List<Tag> = client.get("$baseUrl/pinboards/", Fetch.DOCUMENT).asJsoup()
         .select(".list-gallery figure > a[href*=/pinboard/]")
         .map {
             Tag(
@@ -402,7 +402,7 @@ abstract class Masonry : KeiSource() {
         }
     } else {
         // Details and chapters both come from the same gallery or collection page - fetch it once regardless of flags.
-        val document = client.get(getMangaUrl(manga)).asJsoup()
+        val document = client.get(getMangaUrl(manga), Fetch.DOCUMENT).asJsoup()
         if (manga.url.startsWith("/collections/")) {
             SMangaUpdate(
                 manga = collectionMangaDetailsParse(document, manga),
@@ -423,7 +423,7 @@ abstract class Masonry : KeiSource() {
               also will list chapters in timely manner */
             addPathSegments("sort/latest")
         }.build()
-        return fetchGridChapterList(client.get(url).asJsoup(), manga)
+        return fetchGridChapterList(client.get(url, Fetch.DOCUMENT).asJsoup(), manga)
     }
 
     /** Model and collection pages only render their latest galleries, the rest load from their /gridapi/ infinite scroll. */
@@ -467,7 +467,7 @@ abstract class Masonry : KeiSource() {
     }
 
     protected open suspend fun fetchModelMangaDetails(manga: SManga): SManga {
-        val document = client.get(getMangaUrl(manga)).asJsoup()
+        val document = client.get(getMangaUrl(manga), Fetch.DOCUMENT).asJsoup()
         return SManga.create().apply {
             url = manga.url
             document.selectFirst("article.module-model")?.run {
@@ -528,7 +528,7 @@ abstract class Masonry : KeiSource() {
     /* Pages */
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val document = client.get(getChapterUrl(chapter)).asJsoup()
+        val document = client.get(getChapterUrl(chapter), Fetch.DOCUMENT).asJsoup()
         return pageListParse(document)
     }
 

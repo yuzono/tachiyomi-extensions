@@ -30,8 +30,6 @@ abstract class Sacachispa :
     KeiSource(),
     ConfigurableSource {
 
-    override val imageFetch = Fetch.IMAGE
-
     override val supportsFilterFetching = true
 
     private val preferences by getPreferencesLazy()

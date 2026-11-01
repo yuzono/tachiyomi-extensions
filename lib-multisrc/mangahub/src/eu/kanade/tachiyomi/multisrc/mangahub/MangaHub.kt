@@ -7,6 +7,7 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
+import keiyoushi.network.Fetch
 import keiyoushi.network.addCookie
 import keiyoushi.network.get
 import keiyoushi.network.post
@@ -67,20 +68,11 @@ abstract class MangaHub : KeiSource() {
     private val apiErrorRegex = Regex("""rate\s*limit|api\s*key\s*(?:invalid)?|encryption(?:\s*error)?""", RegexOption.IGNORE_CASE)
 
     override fun Headers.Builder.configureHeaders() = this
-        .set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9")
         .set("Accept-Language", "en-US,en;q=0.5")
         .set("DNT", "1")
-        .set("Sec-Fetch-Dest", "document")
-        .set("Sec-Fetch-Mode", "navigate")
-        .set("Sec-Fetch-Site", "same-origin")
-        .set("Upgrade-Insecure-Requests", "1")
 
     private val apiHeaders get() = headersBuilder()
         .set("Accept", "application/json")
-        .set("Sec-Fetch-Dest", "empty")
-        .set("Sec-Fetch-Mode", "cors")
-        .set("Sec-Fetch-Site", "cross-site")
-        .removeAll("Upgrade-Insecure-Requests")
 
     private suspend inline fun <reified T> fetchGraphQL(
         query: String,
@@ -116,7 +108,7 @@ abstract class MangaHub : KeiSource() {
             .set("x-mhub-access", apiKey)
             .build()
 
-        return client.post("$baseApiUrl/graphql", requestHeaders, body)
+        return client.post("$baseApiUrl/graphql", requestHeaders, Fetch.XHR, body)
     }
 
     private val refreshMutex = Mutex()
@@ -136,7 +128,7 @@ abstract class MangaHub : KeiSource() {
 
         for (i in 1..2) {
             val query = if (i == 1) "?reloadKey=1" else ""
-            val response = noRedirectClient.get("$url$query", refreshHeaders, ensureSuccess = false)
+            val response = noRedirectClient.get("$url$query", refreshHeaders, Fetch.DOCUMENT, ensureSuccess = false)
             val returnedKey = response.headers("Set-Cookie")
                 .firstNotNullOfOrNull { apiRegex.find(it)?.groupValues?.get(1) }
             response.close()
@@ -352,7 +344,7 @@ abstract class MangaHub : KeiSource() {
     }
 
     private suspend fun decryptPages(pages: String): String {
-        val cryptoParams = client.get("$baseUrl/api/chapter-crypto", apiHeaders.build())
+        val cryptoParams = client.get("$baseUrl/api/chapter-crypto", apiHeaders.build(), Fetch.XHR)
             .parseAs<ChapterCryptoDto>()
 
         val parts = pages.split(":")
