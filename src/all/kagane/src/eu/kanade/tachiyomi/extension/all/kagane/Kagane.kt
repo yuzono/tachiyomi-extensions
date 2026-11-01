@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.extension.all.kagane
 
+import android.util.LruCache
 import androidx.preference.ListPreference
 import androidx.preference.MultiSelectListPreference
 import androidx.preference.PreferenceScreen
@@ -40,8 +41,12 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.Response
 import okio.IOException
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Instant
 
 @Source
 abstract class Kagane :
@@ -60,12 +65,13 @@ abstract class Kagane :
         rateLimit(3)
     }
 
+    // The image host 404s without the site's Origin
+    override val imageFetch = Fetch.XHR
+
     private fun refreshTokenInterceptor(chain: Interceptor.Chain): Response {
         val request = chain.request()
         val url = request.url
-        if (!url.queryParameterNames.contains("token")) {
-            return chain.proceed(request)
-        }
+        val urlToken = url.queryParameter("token") ?: return chain.proceed(request)
 
         val chapterId = if (url.pathSegments[4] == "datasaver") {
             url.pathSegments[5]
@@ -73,27 +79,42 @@ abstract class Kagane :
             url.pathSegments[4]
         }
 
-        var response = chain.proceed(
-            request.newBuilder()
-                .url(url.newBuilder().setQueryParameter("token", accessToken).build())
-                .build(),
-        )
+        val token = pageTokens.get(chapterId)?.value ?: urlToken
+        val response = chain.proceed(request.withToken(token))
 
-        if (response.code == 401 || response.code == 403 || response.code == 507) {
-            response.close()
-            val challenge = runBlocking {
-                runCatching { getChallengeResponse(chapterId) }
-            }.getOrElse { throw IOException("Failed to retrieve token") }
-
-            accessToken = challenge.accessToken
-            response = chain.proceed(
-                request.newBuilder()
-                    .url(url.newBuilder().setQueryParameter("token", accessToken).build())
-                    .build(),
-            )
+        if (response.code != 401 && response.code != 403 && response.code != 507) {
+            return response
         }
 
-        return response
+        response.close()
+        if (response.code == 403 && response.header("Content-Type").orEmpty().startsWith("text/html")) {
+            throw IOException("${url.host} is blocking this network, try another connection")
+        }
+
+        return chain.proceed(request.withToken(refreshToken(chapterId, token)))
+    }
+
+    private fun Request.withToken(token: String): Request = newBuilder()
+        .url(url.newBuilder().setQueryParameter("token", token).build())
+        .build()
+
+    @Synchronized
+    private fun refreshToken(chapterId: String, rejected: String): String {
+        val known = pageTokens.get(chapterId)
+        if (known != null && known.value != rejected) return known.value
+
+        val now = Clock.System.now()
+        if (known != null && now - known.issuedAt < TOKEN_REFRESH_INTERVAL) {
+            throw IOException("Failed to retrieve token")
+        }
+
+        pageTokens.put(chapterId, PageToken(rejected, now))
+        val challenge = runBlocking {
+            runCatching { getChallengeResponse(chapterId) }
+        }.getOrElse { throw IOException("Failed to retrieve token") }
+
+        pageTokens.put(chapterId, PageToken(challenge.accessToken, now))
+        return challenge.accessToken
     }
 
     // ============================== Popular ===============================
@@ -333,7 +354,7 @@ abstract class Kagane :
     }
 
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
-        if (url.host != baseUrl.toHttpUrl().host) return null
+        if (url.host !in LINK_HOSTS) return null
         val segments = url.pathSegments
         if (segments.size < 2) return null
         val seriesId = segments[1].takeLast(36)
@@ -440,7 +461,8 @@ abstract class Kagane :
         val chapterId = "$baseUrl${chapter.url}".toHttpUrl().pathSegments.last().takeLast(36)
         val challengeResp = getChallengeResponse(chapterId)
 
-        accessToken = challengeResp.accessToken
+        val accessToken = challengeResp.accessToken
+        pageTokens.put(chapterId, PageToken(accessToken, Clock.System.now()))
         val cacheUrl = challengeResp.cacheUrl
 
         val pageList = challengeResp.manifest?.pages ?: emptyList()
@@ -459,21 +481,23 @@ abstract class Kagane :
         }
     }
 
-    private var accessToken: String = ""
+    private class PageToken(val value: String, val issuedAt: Instant)
+
+    // Tokens are valid for one book only
+    private val pageTokens = LruCache<String, PageToken>(16)
+
     private var integrityToken: String = ""
-    private var integrityExp = System.currentTimeMillis()
+    private var integrityExp = Instant.DISTANT_PAST
 
     private suspend fun getIntegrityToken(): String {
-        if (integrityExp < System.currentTimeMillis()) {
-            client.get("$baseUrl/", Fetch.DOCUMENT).close()
-
+        if (integrityExp < Clock.System.now()) {
             val res = client.post(
                 "$baseUrl/api/integrity",
                 Fetch.XHR,
                 "".toJsonRequestBody(),
             ).parseAs<IntegrityDto>()
             integrityToken = res.token
-            integrityExp = res.exp * 1000
+            integrityExp = Instant.fromEpochSeconds(res.exp)
         }
 
         return integrityToken
@@ -684,6 +708,8 @@ abstract class Kagane :
     // ============================= Utilities ==============================
 
     companion object {
+        private val TOKEN_REFRESH_INTERVAL = 1.minutes
+        private val LINK_HOSTS = setOf("kagane.cx", "kagane.moe", "kagane.net")
         private const val MAX_SOURCE_FILTER = 50
         private const val CONTENT_RATING = "pref_content_rating"
 
