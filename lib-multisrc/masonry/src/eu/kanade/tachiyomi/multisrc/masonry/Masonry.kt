@@ -8,6 +8,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
+import keiyoushi.network.Fetch
 import keiyoushi.network.get
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.asJsoup
@@ -59,15 +60,12 @@ abstract class Masonry : KeiSource() {
      *   => /archive/page/2/
      *   => /updates/sort/filter/ord/newest/content/0/quality/0/tags/0/mpage/2/
      *
-     * Some sites don't support page for /updates/sort/newest/
-     *  - JoyMii
-     *  - XArt (doesn't have any content at all)
-     *  - FemJoy
-     *  - FTVHunter
-     * This URL is often not showing consistent contents
+     * Some sites (FemJoy, FTVHunter, JoyMii) only show placeholders on /archive/ and redirect every
+     * /updates/sort/newest/mpage/<#>/ to the first page, so they use the /gridapi/ endpoint behind
+     * the site's infinite scroll instead.
      */
     protected open fun latestUpdatesUrl(page: Int): String = if (useAlternativeLatestRequest) {
-        "$baseUrl/updates/sort/newest/mpage/$page/"
+        "$baseUrl/gridapi/?content=updates&sort=newest&mpage=$page"
     } else {
         "$baseUrl/archive/page/$page/"
     }
@@ -116,8 +114,13 @@ abstract class Masonry : KeiSource() {
     }
 
     override suspend fun getLatestUpdates(page: Int): MangasPage {
-        val document = client.get(latestUpdatesUrl(page)).asJsoup()
-        return parseMangaList(document)
+        if (!useAlternativeLatestRequest) {
+            return parseMangaList(client.get(latestUpdatesUrl(page)).asJsoup())
+        }
+        // /gridapi/ returns bare gallery tiles, and nothing but a "no more" notice past the last page
+        val document = client.get(latestUpdatesUrl(page), Fetch.XHR).asJsoup()
+        val mangas = document.select(gallerySelector).map(::popularMangaFromElement)
+        return MangasPage(mangas, mangas.isNotEmpty())
     }
 
     /**
@@ -234,14 +237,7 @@ abstract class Masonry : KeiSource() {
                             }
                         } else {
                             when (sortFilter.selected) {
-                                "newest" -> {
-                                    // Using a more effective request comparing to the /updates/sort/newest/ (some sites doesn't support)
-                                    if (useAlternativeLatestRequest) {
-                                        addPathSegments("updates/sort/newest/mpage/$page")
-                                    } else {
-                                        addPathSegments("archive/page/$page/")
-                                    }
-                                }
+                                "newest" -> return getLatestUpdates(page)
 
                                 "popular" -> {
                                     // Using a more effective request comparing to the /updates/sort/popular/ (doesn't support page)
