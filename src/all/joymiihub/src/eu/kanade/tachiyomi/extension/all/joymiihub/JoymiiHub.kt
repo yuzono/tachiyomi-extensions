@@ -4,4 +4,6 @@ import eu.kanade.tachiyomi.multisrc.masonry.Masonry
 import keiyoushi.annotation.Source
 
 @Source
-abstract class JoymiiHub : Masonry()
+abstract class JoymiiHub : Masonry() {
+    override val useAlternativeLatestRequest = true
+}

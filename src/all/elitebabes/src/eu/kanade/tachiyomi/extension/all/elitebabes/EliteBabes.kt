@@ -1,9 +1,10 @@
 package eu.kanade.tachiyomi.extension.all.elitebabes
 
+import eu.kanade.tachiyomi.multisrc.masonry.Country
 import eu.kanade.tachiyomi.multisrc.masonry.Masonry
 import eu.kanade.tachiyomi.multisrc.masonry.SelectFilter
 import eu.kanade.tachiyomi.multisrc.masonry.SortFilter
-import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.multisrc.masonry.Tag
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -11,12 +12,18 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
-import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.annotation.Source
+import keiyoushi.network.get
+import keiyoushi.utils.asJsoup
 import keiyoushi.utils.firstInstanceOrNull
+import keiyoushi.utils.jsonInstance
+import keiyoushi.utils.parseAs
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.encodeToJsonElement
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.Request
-import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
@@ -83,116 +90,91 @@ abstract class EliteBabes : Masonry() {
 
     private class HighlightsFilter(highlights: List<Pair<String, String>>) : SelectFilter("Highlights", highlights)
 
-    class ChannelFilter(channels: List<Pair<String, String>>) : SelectFilter("Channels", channels)
+    class ChannelFilter(channels: List<Tag> = emptyList()) : SelectFilter("Channels", channels.map { it.name to it.uriPart })
 
-    @Volatile
-    private var channelsFetchAttempt = 0
+    class BoardFilter(boards: List<Tag> = emptyList()) : SelectFilter("Boards", boards.map { it.name to it.uriPart })
 
-    @Volatile
-    private var channelsFetching = false
-
-    @Volatile
-    private var channels = emptyList<Pair<String, String>>()
-
-    @Synchronized
-    private fun getChannels() {
-        if (channels.isNotEmpty() || channelsFetching || channelsFetchAttempt >= 3) return
-        channelsFetching = true
-        channelsFetchAttempt++
-        launchIO {
-            try {
-                channels = listOf(Pair("Off", "")) +
-                    client.newCall(GET("$baseUrl/erotic-art-channels/", headers)).execute()
-                        .use { it.asJsoup() }
-                        .select("ul.list-gallery figure > a")
-                        .map {
-                            Pair(
-                                it.select("img").attr("alt"),
-                                it.attr("href")
-                                    .removeSuffix("/")
-                                    .substringAfterLast("/"),
-                            )
-                        }
-            } catch (_: Exception) {
-            } finally {
-                channelsFetching = false
+    private suspend fun fetchChannels(): List<Tag> = listOf(Tag("Off", "")) +
+        client.get("$baseUrl/erotic-art-channels/").asJsoup()
+            .select("ul.list-gallery figure > a")
+            .map {
+                Tag(
+                    it.select("img").attr("alt"),
+                    it.attr("href").removeSuffix("/").substringAfterLast("/"),
+                )
             }
-        }
+
+    private suspend fun fetchBoards(): List<Tag> = listOf(Tag("Off", "")) +
+        client.get("$baseUrl/boards/").asJsoup()
+            .select("ul.list-gallery figure > a")
+            .map {
+                Tag(
+                    it.select("img").attr("alt"),
+                    it.attr("href").removeSuffix("/").substringAfterLast("/"),
+                )
+            }
+
+    @Serializable
+    class EliteBabesFilterData(
+        @Suppress("unused")
+        val tags: List<Tag> = emptyList(),
+        @Suppress("unused")
+        val modelTags: List<Tag> = emptyList(),
+        @Suppress("unused")
+        val modelCountries: List<Country> = emptyList(),
+        val channels: List<Tag> = emptyList(),
+        val boards: List<Tag> = emptyList(),
+    )
+
+    override suspend fun fetchFilterData(): JsonElement = coroutineScope {
+        val tagsDeferred = async { fetchTags() }
+        val modelDeferred = async { fetchModelTagsAndCountries() }
+        val channelsDeferred = async { fetchChannels() }
+        val boardsDeferred = async { fetchBoards() }
+
+        val tags = tagsDeferred.await()
+        val (modelTags, modelCountries) = modelDeferred.await()
+
+        jsonInstance.encodeToJsonElement(
+            EliteBabesFilterData(
+                tags = tags,
+                modelTags = modelTags,
+                modelCountries = modelCountries,
+                channels = channelsDeferred.await(),
+                boards = boardsDeferred.await(),
+            ),
+        )
     }
 
-    class BoardFilter(boards: List<Pair<String, String>>) : SelectFilter("Boards", boards)
+    override fun getFilterList(data: JsonElement?): FilterList {
+        val filterData = data?.parseAs<EliteBabesFilterData>()
 
-    @Volatile
-    private var boardsFetchAttempt = 0
-
-    @Volatile
-    private var boardsFetching = false
-
-    @Volatile
-    private var boards = emptyList<Pair<String, String>>()
-
-    @Synchronized
-    private fun getBoards() {
-        if (boards.isNotEmpty() || boardsFetching || boardsFetchAttempt >= 3) return
-        boardsFetching = true
-        boardsFetchAttempt++
-        launchIO {
-            try {
-                boards = listOf(Pair("Off", "")) +
-                    client.newCall(GET("$baseUrl/boards/", headers)).execute()
-                        .use { it.asJsoup() }
-                        .select("ul.list-gallery figure > a")
-                        .map {
-                            Pair(
-                                it.select("img").attr("alt"),
-                                it.attr("href")
-                                    .removeSuffix("/")
-                                    .substringAfterLast("/"),
-                            )
-                        }
-            } catch (_: Exception) {
-            } finally {
-                boardsFetching = false
-            }
-        }
-    }
-
-    override fun getFilterList(): FilterList {
-        getChannels()
-        getBoards()
-        val filters = listOf(
+        val filters = mutableListOf<Filter<*>>(
             Filter.Header("Highlights ignore Browse/Search, Tags, Models & Channels/Boards filters"),
             HighlightsFilter(highlights),
             Filter.Separator(),
-        ) + listOf(
             Filter.Header("Channels supports Sort but ignore Browse/Search, Tags Models & Boards filter"),
-            if (channels.isEmpty()) {
-                Filter.Header("Press 'reset' to attempt to load channels")
-            } else {
-                ChannelFilter(channels)
-            },
-            Filter.Separator(),
-        ) + listOf(
-            Filter.Header("Boards supports Sort but ignore Browse/Search, Tags & Models filter"),
-            if (boards.isEmpty()) {
-                Filter.Header("Press 'reset' to attempt to load boards")
-            } else {
-                BoardFilter(boards)
-            },
-            Filter.Separator(),
-        ) + super.getFilterList().list
+        )
+        filterData?.channels?.takeIf { it.isNotEmpty() }?.let { filters.add(ChannelFilter(it)) }
+
+        filters.add(Filter.Separator())
+        filters.add(Filter.Header("Boards supports Sort but ignore Browse/Search, Tags & Models filter"))
+        filterData?.boards?.takeIf { it.isNotEmpty() }?.let { filters.add(BoardFilter(it)) }
+        filters.add(Filter.Separator())
+
+        filters.addAll(super.getFilterList(data).list)
 
         return FilterList(filters)
     }
 
-    override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
+    override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
         val highlightsFilter = filters.firstInstanceOrNull<HighlightsFilter>() ?: HighlightsFilter(highlights)
-        val channelFilter = filters.firstInstanceOrNull<ChannelFilter>() ?: ChannelFilter(channels)
-        val boardFilter = filters.firstInstanceOrNull<BoardFilter>() ?: BoardFilter(boards)
+        val channelFilter = filters.firstInstanceOrNull<ChannelFilter>() ?: ChannelFilter()
+        val boardFilter = filters.firstInstanceOrNull<BoardFilter>() ?: BoardFilter()
         val sortFilter = filters.firstInstanceOrNull<SortFilter>() ?: SortFilter()
 
-        return when {
-            highlightsFilter.state != 0 -> GET(highlightsFilter.selected, headers)
+        val document = when {
+            highlightsFilter.state != 0 -> client.get(highlightsFilter.selected)
             channelFilter.state != 0 -> {
                 val channelUri = channelFilter.selected
                 val sortUri = "s"
@@ -209,7 +191,7 @@ abstract class EliteBabes : Masonry() {
                     }
                 }.build()
 
-                GET(url, headers)
+                client.get(url)
             }
             boardFilter.state != 0 -> {
                 val boardUri = boardFilter.selected
@@ -224,10 +206,12 @@ abstract class EliteBabes : Masonry() {
                     }
                 }.build()
 
-                GET(url, headers)
+                client.get(url)
             }
-            else -> super.searchMangaRequest(page, query, filters)
-        }
+            else -> return super.getSearchMangaList(page, query, filters)
+        }.asJsoup()
+
+        return parseSearchMangaList(document)
     }
 
     /**
@@ -250,24 +234,19 @@ abstract class EliteBabes : Masonry() {
         Pair("Pins", "list_item"),
     )
 
-    override fun searchMangaParse(response: Response): MangasPage {
-        getChannels()
-        getBoards()
-        val requestUrl = response.request.url.toString()
+    override fun parseSearchMangaList(document: Document): MangasPage {
+        val requestUrl = document.location()
         return when {
             highlights.any { it.second == requestUrl } -> {
                 /* Handle filter for highlights */
                 MangasPage(
-                    mangas = response.asJsoup().select("div.item a[href]:has(img)")
-                        .map { element -> highlightMangaFromElement(element) },
+                    mangas = document.select("div.item a[href]:has(img)")
+                        .map(::highlightMangaFromElement),
                     hasNextPage = false,
                 )
             }
-            response.request.url.toString().contains("/collections/") -> {
-                val mangaFromElement = ::collectionMangaFromElement
-
-                val document = response.asJsoup()
-                val mangas = document.select(popularMangaSelector()).map(mangaFromElement)
+            requestUrl.contains("/collections/") -> {
+                val mangas = document.select(popularMangaSelector()).map(::collectionMangaFromElement)
                 val hasNextPage = document.selectFirst(popularMangaNextPageSelector()) != null
                 MangasPage(mangas, hasNextPage)
             }
@@ -276,17 +255,14 @@ abstract class EliteBabes : Masonry() {
              - pins browsing
              - pin search
               They all return pin-entries */
-            response.request.url.toString().contains("/(e|pins|list_item)/".toRegex()) -> {
-                val mangaFromElement = ::pinMangaFromElement
-
-                val document = response.asJsoup()
+            requestUrl.contains("/(e|pins|list_item)/".toRegex()) -> {
                 val mangas =
                     document.select("$galleryListSelector > li:not(:has(.icon-play, a[href*='/video/']))")
-                        .map { element -> mangaFromElement(element) }
+                        .map(::pinMangaFromElement)
                 val hasNextPage = document.selectFirst(popularMangaNextPageSelector()) != null
                 MangasPage(mangas, hasNextPage)
             }
-            else -> super.searchMangaParse(response)
+            else -> super.parseSearchMangaList(document)
         }
     }
 
@@ -317,16 +293,17 @@ abstract class EliteBabes : Masonry() {
         update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
     }
 
-    override fun mangaDetailsParse(response: Response): SManga = when {
-        response.request.url.toString().contains("/collection/nr/") ->
-            collectionMangaDetailsParse(response.asJsoup())
-        response.request.url.toString().contains("/pin/") ->
-            pinMangaDetailsParse(response.asJsoup())
+    override fun parseMangaDetails(document: Document, manga: SManga): SManga = when {
+        manga.url.contains("/collection/nr/") ->
+            collectionMangaDetailsParse(document, manga)
+        manga.url.contains("/pin/") ->
+            pinMangaDetailsParse(document, manga)
         else ->
-            super.mangaDetailsParse(response)
+            super.parseMangaDetails(document, manga)
     }
 
-    private fun collectionMangaDetailsParse(document: Document) = SManga.create().apply {
+    private fun collectionMangaDetailsParse(document: Document, manga: SManga) = SManga.create().apply {
+        url = manga.url
         document.selectFirst("article.module-model")?.run {
             selectFirst(".header-model").run {
                 title = selectFirst("h1")!!.text()
@@ -339,7 +316,8 @@ abstract class EliteBabes : Masonry() {
         status = SManga.ONGOING
     }
 
-    private fun pinMangaDetailsParse(document: Document): SManga = SManga.create().apply {
+    private fun pinMangaDetailsParse(document: Document, manga: SManga): SManga = SManga.create().apply {
+        url = manga.url
         thumbnail_url = document.selectFirst("figure > img")?.imgAttr()
         title = document.select("figure .img-overlay > h1").text()
         genre = document.select("figure .img-overlay > p > a[href*='/e/']").text().removePrefix("@")
@@ -348,16 +326,16 @@ abstract class EliteBabes : Masonry() {
         status = SManga.COMPLETED
     }
 
-    override fun chapterListParse(response: Response): List<SChapter> = when {
-        response.request.url.toString().contains("/pin/") ->
+    override fun parseChapterList(document: Document, manga: SManga): List<SChapter> = when {
+        manga.url.contains("/pin/") ->
             listOf(
                 SChapter.create().apply {
                     name = "Photo"
-                    setUrlWithoutDomain(response.request.url.toString())
+                    url = manga.url
                 },
             )
         else ->
-            super.chapterListParse(response)
+            super.parseChapterList(document, manga)
     }
 
     override fun pageListParse(document: Document): List<Page> {

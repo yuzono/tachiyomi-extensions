@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.multisrc.masonry
 
 import eu.kanade.tachiyomi.source.model.Filter
+import kotlinx.serialization.Serializable
 
 abstract class SelectFilter(
     name: String,
@@ -13,7 +14,7 @@ abstract class SelectFilter(
 }
 
 class SortFilter : SelectFilter("Sort by", sortFilterOptions) {
-    fun getUriPartIfNeeded(channel: String) = when (channel) {
+    fun getUriPartIfNeeded(part: String) = when (part) {
         "updates" -> {
             when (selected) {
                 "trending" -> "" // Trending
@@ -38,19 +39,21 @@ private val sortFilterOptions = listOf(
 
 class SearchTypeFilter(options: List<Pair<String, String>>) : SelectFilter("Browse & Search for", options)
 
+@Serializable
 class Tag(val name: String, val uriPart: String)
 
 class TagCheckBox(name: String, val uriPart: String) : Filter.CheckBox(name)
 
-class TagsFilter(tags: List<Tag>) : Filter.Group<TagCheckBox>("Tags", tags.map { TagCheckBox(it.name, it.uriPart) })
+class TagsFilter(tags: List<Tag> = emptyList()) : Filter.Group<TagCheckBox>("Tags", tags.map { TagCheckBox(it.name, it.uriPart) })
 
-class ModelTagsFilter(tags: List<Tag>) : Filter.Group<TagCheckBox>("Model Tags", tags.map { TagCheckBox(it.name, it.uriPart) })
+class ModelTagsFilter(tags: List<Tag> = emptyList()) : Filter.Group<TagCheckBox>("Model Tags", tags.map { TagCheckBox(it.name, it.uriPart) })
 
+@Serializable
 class Country(val name: String, val uriPart: String)
 
 class CountryCheckBox(name: String, val uriPart: String) : Filter.CheckBox(name)
 
-class ModelCountriesFilter(countries: List<Country>) : Filter.Group<CountryCheckBox>("Countries", countries.map { CountryCheckBox(it.name, it.uriPart) })
+class ModelCountriesFilter(countries: List<Country> = emptyList()) : Filter.Group<CountryCheckBox>("Countries", countries.map { CountryCheckBox(it.name, it.uriPart) })
 
 class AgesFilter : SelectFilter("Age", ageFilterOptions)
 
@@ -58,3 +61,14 @@ private val ageFilterOptions = listOf(Pair("All Ages", "0")) +
     (19..50).map {
         Pair(it.toString(), it.toString())
     }
+
+/**
+ * Cached filter data fetched by [eu.kanade.tachiyomi.multisrc.masonry.Masonry.fetchFilterData].
+ * Extra fields added by subclasses' own filter data are ignored here thanks to `ignoreUnknownKeys`.
+ */
+@Serializable
+class MasonryFilterData(
+    val tags: List<Tag> = emptyList(),
+    val modelTags: List<Tag> = emptyList(),
+    val modelCountries: List<Country> = emptyList(),
+)
