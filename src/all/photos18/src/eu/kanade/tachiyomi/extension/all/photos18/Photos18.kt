@@ -109,7 +109,10 @@ abstract class Photos18 :
         val segments = url.pathSegments.dropWhile { it == "zh-hans" }
         val id = segments.getOrNull(1)?.takeIf { segments[0] == "v" && it.isNotEmpty() } ?: return null
         val mangaUrl = "/v/$id"
-        return parseMangaDetails(client.get(baseUrlWithLang + mangaUrl).asJsoup()).apply { this.url = mangaUrl }
+        return parseMangaDetails(client.get(baseUrlWithLang + mangaUrl).asJsoup()).apply {
+            this.url = mangaUrl
+            initialized = true
+        }
     }
 
     private fun parseMangaDetails(document: Document): SManga {
