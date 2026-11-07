@@ -34,12 +34,6 @@ import org.jsoup.select.Elements
  * - Support video via WebView
  */
 abstract class Masonry : KeiSource() {
-    /**
-     * Latest uses /archive/ (sorted by post ID) with its page links, but some sites (FemJoy, FTVHunter,
-     * JoyMii) only show placeholders there, so they use the newest listing (sorted by post date) instead.
-     */
-    protected open val useAlternativeLatestRequest = false
-
     protected open val galleryListSelector = ".list-gallery:not(.static)"
     protected open val gallerySelector = "figure"
     protected open val videoTitleSelector = ".icon-play, a[href*='/video/']"
@@ -78,7 +72,7 @@ abstract class Masonry : KeiSource() {
 
     /**
      * Listings only render their first page and load the rest from /gridapi/, the site's infinite scroll,
-     * which returns bare tiles and nothing past the last page. Text search and /archive/ still use page links.
+     * which returns bare tiles and nothing past the last page. Text search still uses page links.
      */
     private suspend fun fetchGridTiles(apiUrl: String, page: Int): Elements = client.get("$apiUrl&mpage=$page", Fetch.XHR).asJsoup().select(gallerySelector)
 
@@ -108,11 +102,8 @@ abstract class Masonry : KeiSource() {
 
     override suspend fun getPopularManga(page: Int): MangasPage = getGridPage(channelGridApiUrl("updates", "popular"), page)
 
-    override suspend fun getLatestUpdates(page: Int): MangasPage = if (useAlternativeLatestRequest) {
-        getGridPage(channelGridApiUrl("updates", "newest"), page)
-    } else {
-        parseMangaList(client.get("$baseUrl/archive/page/$page/").asJsoup())
-    }
+    // Not /archive/: Cloudflare serves it days stale on most sites, and only placeholders on some
+    override suspend fun getLatestUpdates(page: Int): MangasPage = getGridPage(channelGridApiUrl("updates", "newest"), page)
 
     /**
      * The /gridapi/ content browsed for popular/trending/newest:

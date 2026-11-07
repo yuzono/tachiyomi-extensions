@@ -4,6 +4,4 @@ import eu.kanade.tachiyomi.multisrc.masonry.Masonry
 import keiyoushi.annotation.Source
 
 @Source
-abstract class FemjoyHunter : Masonry() {
-    override val useAlternativeLatestRequest = true
-}
+abstract class FemjoyHunter : Masonry()
