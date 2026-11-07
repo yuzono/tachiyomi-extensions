@@ -105,7 +105,7 @@ abstract class Photos18 :
     override fun getMangaUrl(manga: SManga) = baseUrlWithLang + manga.url
 
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
-        if (url.host != baseUrl.toHttpUrl().host) return null
+        if (url.host.removePrefix("www.") != baseUrl.toHttpUrl().host.removePrefix("www.")) return null
         val segments = url.pathSegments.dropWhile { it == "zh-hans" }
         val id = segments.getOrNull(1)?.takeIf { segments[0] == "v" && it.isNotEmpty() } ?: return null
         val mangaUrl = "/v/$id"

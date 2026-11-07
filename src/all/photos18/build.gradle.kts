@@ -16,6 +16,8 @@ keiyoushi {
     }
 
     deeplink {
+        host("www.photos18.com")
+        host("photos18.com")
         path("/v/..*")
         path("/zh-hans/v/..*")
     }
