@@ -102,13 +102,12 @@ abstract class Photos18 :
 
     override fun getMangaUrl(manga: SManga) = baseUrlWithLang + manga.url
 
-    override suspend fun getMangaByUrl(url: HttpUrl): SManga {
-        val mangaUrl = url.toString().stripLang()
-        val manga = SManga.create().apply {
-            setUrlWithoutDomain(mangaUrl)
-        }
-        val document = client.get(getMangaUrl(manga)).asJsoup()
-        return parseMangaDetails(document).apply { setUrlWithoutDomain(mangaUrl) }
+    override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
+        if (url.host != baseUrl.toHttpUrl().host) return null
+        val segments = url.pathSegments.dropWhile { it == "zh-hans" }
+        val id = segments.getOrNull(1)?.takeIf { segments[0] == "v" && it.isNotEmpty() } ?: return null
+        val mangaUrl = "/v/$id"
+        return parseMangaDetails(client.get(baseUrlWithLang + mangaUrl).asJsoup()).apply { this.url = mangaUrl }
     }
 
     private fun parseMangaDetails(document: Document): SManga {
