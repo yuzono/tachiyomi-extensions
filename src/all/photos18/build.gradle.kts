@@ -16,6 +16,7 @@ keiyoushi {
     }
 
     deeplink {
-        path("/..*/v/..*")
+        path("/v/..*")
+        path("/zh-hans/v/..*")
     }
 }
