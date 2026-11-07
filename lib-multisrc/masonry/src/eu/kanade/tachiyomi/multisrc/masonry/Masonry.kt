@@ -178,9 +178,12 @@ abstract class Masonry : KeiSource() {
         // Filter listings only sort by popular or newest
         val order = sort.takeIf { it == "newest" } ?: "popular"
         val tags = (filters.firstInstanceOrNull<TagsFilter>() ?: TagsFilter()).state.filter { it.state }
-        val modelTags = (filters.firstInstanceOrNull<ModelTagsFilter>() ?: ModelTagsFilter()).state.filter { it.state }
+        val modelFilters = filters.filterIsInstance<ModelFilter>()
+        fun checkedModelValues(slot: String) = modelFilters.filter { it.slot == slot }
+            .flatMap { group -> group.state.filter { it.state }.map { it.uriPart } }
+        val modelTags = checkedModelValues("tags")
         val modelAgeFilter = filters.firstInstanceOrNull<AgesFilter>() ?: AgesFilter()
-        val modelCountries = (filters.firstInstanceOrNull<ModelCountriesFilter>() ?: ModelCountriesFilter()).state.filter { it.state }
+        val modelCountries = checkedModelValues("country")
 
         val path = when {
             tags.size == 1 -> "tag/${tags.first().uriPart}/sort/$sort/"
@@ -190,11 +193,11 @@ abstract class Masonry : KeiSource() {
 
             // Some model-tag won't support trending
             modelTags.size == 1 && modelAgeFilter.state == 0 && modelCountries.isEmpty() ->
-                "model-tag/${modelTags.first().uriPart}/sort/$sort/"
+                "model-tag/${modelTags.first()}/sort/$sort/"
 
             modelTags.isNotEmpty() || modelAgeFilter.state != 0 || modelCountries.isNotEmpty() -> {
-                val countries = modelCountries.joinToString("+") { it.uriPart }.ifEmpty { "0" }
-                val tagParts = modelTags.joinToString("+") { it.uriPart }.ifEmpty { "0" }
+                val countries = modelCountries.joinToString("+").ifEmpty { "0" }
+                val tagParts = modelTags.joinToString("+").ifEmpty { "0" }
                 "models/sort/filter/ord/$order/age/${modelAgeFilter.selected}/country/$countries/tags/$tagParts/mpage/1/"
             }
 
@@ -240,25 +243,24 @@ abstract class Masonry : KeiSource() {
             )
         }
 
-    // The models filter is only on the models filter listing, not on /models/
-    protected open suspend fun fetchModelTagsAndCountries(): Pair<List<Tag>, List<Country>> {
-        val document = client.get("$baseUrl/models/sort/filter/ord/popular/age/0/country/0/tags/0/mpage/1/").asJsoup()
-        val modelTags = document.select("#filter-b section[data-slot=tags] label")
-            .map {
-                Tag(
-                    "M: " + it.select(".txt").text(),
-                    it.select("input").attr("value"),
-                )
-            }
-        val modelCountries = document.select("#filter-b section[data-slot=country] label")
-            .map {
-                Country(
-                    it.select(".txt").text(),
-                    it.select("input").attr("value"),
-                )
-            }
-        return modelTags to modelCountries
-    }
+    // The models filter is only on the models filter listing, not on /models/. Age has its own fixed filter.
+    protected open suspend fun fetchModelFilters(): List<ModelFilterGroup> = client.get("$baseUrl/models/sort/filter/ord/popular/age/0/country/0/tags/0/mpage/1/").asJsoup()
+        .select("#filter-b section[data-slot=tags], #filter-b section[data-slot=country]")
+        .map { section ->
+            val slot = section.attr("data-slot")
+            ModelFilterGroup(
+                name = section.attr("data-label"),
+                slot = slot,
+                options = section.select("label").map {
+                    val name = it.select(".txt").text()
+                    Tag(
+                        // Model tags share names with gallery tags (Asian, Blonde...)
+                        if (slot == "tags") "M: $name" else name,
+                        it.select("input").attr("value"),
+                    )
+                },
+            )
+        }
 
     // Boards are user-made pinboards, thousands of them, so offer the trending, newest and top ones shown on /pinboards/
     protected open suspend fun fetchBoards(): List<Tag> = listOf(Tag("Off", "")) +
@@ -274,11 +276,10 @@ abstract class Masonry : KeiSource() {
 
     protected suspend fun fetchMasonryFilterData(): MasonryFilterData = coroutineScope {
         val tagsDeferred = async { fetchTags() }
-        val modelDeferred = async { fetchModelTagsAndCountries() }
+        val modelFiltersDeferred = async { fetchModelFilters() }
         val boardsDeferred = async { fetchBoards() }
 
-        val (modelTags, modelCountries) = modelDeferred.await()
-        MasonryFilterData(tagsDeferred.await(), modelTags, modelCountries, boardsDeferred.await())
+        MasonryFilterData(tagsDeferred.await(), modelFiltersDeferred.await(), boardsDeferred.await())
     }
 
     override suspend fun fetchFilterData(): JsonElement = fetchMasonryFilterData().toJsonElement()
@@ -304,8 +305,7 @@ abstract class Masonry : KeiSource() {
             filters += TagsFilter(filterData.tags)
             filters += Filter.Separator()
             filters += Filter.Header("Model filters are ignored when Tags filter is selected.\nTrending is supported if only 1 Model's tag is selected.")
-            filters += ModelTagsFilter(filterData.modelTags)
-            filters += ModelCountriesFilter(filterData.modelCountries)
+            filterData.modelFilters.mapTo(filters, ::ModelFilter)
         }
         filters += AgesFilter()
         filters += Filter.Separator()

@@ -1,7 +1,7 @@
 package eu.kanade.tachiyomi.extension.all.elitebabes
 
-import eu.kanade.tachiyomi.multisrc.masonry.Country
 import eu.kanade.tachiyomi.multisrc.masonry.Masonry
+import eu.kanade.tachiyomi.multisrc.masonry.ModelFilterGroup
 import eu.kanade.tachiyomi.multisrc.masonry.SelectFilter
 import eu.kanade.tachiyomi.multisrc.masonry.SortFilter
 import eu.kanade.tachiyomi.multisrc.masonry.Tag
@@ -102,14 +102,12 @@ abstract class EliteBabes : Masonry() {
     @Serializable
     class EliteBabesFilterData(
         @Suppress("unused")
-        val tags: List<Tag> = emptyList(),
+        val tags: List<Tag>,
         @Suppress("unused")
-        val modelTags: List<Tag> = emptyList(),
+        val modelFilters: List<ModelFilterGroup>,
         @Suppress("unused")
-        val modelCountries: List<Country> = emptyList(),
-        @Suppress("unused")
-        val boards: List<Tag> = emptyList(),
-        val channels: List<Tag> = emptyList(),
+        val boards: List<Tag>,
+        val channels: List<Tag>,
     )
 
     override suspend fun fetchFilterData(): JsonElement = coroutineScope {
@@ -118,8 +116,7 @@ abstract class EliteBabes : Masonry() {
 
         EliteBabesFilterData(
             tags = data.tags,
-            modelTags = data.modelTags,
-            modelCountries = data.modelCountries,
+            modelFilters = data.modelFilters,
             boards = data.boards,
             channels = channelsDeferred.await(),
         ).toJsonElement()
