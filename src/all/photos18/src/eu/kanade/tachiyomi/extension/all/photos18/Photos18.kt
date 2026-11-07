@@ -10,6 +10,7 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
+import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import keiyoushi.annotation.Source
 import keiyoushi.network.get
 import keiyoushi.source.KeiSource
@@ -56,6 +57,7 @@ abstract class Photos18 :
                 genre = translate(category)
                 description = category
                 status = SManga.COMPLETED
+                update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
                 // initialized = true
             }
         }
@@ -119,6 +121,7 @@ abstract class Photos18 :
             thumbnail_url = document.select("div#content div.imgHolder")
                 .select("img").attr("src")
             status = SManga.COMPLETED
+            update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
             if (category.toString().contains("href=\"(/zh-hans)?/cat/".toRegex())) {
                 genre = translate(category.text())
                 description = category.text()
