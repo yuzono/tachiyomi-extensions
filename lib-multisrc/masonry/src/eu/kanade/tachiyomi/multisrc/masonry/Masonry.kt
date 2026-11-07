@@ -278,27 +278,28 @@ abstract class Masonry : KeiSource() {
     override val supportsFilterFetching = true
 
     protected open suspend fun fetchTags(): List<Tag> = client.get("$baseUrl/updates/").asJsoup()
-        .select("#filter-a span[data-placeholder='Tags'] span:has(> input)")
+        .select("#filter-a section[data-slot=tags] label")
         .map {
             Tag(
-                it.select("label").text(),
+                it.select(".txt").text(),
                 it.select("input").attr("value"),
             )
         }
 
+    // The models filter is only on the models filter listing, not on /models/
     protected open suspend fun fetchModelTagsAndCountries(): Pair<List<Tag>, List<Country>> {
-        val document = client.get("$baseUrl/models/").asJsoup()
-        val modelTags = document.select("#filter-b span[data-placeholder='Tags'] span:has(> input)")
+        val document = client.get("$baseUrl/models/sort/filter/ord/popular/age/0/country/0/tags/0/mpage/1/").asJsoup()
+        val modelTags = document.select("#filter-b section[data-slot=tags] label")
             .map {
                 Tag(
-                    "M: " + it.select("label").text(),
+                    "M: " + it.select(".txt").text(),
                     it.select("input").attr("value"),
                 )
             }
-        val modelCountries = document.select("#filter-b span[data-placeholder='Country'] span:has(> input)")
+        val modelCountries = document.select("#filter-b section[data-slot=country] label")
             .map {
                 Country(
-                    it.select("label").text(),
+                    it.select(".txt").text(),
                     it.select("input").attr("value"),
                 )
             }
