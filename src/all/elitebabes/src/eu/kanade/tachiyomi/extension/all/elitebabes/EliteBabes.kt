@@ -16,13 +16,12 @@ import keiyoushi.annotation.Source
 import keiyoushi.network.get
 import keiyoushi.utils.asJsoup
 import keiyoushi.utils.firstInstanceOrNull
-import keiyoushi.utils.jsonInstance
 import keiyoushi.utils.parseAs
+import keiyoushi.utils.toJsonElement
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.encodeToJsonElement
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
@@ -135,15 +134,13 @@ abstract class EliteBabes : Masonry() {
         val tags = tagsDeferred.await()
         val (modelTags, modelCountries) = modelDeferred.await()
 
-        jsonInstance.encodeToJsonElement(
-            EliteBabesFilterData(
-                tags = tags,
-                modelTags = modelTags,
-                modelCountries = modelCountries,
-                channels = channelsDeferred.await(),
-                boards = boardsDeferred.await(),
-            ),
-        )
+        EliteBabesFilterData(
+            tags = tags,
+            modelTags = modelTags,
+            modelCountries = modelCountries,
+            channels = channelsDeferred.await(),
+            boards = boardsDeferred.await(),
+        ).toJsonElement()
     }
 
     override fun getFilterList(data: JsonElement?): FilterList {
