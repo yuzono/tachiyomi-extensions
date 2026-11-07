@@ -89,14 +89,13 @@ abstract class Photos18 :
         fetchDetails: Boolean,
         fetchChapters: Boolean,
     ): SMangaUpdate {
-        val document = client.get(getMangaUrl(manga)).asJsoup()
         val chapter = SChapter.create().apply {
             setUrlWithoutDomain(manga.url)
             name = "Gallery"
             chapter_number = 0f
         }
         return SMangaUpdate(
-            manga = parseMangaDetails(document),
+            manga = if (fetchDetails) parseMangaDetails(client.get(getMangaUrl(manga)).asJsoup()) else manga,
             chapters = listOf(chapter),
         )
     }
