@@ -149,6 +149,8 @@ abstract class Masonry : KeiSource() {
         else -> "updates"
     }
 
+    protected open val sortOptions = sortFilterOptions
+
     protected open val searchTypeOptions = listOf(
         Pair("Galleries", "post"),
         Pair("Models", "model"),
@@ -294,7 +296,7 @@ abstract class Masonry : KeiSource() {
             SearchTypeFilter(searchTypeOptions),
             Filter.Separator(),
             Filter.Header("Some source might not support Trending"),
-            SortFilter(),
+            SortFilter(sortOptions),
             Filter.Separator(),
         )
 

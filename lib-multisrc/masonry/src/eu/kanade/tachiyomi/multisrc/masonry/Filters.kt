@@ -13,9 +13,9 @@ abstract class SelectFilter(
     val selected get() = options[state].second
 }
 
-class SortFilter : SelectFilter("Sort by", sortFilterOptions)
+class SortFilter(options: List<Pair<String, String>> = sortFilterOptions) : SelectFilter("Sort by", options)
 
-private val sortFilterOptions = listOf(
+val sortFilterOptions = listOf(
     Pair("Trending", "trending"),
     Pair("Newest", "newest"),
     Pair("Popular", "popular"),

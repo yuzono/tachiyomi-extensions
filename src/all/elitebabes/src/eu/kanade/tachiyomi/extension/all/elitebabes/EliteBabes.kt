@@ -96,6 +96,9 @@ abstract class EliteBabes : Masonry() {
                 )
             }
 
+    // Only browsing galleries has a video listing (/sort/videos/)
+    override val sortOptions = super.sortOptions + Pair("Video only", "videos")
+
     @Serializable
     class EliteBabesFilterData(
         @Suppress("unused")
