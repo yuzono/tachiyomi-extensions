@@ -216,7 +216,7 @@ abstract class Masonry : KeiSource() {
                                 addPathSegment(modelCountries.joinToString("+") { it.uriPart })
                             }
                             addPathSegment("tags")
-                            addPathSegment(modelTags.joinToString("+") { it.uriPart })
+                            addPathSegment(modelTags.joinToString("+") { it.uriPart }.ifEmpty { "0" })
                             addPathSegments("mpage/$page/")
                         }
                     }
@@ -333,10 +333,10 @@ abstract class Masonry : KeiSource() {
             filters += Filter.Header("Model filters are ignored when Tags filter is selected.\nTrending is supported if only 1 Model's tag is selected.")
             filters += ModelTagsFilter(filterData.modelTags)
             filters += ModelCountriesFilter(filterData.modelCountries)
-            filters += AgesFilter()
-            filters += Filter.Separator()
-            filters += Filter.Header("Open WebView to watch video (chapter with only 1 photo)")
         }
+        filters += AgesFilter()
+        filters += Filter.Separator()
+        filters += Filter.Header("Open WebView to watch video (chapter with only 1 photo)")
 
         return FilterList(filters)
     }
