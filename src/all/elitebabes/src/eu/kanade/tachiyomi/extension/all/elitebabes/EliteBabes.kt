@@ -215,11 +215,11 @@ abstract class EliteBabes : Masonry() {
     }
 
     /**
-     * The Uri used to browse for popular/trending/newest:
-     * - <domain>/models/
-     * - <domain>/collections/
-     * - <domain>/pins/
-     * - <domain>/updates/
+     * The /gridapi/ content browsed for popular/trending/newest:
+     * - models
+     * - collections
+     * - pins
+     * - updates (galleries)
      *
      * @param searchType is value of [searchTypeOptions]
      */
@@ -228,6 +228,8 @@ abstract class EliteBabes : Masonry() {
         "list_item" -> "pins"
         else -> super.getBrowseChannelUri(searchType)
     }
+
+    override fun listingMangaFromElement(path: String): (Element) -> SManga = if (path.startsWith("collections")) ::collectionMangaFromElement else super.listingMangaFromElement(path)
 
     override val searchTypeOptions = super.searchTypeOptions + listOf(
         Pair("Collections", "collection"),
@@ -244,11 +246,6 @@ abstract class EliteBabes : Masonry() {
                         .map(::highlightMangaFromElement),
                     hasNextPage = false,
                 )
-            }
-            requestUrl.contains("/collections/") -> {
-                val mangas = document.select(popularMangaSelector()).map(::collectionMangaFromElement)
-                val hasNextPage = document.selectFirst(popularMangaNextPageSelector()) != null
-                MangasPage(mangas, hasNextPage)
             }
             /* Support all three:
              - boards browsing /e/

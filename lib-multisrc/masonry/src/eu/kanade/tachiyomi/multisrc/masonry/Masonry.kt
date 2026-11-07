@@ -21,6 +21,7 @@ import kotlinx.serialization.json.JsonElement
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import org.jsoup.select.Elements
 
 /**
  * Features:
@@ -32,52 +33,18 @@ import org.jsoup.nodes.Element
  * - Support video via WebView
  */
 abstract class Masonry : KeiSource() {
+    /**
+     * Latest uses /archive/ (sorted by post ID) with its page links, but some sites (FemJoy, FTVHunter,
+     * JoyMii) only show placeholders there, so they use the newest listing (sorted by post date) instead.
+     */
     protected open val useAlternativeLatestRequest = false
-
-    /**
-     * /updates/sort/popular/ doesn't support pages on all sites so we use filter instead
-     * Some time, it has a bit different content comparing to filter so we still query it
-     */
-    protected open fun popularMangaUrl(page: Int): String = when (page) {
-        1 -> baseUrl
-        2 -> "$baseUrl/updates/sort/popular/"
-        else -> "$baseUrl/updates/sort/filter/ord/popular/content/0/quality/0/tags/0/mpage/${page - 2}/"
-    }
-
-    /**
-     * Archive is sorted as post's ID
-     *
-     * Newest is sorted as post's date
-     *
-     * /updates/sort/newest/ is similar to
-     *   => /updates/sort/newest/mpage/1/ (a bit out of sync)
-     *   => /archive/
-     *   => /archive/page/1/
-     *   => /updates/sort/filter/ord/newest/content/0/quality/0/tags/0/
-     *   => /updates/sort/filter/ord/newest/content/0/quality/0/tags/0/mpage/1/
-     *
-     * /updates/sort/newest/mpage/2/ is similar to
-     *   => /archive/page/2/
-     *   => /updates/sort/filter/ord/newest/content/0/quality/0/tags/0/mpage/2/
-     *
-     * Some sites (FemJoy, FTVHunter, JoyMii) only show placeholders on /archive/ and redirect every
-     * /updates/sort/newest/mpage/<#>/ to the first page, so they use the /gridapi/ endpoint behind
-     * the site's infinite scroll instead.
-     */
-    protected open fun latestUpdatesUrl(page: Int): String = if (useAlternativeLatestRequest) {
-        "$baseUrl/gridapi/?content=updates&sort=newest&mpage=$page"
-    } else {
-        "$baseUrl/archive/page/$page/"
-    }
 
     protected open val galleryListSelector = ".list-gallery:not(.static)"
     protected open val gallerySelector = "figure"
     protected open val videoTitleSelector = ".icon-play, a[href*='/video/']"
     protected open val videoSelector = "video[poster^=https://cdn.]"
     protected open fun popularMangaSelector() = "$galleryListSelector $gallerySelector"
-
-    // Add fake selector for updates/sort/popular because it only has 1 page
-    protected open fun popularMangaNextPageSelector() = ".pagination-a li.next, main#content .link-btn a.overlay-b[href='/sort/popular/']"
+    protected open fun popularMangaNextPageSelector() = ".pagination-a li.next"
 
     protected open fun popularMangaFromElement(element: Element): SManga = SManga.create().apply {
         element.selectFirst("a")!!.run {
@@ -108,25 +75,48 @@ abstract class Masonry : KeiSource() {
         return MangasPage(mangas, hasNextPage)
     }
 
-    override suspend fun getPopularManga(page: Int): MangasPage {
-        val document = client.get(popularMangaUrl(page)).asJsoup()
-        return parseMangaList(document)
-    }
+    /**
+     * Listings only render their first page and load the rest from /gridapi/, the site's infinite scroll,
+     * which returns bare tiles and nothing past the last page. Text search and /archive/ still use page links.
+     */
+    private suspend fun fetchGridTiles(apiUrl: String, page: Int): Elements = client.get("$apiUrl&mpage=$page", Fetch.XHR).asJsoup().select(gallerySelector)
 
-    override suspend fun getLatestUpdates(page: Int): MangasPage {
-        if (!useAlternativeLatestRequest) {
-            return parseMangaList(client.get(latestUpdatesUrl(page)).asJsoup())
-        }
-        // /gridapi/ returns bare gallery tiles, and nothing but a "no more" notice past the last page
-        val document = client.get(latestUpdatesUrl(page), Fetch.XHR).asJsoup()
-        val mangas = document.select(gallerySelector).map(::popularMangaFromElement)
+    private suspend fun getGridPage(apiUrl: String, page: Int, mangaFromElement: (Element) -> SManga = ::popularMangaFromElement): MangasPage {
+        val mangas = fetchGridTiles(apiUrl, page).map(mangaFromElement)
         return MangasPage(mangas, mangas.isNotEmpty())
     }
 
+    private fun channelGridApiUrl(channel: String, sort: String) = "$baseUrl/gridapi/?content=$channel&sort=$sort"
+
+    /** The /gridapi/ URL a listing page sets for its infinite scroll, or null when the listing has one page. */
+    private fun Document.gridApiUrl(): String? = selectFirst("script:containsData(apiUrl)")
+        ?.let { API_URL_REGEX.find(it.data())?.groupValues?.get(1) }
+        ?.takeIf(String::isNotEmpty)
+
+    /** Fetches page [page] of the listing at [path] (relative to [baseUrl]) through the /gridapi/ URL on its first page. */
+    private suspend fun getListingPage(path: String, page: Int): MangasPage {
+        val mangaFromElement = listingMangaFromElement(path)
+        val document = client.get("$baseUrl/$path").asJsoup()
+        val apiUrl = document.gridApiUrl()
+            ?: return MangasPage(document.select(popularMangaSelector()).map(mangaFromElement), false)
+        return getGridPage(apiUrl, page, mangaFromElement)
+    }
+
+    /** Maps the tiles of the listing at [path]: model listings show models, the rest show galleries. */
+    protected open fun listingMangaFromElement(path: String): (Element) -> SManga = if (path.startsWith("model")) ::modelMangaFromElement else ::popularMangaFromElement
+
+    override suspend fun getPopularManga(page: Int): MangasPage = getGridPage(channelGridApiUrl("updates", "popular"), page)
+
+    override suspend fun getLatestUpdates(page: Int): MangasPage = if (useAlternativeLatestRequest) {
+        getGridPage(channelGridApiUrl("updates", "newest"), page)
+    } else {
+        parseMangaList(client.get("$baseUrl/archive/page/$page/").asJsoup())
+    }
+
     /**
-     * The Uri used to browse for popular/trending/newest galleries:
-     * - <domain>/models/
-     * - <domain>/updates/ (redirected to <domain>/)
+     * The /gridapi/ content browsed for popular/trending/newest:
+     * - models
+     * - updates (galleries)
      *
      * @param searchType is value of [searchTypeOptions]
      */
@@ -142,129 +132,49 @@ abstract class Masonry : KeiSource() {
 
     override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
         val searchType = filters.firstInstanceOrNull<SearchTypeFilter>()?.selected ?: searchTypeOptions.first().second
-        val url = if (query.isNotEmpty()) {
-            "$baseUrl/search/$searchType/".toHttpUrl().newBuilder()
+        if (query.isNotEmpty()) {
+            val url = "$baseUrl/search/$searchType/".toHttpUrl().newBuilder()
                 .addPathSegment(query.trim())
                 .addPathSegments("mpage/$page/")
                 .build()
-        } else {
-            val sortFilter = filters.firstInstanceOrNull<SortFilter>() ?: SortFilter()
-            val tagsFilter = filters.firstInstanceOrNull<TagsFilter>() ?: TagsFilter()
-            val modelTagsFilter = filters.firstInstanceOrNull<ModelTagsFilter>() ?: ModelTagsFilter()
-            val modelAgeFilter = filters.firstInstanceOrNull<AgesFilter>() ?: AgesFilter()
-            val modelCountriesFilter =
-                filters.firstInstanceOrNull<ModelCountriesFilter>() ?: ModelCountriesFilter()
-
-            baseUrl.toHttpUrl().newBuilder().apply {
-                when {
-                    tagsFilter.state.any { it.state } -> {
-                        val tags = tagsFilter.state.filter { it.state }
-                        if (tags.size == 1) {
-                            // Use /tag/ for single tag
-                            addPathSegment("tag")
-                            addPathSegment(tags.joinToString("+") { it.uriPart })
-                            sortFilter.getUriPartIfNeeded("tag").also {
-                                if (it.isBlank()) {
-                                    addPathSegments("page/$page/")
-                                } else {
-                                    addPathSegments("sort/$it")
-                                    addPathSegments("mpage/$page/")
-                                }
-                            }
-                        } else {
-                            // Use: /updates/sort/filter/ord/<popular|newest>/content/<pix/vid>/quality/0/tags/<tag>+<tag>/mpage/<#>/
-                            addPathSegments("updates/sort/filter/ord")
-                            addPathSegment(sortFilter.selected.takeIf { it == "newest" } ?: "popular")
-                            addPathSegments("content/0/quality/0")
-                            addPathSegment("tags")
-                            addPathSegment(tags.joinToString("+") { it.uriPart })
-                            addPathSegments("mpage/$page/")
-                        }
-                    }
-
-                    modelTagsFilter.state.any { it.state } ||
-                        modelAgeFilter.state != 0 ||
-                        modelCountriesFilter.state.any { it.state } -> {
-                        val modelTags = modelTagsFilter.state.filter { it.state }
-
-                        if (modelTags.size == 1 && modelAgeFilter.state == 0 &&
-                            modelCountriesFilter.state.none { it.state }
-                        ) {
-                            // Use: /model-tag/, only support single tag
-                            // Some model-tag won't support trending
-                            addPathSegment("model-tag")
-                            addPathSegment(modelTags.first { it.state }.uriPart)
-                            sortFilter.getUriPartIfNeeded("model-tag").also {
-                                if (it.isBlank()) {
-                                    addPathSegments("page/$page/")
-                                } else {
-                                    addPathSegments("sort/$it")
-                                    addPathSegments("mpage/$page/")
-                                }
-                            }
-                        } else {
-                            // Use: /models/sort/filter/ord/<popular|newest>/age/<#>/country/<name>+<name>/tags/<tag>+<tag>/mpage/<#>/
-                            val modelCountries = modelCountriesFilter.state.filter { it.state }
-                            addPathSegments("models/sort/filter/ord")
-                            addPathSegment(sortFilter.selected.takeIf { it == "newest" } ?: "popular")
-                            addPathSegment("age")
-                            addPathSegment(modelAgeFilter.selected)
-                            addPathSegment("country")
-                            if (modelCountries.isEmpty()) {
-                                addPathSegment("0")
-                            } else {
-                                addPathSegment(modelCountries.joinToString("+") { it.uriPart })
-                            }
-                            addPathSegment("tags")
-                            addPathSegment(modelTags.joinToString("+") { it.uriPart }.ifEmpty { "0" })
-                            addPathSegments("mpage/$page/")
-                        }
-                    }
-
-                    else -> {
-                        val channel = getBrowseChannelUri(searchType)
-                        if (sortFilter.selected == "trending" || channel != "updates") {
-                            // Trending: use /updates/sort/ since it won't be available with site's search
-                            addPathSegment(channel)
-                            sortFilter.getUriPartIfNeeded(channel).also {
-                                // Only EliteBabes & MetArt supports Pages for updates/sort/trending
-                                if (it.isBlank()) {
-                                    addPathSegments("page/$page/")
-                                } else {
-                                    addPathSegments("sort/$it")
-                                    addPathSegments("mpage/$page/")
-                                }
-                            }
-                        } else {
-                            when (sortFilter.selected) {
-                                "newest" -> return getLatestUpdates(page)
-
-                                "popular" -> {
-                                    // Using a more effective request comparing to the /updates/sort/popular/ (doesn't support page)
-                                    when (page) {
-                                        1 -> addPathSegment("")
-                                        2 -> addPathSegments("updates/sort/popular")
-                                        else -> addPathSegments("updates/sort/filter/ord/popular/content/0/quality/0/tags/0/mpage/${page - 2}")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }.build()
+            return parseSearchMangaList(client.get(url).asJsoup())
         }
 
-        val document = client.get(url).asJsoup()
-        return parseSearchMangaList(document)
+        val sort = (filters.firstInstanceOrNull<SortFilter>() ?: SortFilter()).selected
+        // Filter listings only sort by popular or newest
+        val order = sort.takeIf { it == "newest" } ?: "popular"
+        val tags = (filters.firstInstanceOrNull<TagsFilter>() ?: TagsFilter()).state.filter { it.state }
+        val modelTags = (filters.firstInstanceOrNull<ModelTagsFilter>() ?: ModelTagsFilter()).state.filter { it.state }
+        val modelAgeFilter = filters.firstInstanceOrNull<AgesFilter>() ?: AgesFilter()
+        val modelCountries = (filters.firstInstanceOrNull<ModelCountriesFilter>() ?: ModelCountriesFilter()).state.filter { it.state }
+
+        val path = when {
+            tags.size == 1 -> "tag/${tags.first().uriPart}/sort/$sort/"
+
+            tags.isNotEmpty() ->
+                "sort/filter/ord/$order/content/0/quality/0/tags/${tags.joinToString("+") { it.uriPart }}/mpage/1/"
+
+            // Some model-tag won't support trending
+            modelTags.size == 1 && modelAgeFilter.state == 0 && modelCountries.isEmpty() ->
+                "model-tag/${modelTags.first().uriPart}/sort/$sort/"
+
+            modelTags.isNotEmpty() || modelAgeFilter.state != 0 || modelCountries.isNotEmpty() -> {
+                val countries = modelCountries.joinToString("+") { it.uriPart }.ifEmpty { "0" }
+                val tagParts = modelTags.joinToString("+") { it.uriPart }.ifEmpty { "0" }
+                "models/sort/filter/ord/$order/age/${modelAgeFilter.selected}/country/$countries/tags/$tagParts/mpage/1/"
+            }
+
+            else -> {
+                val channel = getBrowseChannelUri(searchType)
+                return getGridPage(channelGridApiUrl(channel, sort), page, listingMangaFromElement(channel))
+            }
+        }
+        return getListingPage(path, page)
     }
 
     protected open fun parseSearchMangaList(document: Document): MangasPage {
         val mangaFromElement = when {
-            /* Support all three:
-             - models browsing /models/ to make each model a title with multiple chapters of her galleries
-             - model search /search/model/ to show each gallery as a separated title (just like normal browsing)
-             - and model-tag
-              They all return model-entries */
+            // Text search for models (/search/model/) returns model entries
             document.location().toHttpUrl().pathSegments.any { it == "model" || it == "models" || it == "model-tag" } -> ::modelMangaFromElement
 
             else -> ::popularMangaFromElement
@@ -377,7 +287,15 @@ abstract class Masonry : KeiSource() {
             addPathSegments("sort/latest")
         }.build()
         val document = client.get(url).asJsoup()
-        return parseChapterList(document, manga)
+        // The page only renders the latest galleries, the rest load from its /gridapi/ infinite scroll
+        val apiUrl = document.gridApiUrl() ?: return parseChapterList(document, manga)
+        val chapters = mutableListOf<SChapter>()
+        var page = 1
+        do {
+            val tiles = fetchGridTiles(apiUrl, page++)
+            tiles.mapTo(chapters, ::modelChapterFromElement)
+        } while (tiles.isNotEmpty())
+        return chapters
     }
 
     protected open fun parseMangaDetails(document: Document, manga: SManga): SManga = SManga.create().apply {
@@ -481,5 +399,9 @@ abstract class Masonry : KeiSource() {
         hasAttr("data-src") -> attr("abs:data-src")
         hasAttr("data-lazy-src") -> attr("abs:data-lazy-src")
         else -> attr("abs:src")
+    }
+
+    companion object {
+        private val API_URL_REGEX = Regex("""const apiUrl = '([^']*)'""")
     }
 }
