@@ -222,7 +222,7 @@ abstract class Masonry : KeiSource() {
         val filterData = data?.parseAs<MasonryFilterData>()
 
         val filters = mutableListOf<Filter<*>>(
-            Filter.Header("Below filters are ignored when doing text search except Sort\nText search only support Galleries & Models"),
+            Filter.Header("Pins need a text search"),
             SearchTypeFilter(searchTypeOptions),
             Filter.Separator(),
             Filter.Header("Some source might not support Trending"),
