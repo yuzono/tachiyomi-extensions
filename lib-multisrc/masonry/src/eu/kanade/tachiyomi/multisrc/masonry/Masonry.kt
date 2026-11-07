@@ -89,7 +89,7 @@ abstract class Masonry : KeiSource() {
         ?.takeIf(String::isNotEmpty)
 
     /** Fetches page [page] of the listing at [path] (relative to [baseUrl]) through the /gridapi/ URL on its first page. */
-    private suspend fun getListingPage(path: String, page: Int): MangasPage {
+    protected suspend fun getListingPage(path: String, page: Int): MangasPage {
         val mangaFromElement = listingMangaFromElement(path)
         val document = client.get("$baseUrl/$path").asJsoup()
         val apiUrl = document.gridApiUrl()

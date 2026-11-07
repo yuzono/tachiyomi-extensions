@@ -13,23 +13,7 @@ abstract class SelectFilter(
     val selected get() = options[state].second
 }
 
-class SortFilter : SelectFilter("Sort by", sortFilterOptions) {
-    fun getUriPartIfNeeded(part: String) = when (part) {
-        "updates" -> {
-            when (selected) {
-                "trending" -> "" // Trending
-                else -> selected
-            }
-        }
-        // tag & channel
-        else -> {
-            when (selected) {
-                "popular" -> "" // Popular
-                else -> selected
-            }
-        }
-    }
-}
+class SortFilter : SelectFilter("Sort by", sortFilterOptions)
 
 private val sortFilterOptions = listOf(
     Pair("Trending", "trending"),

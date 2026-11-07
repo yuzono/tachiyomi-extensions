@@ -22,7 +22,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
@@ -95,23 +94,25 @@ abstract class EliteBabes : Masonry() {
 
     private suspend fun fetchChannels(): List<Tag> = listOf(Tag("Off", "")) +
         client.get("$baseUrl/erotic-art-channels/").asJsoup()
-            .select("ul.list-gallery figure > a")
+            .select("#tagsList li > a")
             .map {
                 Tag(
-                    it.select("img").attr("alt"),
+                    it.selectFirst("span")!!.ownText(),
                     it.attr("href").removeSuffix("/").substringAfterLast("/"),
                 )
             }
 
+    // Boards are now user-made pinboards, thousands of them, so offer the trending, newest and top ones shown on /pinboards/
     private suspend fun fetchBoards(): List<Tag> = listOf(Tag("Off", "")) +
-        client.get("$baseUrl/boards/").asJsoup()
-            .select("ul.list-gallery figure > a")
+        client.get("$baseUrl/pinboards/").asJsoup()
+            .select(".list-gallery figure > a[href*=/pinboard/]")
             .map {
                 Tag(
                     it.select("img").attr("alt"),
                     it.attr("href").removeSuffix("/").substringAfterLast("/"),
                 )
             }
+            .distinctBy { it.uriPart }
 
     @Serializable
     class EliteBabesFilterData(
@@ -172,38 +173,10 @@ abstract class EliteBabes : Masonry() {
 
         val document = when {
             highlightsFilter.state != 0 -> client.get(highlightsFilter.selected)
-            channelFilter.state != 0 -> {
-                val channelUri = channelFilter.selected
-                val sortUri = "s"
-
-                val url = baseUrl.toHttpUrl().newBuilder().apply {
-                    addPathSegment(channelUri)
-                    sortFilter.getUriPartIfNeeded(channelUri).also {
-                        if (it.isBlank()) {
-                            addPathSegments("page/$page/")
-                        } else {
-                            addPathSegments("$sortUri/$it")
-                            addPathSegments("mpage/$page/")
-                        }
-                    }
-                }.build()
-
-                client.get(url)
-            }
+            channelFilter.state != 0 -> return getListingPage("${channelFilter.selected}/s/${sortFilter.selected}/", page)
             boardFilter.state != 0 -> {
-                val boardUri = boardFilter.selected
-                val sortUri = "sort"
-
-                val url = baseUrl.toHttpUrl().newBuilder().apply {
-                    addPathSegment("e")
-                    addPathSegment(boardUri)
-                    addPathSegments("$sortUri/${sortFilter.selected}")
-                    if (page > 1) {
-                        addPathSegments("mpage/$page/")
-                    }
-                }.build()
-
-                client.get(url)
+                val pagePath = if (page > 1) "mpage/$page/" else ""
+                client.get("$baseUrl/pinboard/${boardFilter.selected}/sort/${sortFilter.selected}/$pagePath")
             }
             else -> return super.getSearchMangaList(page, query, filters)
         }.asJsoup()
@@ -244,15 +217,12 @@ abstract class EliteBabes : Masonry() {
                     hasNextPage = false,
                 )
             }
-            /* Support all three:
-             - boards browsing /e/
-             - pins browsing
-             - pin search
-              They all return pin-entries */
-            requestUrl.contains("/(e|pins|list_item)/".toRegex()) -> {
+            // Boards (/pinboard/) and pin search (/search/list_item/) both list pins
+            requestUrl.contains("/(pinboard|list_item)/".toRegex()) -> {
                 val mangas =
                     document.select("$galleryListSelector > li:not(:has(.icon-play, a[href*='/video/']))")
-                        .map(::pinMangaFromElement)
+                        .mapNotNull(::pinMangaFromElement)
+                        .distinctBy { it.url }
                 val hasNextPage = document.selectFirst(popularMangaNextPageSelector()) != null
                 MangasPage(mangas, hasNextPage)
             }
@@ -273,18 +243,19 @@ abstract class EliteBabes : Masonry() {
         update_strategy = UpdateStrategy.ALWAYS_UPDATE
     }
 
-    private fun pinMangaFromElement(element: Element): SManga = SManga.create().apply {
-        element.selectFirst("figure > a:has(img)")!!.apply {
-            setUrlWithoutDomain(absUrl("href"))
-        }.selectFirst("img")!!.run {
-            title = attr("alt")
-            thumbnail_url = imgAttr()
+    // Pins no longer have their own page (/pin/<id>/ is 404), so list the gallery each pin comes from
+    private fun pinMangaFromElement(element: Element): SManga? {
+        val sourceGallery = element.selectFirst(".list-icon a:has(.icon-image)") ?: return null
+        return SManga.create().apply {
+            setUrlWithoutDomain(sourceGallery.absUrl("href"))
+            element.selectFirst("figure > a > img")!!.run {
+                title = attr("alt")
+                thumbnail_url = imgAttr()
+            }
+            artist = element.select(".list-icon a:has(.icon-woman)").eachText().joinToString()
+            status = SManga.COMPLETED
+            update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
         }
-        genre = element.select(".img-overlay > p > a[href*='/e/']").text().removePrefix("@")
-        author = element.select(".img-overlay > p:contains(Brought By) > a").text()
-        artist = element.select("ul > li > a[href*='/model/'] > img").attr("alt").trim()
-        status = SManga.COMPLETED
-        update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
     }
 
     override fun parseMangaDetails(document: Document, manga: SManga): SManga = when {
