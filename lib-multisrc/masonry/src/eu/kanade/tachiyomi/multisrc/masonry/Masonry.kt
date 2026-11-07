@@ -18,6 +18,7 @@ import keiyoushi.utils.toJsonElement
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonElement
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
@@ -255,6 +256,17 @@ abstract class Masonry : KeiSource() {
     /* Manga details & chapters */
 
     // TODO: Related & deep-links; fix next page or implement new support; more sites/links
+
+    /** Resolves a pasted gallery (/<slug>/) or model (/model/<slug>/) link of this site. */
+    override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
+        val segments = url.pathSegments.filter(String::isNotEmpty)
+        val isGallery = segments.size == 1
+        val isModel = segments.size == 2 && segments.first() == "model"
+        if (url.host.removePrefix("www.") != baseUrl.toHttpUrl().host.removePrefix("www.") || !(isGallery || isModel)) return null
+
+        val manga = SManga.create().apply { this.url = "/${segments.joinToString("/")}/" }
+        return fetchMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = false).manga
+    }
 
     override suspend fun fetchMangaUpdate(
         manga: SManga,
