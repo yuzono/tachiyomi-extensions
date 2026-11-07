@@ -43,10 +43,13 @@ abstract class Masonry : KeiSource() {
     protected open fun popularMangaNextPageSelector() = ".pagination-a li.next"
 
     protected open fun popularMangaFromElement(element: Element): SManga = SManga.create().apply {
-        element.selectFirst("a")!!.run {
-            setUrlWithoutDomain(absUrl("href"))
-            title = attr("title").ifBlank { element.selectFirst(".img-overlay > p")!!.text() }
-        }
+        val link = element.selectFirst("a")!!
+        // Video tiles on some sites link to a sister video site (xerotica.com), their overlay links this site's gallery
+        val galleryLink = link.takeIf { it.absUrl("href").startsWith(baseUrl) }
+            ?: element.selectFirst(".img-overlay > p > a")
+            ?: link
+        setUrlWithoutDomain(galleryLink.absUrl("href"))
+        title = link.attr("title").ifBlank { element.selectFirst(".img-overlay > p")!!.text() }
         thumbnail_url = element.selectFirst("a img")?.imgAttr()
     }
 
