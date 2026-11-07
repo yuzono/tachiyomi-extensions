@@ -41,6 +41,8 @@ class ModelCountriesFilter(countries: List<Country> = emptyList()) : Filter.Grou
 
 class AgesFilter : SelectFilter("Age", ageFilterOptions)
 
+class BoardFilter(boards: List<Tag> = emptyList()) : SelectFilter("Boards", boards.map { it.name to it.uriPart })
+
 private val ageFilterOptions = listOf(Pair("All Ages", "0")) +
     (19..50).map {
         Pair(it.toString(), it.toString())
@@ -55,4 +57,5 @@ class MasonryFilterData(
     val tags: List<Tag> = emptyList(),
     val modelTags: List<Tag> = emptyList(),
     val modelCountries: List<Country> = emptyList(),
+    val boards: List<Tag> = emptyList(),
 )

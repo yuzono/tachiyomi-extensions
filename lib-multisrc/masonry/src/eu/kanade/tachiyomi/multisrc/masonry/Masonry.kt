@@ -31,6 +31,7 @@ import org.jsoup.select.Elements
  * - Support model's tags filter (/model-tag/)
  * - Support advanced models filter
  * - Support multiple tags filter
+ * - Support Collections (/collections/), Boards (/pinboard/) & text search for Pins
  * - Support video via WebView
  */
 abstract class Masonry : KeiSource() {
@@ -62,6 +63,26 @@ abstract class Masonry : KeiSource() {
         }
         status = SManga.ONGOING
         update_strategy = UpdateStrategy.ALWAYS_UPDATE
+    }
+
+    protected open fun collectionMangaFromElement(element: Element): SManga = popularMangaFromElement(element).apply {
+        status = SManga.ONGOING
+        update_strategy = UpdateStrategy.ALWAYS_UPDATE
+    }
+
+    // Pins no longer have their own page (/pin/<id>/ is 404), so list the gallery each pin comes from
+    protected open fun pinMangaFromElement(element: Element): SManga? {
+        val sourceGallery = element.selectFirst(".list-icon a:has(.icon-image)") ?: return null
+        return SManga.create().apply {
+            setUrlWithoutDomain(sourceGallery.absUrl("href"))
+            element.selectFirst("figure > a > img")!!.run {
+                title = attr("alt")
+                thumbnail_url = imgAttr()
+            }
+            artist = element.select(".list-icon a:has(.icon-woman)").eachText().joinToString()
+            status = SManga.COMPLETED
+            update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
+        }
     }
 
     protected open fun parseMangaList(document: Document, mangaFromElement: (Element) -> SManga = ::popularMangaFromElement): MangasPage {
@@ -97,8 +118,12 @@ abstract class Masonry : KeiSource() {
         return getGridPage(apiUrl, page, mangaFromElement)
     }
 
-    /** Maps the tiles of the listing at [path]: model listings show models, the rest show galleries. */
-    protected open fun listingMangaFromElement(path: String): (Element) -> SManga = if (path.startsWith("model")) ::modelMangaFromElement else ::popularMangaFromElement
+    /** Maps the tiles of the listing at [path]: model and collection listings show those, the rest show galleries. */
+    protected open fun listingMangaFromElement(path: String): (Element) -> SManga = when {
+        path.startsWith("model") -> ::modelMangaFromElement
+        path.startsWith("collections") -> ::collectionMangaFromElement
+        else -> ::popularMangaFromElement
+    }
 
     override suspend fun getPopularManga(page: Int): MangasPage = getGridPage(channelGridApiUrl("updates", "popular"), page)
 
@@ -108,21 +133,34 @@ abstract class Masonry : KeiSource() {
     /**
      * The /gridapi/ content browsed for popular/trending/newest:
      * - models
+     * - collections
+     * - pins (no listing anymore, pins only come from text search)
      * - updates (galleries)
      *
      * @param searchType is value of [searchTypeOptions]
      */
     protected open fun getBrowseChannelUri(searchType: String): String = when (searchType) {
         "model" -> "models"
+        "collection" -> "collections"
+        "list_item" -> "pins"
         else -> "updates"
     }
 
     protected open val searchTypeOptions = listOf(
         Pair("Galleries", "post"),
         Pair("Models", "model"),
+        Pair("Collections", "collection"),
+        Pair("Pins", "list_item"),
     )
 
     override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
+        val boardFilter = filters.firstInstanceOrNull<BoardFilter>() ?: BoardFilter()
+        val sort = (filters.firstInstanceOrNull<SortFilter>() ?: SortFilter()).selected
+        if (boardFilter.state != 0) {
+            val pagePath = if (page > 1) "mpage/$page/" else ""
+            return parseSearchMangaList(client.get("$baseUrl/pinboard/${boardFilter.selected}/sort/$sort/$pagePath").asJsoup())
+        }
+
         val searchType = filters.firstInstanceOrNull<SearchTypeFilter>()?.selected ?: searchTypeOptions.first().second
         if (query.isNotEmpty()) {
             val url = "$baseUrl/search/$searchType/".toHttpUrl().newBuilder()
@@ -132,7 +170,6 @@ abstract class Masonry : KeiSource() {
             return parseSearchMangaList(client.get(url).asJsoup())
         }
 
-        val sort = (filters.firstInstanceOrNull<SortFilter>() ?: SortFilter()).selected
         // Filter listings only sort by popular or newest
         val order = sort.takeIf { it == "newest" } ?: "popular"
         val tags = (filters.firstInstanceOrNull<TagsFilter>() ?: TagsFilter()).state.filter { it.state }
@@ -165,10 +202,20 @@ abstract class Masonry : KeiSource() {
     }
 
     protected open fun parseSearchMangaList(document: Document): MangasPage {
+        val segments = document.location().toHttpUrl().pathSegments
+        // Boards (/pinboard/) and pin search (/search/list_item/) both list pins
+        if ("pinboard" in segments || "list_item" in segments) {
+            val mangas = document.select("$galleryListSelector > li:not(:has(.icon-play, a[href*='/video/']))")
+                .mapNotNull(::pinMangaFromElement)
+                .distinctBy { it.url }
+            val hasNextPage = document.selectFirst(popularMangaNextPageSelector()) != null
+            return MangasPage(mangas, hasNextPage)
+        }
+
         val mangaFromElement = when {
             // Text search for models (/search/model/) returns model entries
-            document.location().toHttpUrl().pathSegments.any { it == "model" || it == "models" || it == "model-tag" } -> ::modelMangaFromElement
-
+            segments.any { it == "model" || it == "models" || it == "model-tag" } -> ::modelMangaFromElement
+            "collection" in segments -> ::collectionMangaFromElement
             else -> ::popularMangaFromElement
         }
 
@@ -208,20 +255,38 @@ abstract class Masonry : KeiSource() {
         return modelTags to modelCountries
     }
 
-    override suspend fun fetchFilterData(): JsonElement = coroutineScope {
+    // Boards are user-made pinboards, thousands of them, so offer the trending, newest and top ones shown on /pinboards/
+    protected open suspend fun fetchBoards(): List<Tag> = listOf(Tag("Off", "")) +
+        client.get("$baseUrl/pinboards/").asJsoup()
+            .select(".list-gallery figure > a[href*=/pinboard/]")
+            .map {
+                Tag(
+                    it.select("img").attr("alt"),
+                    it.attr("href").removeSuffix("/").substringAfterLast("/"),
+                )
+            }
+            .distinctBy { it.uriPart }
+
+    protected suspend fun fetchMasonryFilterData(): MasonryFilterData = coroutineScope {
         val tagsDeferred = async { fetchTags() }
         val modelDeferred = async { fetchModelTagsAndCountries() }
+        val boardsDeferred = async { fetchBoards() }
 
-        val tags = tagsDeferred.await()
         val (modelTags, modelCountries) = modelDeferred.await()
-
-        MasonryFilterData(tags, modelTags, modelCountries).toJsonElement()
+        MasonryFilterData(tagsDeferred.await(), modelTags, modelCountries, boardsDeferred.await())
     }
+
+    override suspend fun fetchFilterData(): JsonElement = fetchMasonryFilterData().toJsonElement()
 
     override fun getFilterList(data: JsonElement?): FilterList {
         val filterData = data?.parseAs<MasonryFilterData>()
 
         val filters = mutableListOf<Filter<*>>(
+            Filter.Header("Boards supports Sort but ignore Browse/Search, Tags & Models filter"),
+        )
+        filterData?.boards?.takeIf { it.isNotEmpty() }?.let { filters += BoardFilter(it) }
+        filters += listOf(
+            Filter.Separator(),
             Filter.Header("Pins need a text search"),
             SearchTypeFilter(searchTypeOptions),
             Filter.Separator(),
@@ -248,12 +313,12 @@ abstract class Masonry : KeiSource() {
 
     // TODO: Related & deep-links; fix next page or implement new support; more sites/links
 
-    /** Resolves a pasted gallery (/<slug>/) or model (/model/<slug>/) link of this site. */
+    /** Resolves a pasted gallery (/<slug>/), model (/model/<slug>/) or collection (/collections/<slug>/) link of this site. */
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
         val segments = url.pathSegments.filter(String::isNotEmpty)
         val isGallery = segments.size == 1
-        val isModel = segments.size == 2 && segments.first() == "model"
-        if (url.host.removePrefix("www.") != baseUrl.toHttpUrl().host.removePrefix("www.") || !(isGallery || isModel)) return null
+        val isModelOrCollection = segments.size == 2 && segments.first() in setOf("model", "collections")
+        if (url.host.removePrefix("www.") != baseUrl.toHttpUrl().host.removePrefix("www.") || !(isGallery || isModelOrCollection)) return null
 
         val manga = SManga.create().apply { this.url = "/${segments.joinToString("/")}/" }
         return fetchMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = false).manga
@@ -275,12 +340,19 @@ abstract class Masonry : KeiSource() {
             )
         }
     } else {
-        // Details and chapters both come from the same gallery page - fetch it once regardless of flags.
+        // Details and chapters both come from the same gallery or collection page - fetch it once regardless of flags.
         val document = client.get(getMangaUrl(manga)).asJsoup()
-        SMangaUpdate(
-            manga = parseMangaDetails(document, manga),
-            chapters = parseChapterList(document, manga),
-        )
+        if (manga.url.startsWith("/collections/")) {
+            SMangaUpdate(
+                manga = collectionMangaDetailsParse(document, manga),
+                chapters = fetchGridChapterList(document, manga),
+            )
+        } else {
+            SMangaUpdate(
+                manga = parseMangaDetails(document, manga),
+                chapters = parseChapterList(document, manga),
+            )
+        }
     }
 
     protected open suspend fun fetchModelChapterList(manga: SManga): List<SChapter> {
@@ -289,8 +361,11 @@ abstract class Masonry : KeiSource() {
               also will list chapters in timely manner */
             addPathSegments("sort/latest")
         }.build()
-        val document = client.get(url).asJsoup()
-        // The page only renders the latest galleries, the rest load from its /gridapi/ infinite scroll
+        return fetchGridChapterList(client.get(url).asJsoup(), manga)
+    }
+
+    /** Model and collection pages only render their latest galleries, the rest load from their /gridapi/ infinite scroll. */
+    private suspend fun fetchGridChapterList(document: Document, manga: SManga): List<SChapter> {
         val apiUrl = document.gridApiUrl() ?: return parseChapterList(document, manga)
         val chapters = mutableListOf<SChapter>()
         var page = 1
@@ -299,6 +374,16 @@ abstract class Masonry : KeiSource() {
             tiles.mapTo(chapters, ::modelChapterFromElement)
         } while (tiles.isNotEmpty())
         return chapters
+    }
+
+    protected open fun collectionMangaDetailsParse(document: Document, manga: SManga): SManga = SManga.create().apply {
+        url = manga.url
+        val header = document.selectFirst(".header-model")!!
+        title = header.selectFirst("h1")!!.text()
+        thumbnail_url = header.selectFirst("figure img")?.imgAttr()
+        description = header.select("ul.list-inline li").eachText().joinToString()
+        author = document.select("article.module-model a[href*=/author/]").text()
+        status = SManga.ONGOING
     }
 
     protected open fun parseMangaDetails(document: Document, manga: SManga): SManga = SManga.create().apply {
