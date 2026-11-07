@@ -8,11 +8,17 @@ keiyoushi {
     name = "Photos18"
     versionCode = 6
     contentWarning = ContentWarning.NSFW
-    libVersion = "1.4"
-    kmkVersionCode = 1
+    libVersion = "1.6"
 
     source {
         lang = "all"
         baseUrl = "https://www.photos18.com"
+    }
+
+    deeplink {
+        host("www.photos18.com")
+        host("photos18.com")
+        path("/v/..*")
+        path("/zh-hans/v/..*")
     }
 }
