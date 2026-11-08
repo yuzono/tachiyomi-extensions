@@ -324,7 +324,7 @@ abstract class Masonry : KeiSource() {
 
     /* Manga details & chapters */
 
-    // TODO: Related & deep-links; fix next page or implement new support; more sites/links
+    // TODO: Related galleries; more sites/links
 
     /** Resolves a pasted gallery (/<slug>/), model (/model/<slug>/) or collection (/collections/<slug>/) link of this site. */
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
