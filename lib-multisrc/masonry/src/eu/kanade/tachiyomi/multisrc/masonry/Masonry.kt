@@ -434,12 +434,13 @@ abstract class Masonry : KeiSource() {
                 }
                     ?.select("ul.list-inline li")
                     ?.eachText()?.joinToString()
-                description = "$stats\n" +
-                    select("p.read-more, div.module-more > p, div.module-more ul li")
-                        .eachText().joinToString("\n")
+                description = listOfNotNull(
+                    stats,
+                    select("p.read-more, div.module-more > p, div.module-more ul li").eachText().joinToString("\n"),
+                ).joinToString("\n")
             }
             genre = (
-                listOf(artist) + document.select("article.module-model + p a[href*=/model-tag/]")
+                listOfNotNull(artist) + document.select("article.module-model + p a[href*=/model-tag/]")
                     .eachText().map { "M: $it" }
                 ).joinToString()
             status = SManga.ONGOING
