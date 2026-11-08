@@ -213,6 +213,11 @@ abstract class Masonry : KeiSource() {
 
             else -> {
                 val channel = getBrowseChannelUri(searchType)
+                // /gridapi/ lists nothing for these, say why instead of "No results found"
+                when {
+                    channel == "pins" -> throw Exception("Pins need a text search")
+                    sort == "videos" && channel != "updates" -> throw Exception("'Video only' works only for browsing Galleries")
+                }
                 return getGridPage(channelGridApiUrl(channel, sort), page, listingMangaFromElement(channel))
             }
         }
