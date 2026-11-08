@@ -349,7 +349,8 @@ abstract class Masonry : KeiSource() {
         if (manga.url.startsWith("/collections/")) {
             SMangaUpdate(
                 manga = collectionMangaDetailsParse(document, manga),
-                chapters = fetchGridChapterList(document, manga),
+                // Unlike a gallery's, a collection's chapters take a /gridapi/ request per page
+                chapters = if (fetchChapters) fetchGridChapterList(document, manga) else chapters,
             )
         } else {
             SMangaUpdate(
