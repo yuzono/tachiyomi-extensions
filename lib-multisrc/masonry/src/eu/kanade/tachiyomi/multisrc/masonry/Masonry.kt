@@ -172,17 +172,20 @@ abstract class Masonry : KeiSource() {
         val boardFilter = filters.firstInstanceOrNull<BoardFilter>() ?: BoardFilter()
         val sort = (filters.firstInstanceOrNull<SortFilter>() ?: SortFilter()).selected
         if (boardFilter.selected.isNotEmpty()) {
-            val pagePath = if (page > 1) "mpage/$page/" else ""
-            return parseSearchMangaList(client.get("$baseUrl/pinboard/${boardFilter.selected}/sort/$sort/$pagePath").asJsoup())
+            return getSearchPage(page) { p ->
+                val pagePath = if (p > 1) "mpage/$p/" else ""
+                "$baseUrl/pinboard/${boardFilter.selected}/sort/$sort/$pagePath".toHttpUrl()
+            }
         }
 
         val searchType = filters.firstInstanceOrNull<SearchTypeFilter>()?.selected ?: searchTypeOptions.first().second
         if (query.isNotBlank()) {
-            val url = "$baseUrl/search/$searchType/".toHttpUrl().newBuilder()
-                .addPathSegment(query.trim())
-                .addPathSegments("mpage/$page/")
-                .build()
-            return parseSearchMangaList(client.get(url).asJsoup())
+            return getSearchPage(page) { p ->
+                "$baseUrl/search/$searchType/".toHttpUrl().newBuilder()
+                    .addPathSegment(query.trim())
+                    .addPathSegments("mpage/$p/")
+                    .build()
+            }
         }
 
         // Filter listings only sort by popular or newest
@@ -222,6 +225,20 @@ abstract class Masonry : KeiSource() {
             }
         }
         return getListingPage(path, page)
+    }
+
+    /**
+     * Fetches page [page] of a board or text search, moving on while a page parses to nothing but has a next page:
+     * a page whose pins are all videos or have no gallery would otherwise stop the app's paging, as it shows an
+     * empty page as an error. The app then asks for the page shown in its place, and drops the repeated entries.
+     */
+    private suspend fun getSearchPage(page: Int, url: (Int) -> HttpUrl): MangasPage {
+        var current = page
+        while (true) {
+            val result = parseSearchMangaList(client.get(url(current)).asJsoup())
+            if (result.mangas.isNotEmpty() || !result.hasNextPage) return result
+            current++
+        }
     }
 
     protected open fun parseSearchMangaList(document: Document): MangasPage {
