@@ -73,15 +73,6 @@ abstract class EliteBabes : Masonry() {
         Pair("Amour Angels", "https://www.amourhub.com/"),
     )
 
-    override val baseUrl
-        get() = when {
-            System.getenv("CI") == "true" ->
-                (highlights + listOf(Pair("", "https://www.elitebabes.com/")))
-                    .filterIndexed { idx, _ -> idx != 0 }
-                    .joinToString("#, ") { it.second }
-            else -> "https://www.elitebabes.com"
-        }
-
     private class HighlightsFilter(highlights: List<Pair<String, String>>) : SelectFilter("Highlights", highlights)
 
     class ChannelFilter(channels: List<Tag> = emptyList()) : SelectFilter("Channels", listOf(Pair("Off", "")) + channels.map { it.name to it.uriPart })
