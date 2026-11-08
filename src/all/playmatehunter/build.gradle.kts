@@ -15,4 +15,10 @@ keiyoushi {
         lang = "all"
         baseUrl = "https://pmatehunter.com"
     }
+
+    // The theme's deeplink only covers the baseUrl host
+    deeplink {
+        host("www.pmatehunter.com")
+        path("/..*")
+    }
 }

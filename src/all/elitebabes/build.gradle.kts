@@ -15,4 +15,10 @@ keiyoushi {
         lang = "all"
         baseUrl = "https://www.elitebabes.com"
     }
+
+    // The theme's deeplink only covers the baseUrl host
+    deeplink {
+        host("elitebabes.com")
+        path("/..*")
+    }
 }

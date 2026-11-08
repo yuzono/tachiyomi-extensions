@@ -15,4 +15,10 @@ keiyoushi {
         lang = "all"
         baseUrl = "https://www.metarthunter.com"
     }
+
+    // The theme's deeplink only covers the baseUrl host
+    deeplink {
+        host("metarthunter.com")
+        path("/..*")
+    }
 }

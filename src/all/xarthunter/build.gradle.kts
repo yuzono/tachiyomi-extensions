@@ -15,4 +15,10 @@ keiyoushi {
         lang = "all"
         baseUrl = "https://www.xarthunter.com"
     }
+
+    // The theme's deeplink only covers the baseUrl host
+    deeplink {
+        host("xarthunter.com")
+        path("/..*")
+    }
 }
