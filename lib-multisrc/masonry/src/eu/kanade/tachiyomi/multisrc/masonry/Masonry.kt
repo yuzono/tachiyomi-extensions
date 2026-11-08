@@ -215,7 +215,7 @@ abstract class Masonry : KeiSource() {
         val listing = if (segments.first() == "search") segments[1] else segments.first()
         // Boards and pin search both list pins
         if (listing == "pinboard" || listing == "list_item") {
-            val mangas = document.select("$galleryListSelector > li:not(:has(.icon-play, a[href*='/video/']))")
+            val mangas = document.select("$galleryListSelector > li:not(:has($videoTitleSelector))")
                 .mapNotNull(::pinMangaFromElement)
                 .distinctBy { it.url }
             val hasNextPage = document.selectFirst(popularMangaNextPageSelector()) != null
