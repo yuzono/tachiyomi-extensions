@@ -211,8 +211,10 @@ abstract class Masonry : KeiSource() {
 
     protected open fun parseSearchMangaList(document: Document): MangasPage {
         val segments = document.location().toHttpUrl().pathSegments
-        // Boards (/pinboard/) and pin search (/search/list_item/) both list pins
-        if ("pinboard" in segments || "list_item" in segments) {
+        // Boards are /pinboard/<slug>/, text search is /search/<type>/<query>/: the slug or query can be any word
+        val listing = if (segments.first() == "search") segments[1] else segments.first()
+        // Boards and pin search both list pins
+        if (listing == "pinboard" || listing == "list_item") {
             val mangas = document.select("$galleryListSelector > li:not(:has(.icon-play, a[href*='/video/']))")
                 .mapNotNull(::pinMangaFromElement)
                 .distinctBy { it.url }
@@ -220,10 +222,9 @@ abstract class Masonry : KeiSource() {
             return MangasPage(mangas, hasNextPage)
         }
 
-        val mangaFromElement = when {
-            // Text search for models (/search/model/) returns model entries
-            segments.any { it == "model" || it == "models" || it == "model-tag" } -> ::modelMangaFromElement
-            "collection" in segments -> ::collectionMangaFromElement
+        val mangaFromElement = when (listing) {
+            "model" -> ::modelMangaFromElement
+            "collection" -> ::collectionMangaFromElement
             else -> ::popularMangaFromElement
         }
 
