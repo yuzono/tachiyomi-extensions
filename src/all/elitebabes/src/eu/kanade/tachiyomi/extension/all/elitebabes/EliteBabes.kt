@@ -133,8 +133,8 @@ abstract class EliteBabes : Masonry() {
         filterData?.channels?.takeIf { it.isNotEmpty() }?.let {
             filters.add(Filter.Header("Channels supports Sort but ignore Browse/Search, Tags Models & Boards filter"))
             filters.add(ChannelFilter(it))
+            filters.add(Filter.Separator())
         }
-        filters.add(Filter.Separator())
 
         filters.addAll(super.getFilterList(data).list)
 

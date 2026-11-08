@@ -289,9 +289,9 @@ abstract class Masonry : KeiSource() {
         filterData?.boards?.takeIf { it.isNotEmpty() }?.let {
             filters += Filter.Header("Boards supports Sort but ignore Browse/Search, Tags & Models filter")
             filters += BoardFilter(it)
+            filters += Filter.Separator()
         }
         filters += listOf(
-            Filter.Separator(),
             Filter.Header("Pins need a text search"),
             SearchTypeFilter(searchTypeOptions),
             Filter.Separator(),
