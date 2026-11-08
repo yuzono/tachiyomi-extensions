@@ -285,10 +285,11 @@ abstract class Masonry : KeiSource() {
     override fun getFilterList(data: JsonElement?): FilterList {
         val filterData = data?.parseAs<MasonryFilterData>()
 
-        val filters = mutableListOf<Filter<*>>(
-            Filter.Header("Boards supports Sort but ignore Browse/Search, Tags & Models filter"),
-        )
-        filterData?.boards?.takeIf { it.isNotEmpty() }?.let { filters += BoardFilter(it) }
+        val filters = mutableListOf<Filter<*>>()
+        filterData?.boards?.takeIf { it.isNotEmpty() }?.let {
+            filters += Filter.Header("Boards supports Sort but ignore Browse/Search, Tags & Models filter")
+            filters += BoardFilter(it)
+        }
         filters += listOf(
             Filter.Separator(),
             Filter.Header("Pins need a text search"),
