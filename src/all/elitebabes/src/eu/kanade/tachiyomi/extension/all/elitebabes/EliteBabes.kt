@@ -86,10 +86,8 @@ abstract class EliteBabes : Masonry() {
             )
         }
 
-    // Only browsing galleries has a video listing (/sort/videos/)
-    override val sortOptions = super.sortOptions + Pair("Video only", "videos")
-
-    override val sortHeader = super.sortHeader + "\n'Video only' works only for browsing Galleries without other filters"
+    // Last, as a saved search keeps the index of its choice
+    override val searchTypeOptions = super.searchTypeOptions + Pair("Video only", "video")
 
     @Serializable
     class EliteBabesFilterData(

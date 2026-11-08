@@ -157,10 +157,6 @@ abstract class Masonry : KeiSource() {
         else -> "updates"
     }
 
-    protected open val sortOptions = sortFilterOptions
-
-    protected open val sortHeader = "Some source might not support Trending"
-
     protected open val searchTypeOptions = listOf(
         Pair("Galleries", "post"),
         Pair("Models", "model"),
@@ -215,12 +211,11 @@ abstract class Masonry : KeiSource() {
             }
 
             else -> {
+                // The site's video listing (/sort/videos/) is a sort of the galleries
+                if (searchType == "video") return getGridPage(channelGridApiUrl("updates", "videos"), page)
                 val channel = getBrowseChannelUri(searchType)
-                // /gridapi/ lists nothing for these, say why instead of "No results found"
-                when {
-                    channel == "pins" -> throw Exception("Pins need a text search")
-                    sort == "videos" && channel != "updates" -> throw Exception("'Video only' works only for browsing Galleries")
-                }
+                // /gridapi/ lists no pins, say why instead of "No results found"
+                if (channel == "pins") throw Exception("Pins need a text search")
                 return getGridPage(channelGridApiUrl(channel, sort), page, listingMangaFromElement(channel))
             }
         }
@@ -327,8 +322,8 @@ abstract class Masonry : KeiSource() {
             Filter.Header("Pins need a text search"),
             SearchTypeFilter(searchTypeOptions),
             Filter.Separator(),
-            Filter.Header(sortHeader),
-            SortFilter(sortOptions),
+            Filter.Header("Some source might not support Trending"),
+            SortFilter(),
             Filter.Separator(),
         )
 
