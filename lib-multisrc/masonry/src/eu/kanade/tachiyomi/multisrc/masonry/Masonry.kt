@@ -158,6 +158,8 @@ abstract class Masonry : KeiSource() {
 
     protected open val sortOptions = sortFilterOptions
 
+    protected open val sortHeader = "Some source might not support Trending"
+
     protected open val searchTypeOptions = listOf(
         Pair("Galleries", "post"),
         Pair("Models", "model"),
@@ -302,7 +304,7 @@ abstract class Masonry : KeiSource() {
             Filter.Header("Pins need a text search"),
             SearchTypeFilter(searchTypeOptions),
             Filter.Separator(),
-            Filter.Header("Some source might not support Trending"),
+            Filter.Header(sortHeader),
             SortFilter(sortOptions),
             Filter.Separator(),
         )
