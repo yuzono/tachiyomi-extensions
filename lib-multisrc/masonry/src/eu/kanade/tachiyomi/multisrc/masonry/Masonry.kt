@@ -262,16 +262,15 @@ abstract class Masonry : KeiSource() {
         }
 
     // Boards are user-made pinboards, thousands of them, so offer the trending, newest and top ones shown on /pinboards/
-    protected open suspend fun fetchBoards(): List<Tag> = listOf(Tag("Off", "")) +
-        client.get("$baseUrl/pinboards/").asJsoup()
-            .select(".list-gallery figure > a[href*=/pinboard/]")
-            .map {
-                Tag(
-                    it.select("img").attr("alt"),
-                    it.attr("href").removeSuffix("/").substringAfterLast("/"),
-                )
-            }
-            .distinctBy { it.uriPart }
+    protected open suspend fun fetchBoards(): List<Tag> = client.get("$baseUrl/pinboards/").asJsoup()
+        .select(".list-gallery figure > a[href*=/pinboard/]")
+        .map {
+            Tag(
+                it.select("img").attr("alt"),
+                it.attr("href").removeSuffix("/").substringAfterLast("/"),
+            )
+        }
+        .distinctBy { it.uriPart }
 
     protected suspend fun fetchMasonryFilterData(): MasonryFilterData = coroutineScope {
         val tagsDeferred = async { fetchTags() }

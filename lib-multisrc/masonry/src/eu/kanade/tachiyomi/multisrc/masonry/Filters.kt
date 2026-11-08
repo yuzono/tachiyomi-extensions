@@ -43,7 +43,7 @@ class ModelFilter(group: ModelFilterGroup) : Filter.Group<TagCheckBox>(group.nam
 
 class AgesFilter : SelectFilter("Age", ageFilterOptions)
 
-class BoardFilter(boards: List<Tag> = emptyList()) : SelectFilter("Boards", boards.map { it.name to it.uriPart })
+class BoardFilter(boards: List<Tag> = emptyList()) : SelectFilter("Boards", listOf(Pair("Off", "")) + boards.map { it.name to it.uriPart })
 
 private val ageFilterOptions = listOf(Pair("All Ages", "0")) +
     (19..50).map {
