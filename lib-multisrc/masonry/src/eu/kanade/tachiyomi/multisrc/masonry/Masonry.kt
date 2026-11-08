@@ -102,7 +102,8 @@ abstract class Masonry : KeiSource() {
 
     private suspend fun getGridPage(apiUrl: String, page: Int, mangaFromElement: (Element) -> SManga = ::popularMangaFromElement): MangasPage {
         val mangas = fetchGridTiles(apiUrl, page).map(mangaFromElement)
-        return MangasPage(mangas, mangas.isNotEmpty())
+        // The app shows an empty page as a "No results found" error, so stop at the short last page instead of fetching the empty one after it
+        return MangasPage(mangas, mangas.size >= GRID_PAGE_SIZE)
     }
 
     private fun channelGridApiUrl(channel: String, sort: String) = "$baseUrl/gridapi/?content=$channel&sort=$sort"
@@ -512,5 +513,8 @@ abstract class Masonry : KeiSource() {
 
     companion object {
         private val API_URL_REGEX = Regex("""const apiUrl = '([^']*)'""")
+
+        // Tiles per full /gridapi/ page, the same on every site and listing
+        private const val GRID_PAGE_SIZE = 20
     }
 }
