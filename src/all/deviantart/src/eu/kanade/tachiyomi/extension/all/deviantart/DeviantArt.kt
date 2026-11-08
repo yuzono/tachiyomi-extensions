@@ -366,7 +366,7 @@ abstract class DeviantArt :
         if (manga.url.contains("/gallery/")) {
             // Return other galleries of this user
             val creator = document.selectFirst("#background-container + div a[data-username] > span")?.ownText()
-            val galleries = document.select("#background-container + div #content section._1olSA")
+            val galleries = document.select("#background-container + div #content section:has(a[href*=/gallery/])")
             return galleries.mapNotNull { gallery ->
                 val galleryLink = gallery.selectFirst("a")
                     ?.absUrl("href") ?: return@mapNotNull null
@@ -594,7 +594,7 @@ abstract class DeviantArt :
         private const val CHAPTER_NAME_PREF = "includeArtIdAsChapterNamePref"
 
         private val GALLERY_QUERY_REGEX = Regex("""gallery:([\w-]+)(?:/(\d+))?""")
-        private val GALLERY_LINK_REGEX = Regex("""(.+/gallery/[\w-]+)(?:/[\w-]+)?""")
+        private val GALLERY_LINK_REGEX = Regex("""(.+/gallery/[\w-]+)(?:/[^/]+)?""")
         private val ART_LINK_REGEX = Regex("""(.+/art/[\w-]+)""")
         private val RCACHE_REGEX = Regex("""window\.__RCACHE__ = JSON\.parse\(("\{.+?\}")\);""")
         private val INITIAL_STATE_REGEX = Regex("""window\.__INITIAL_STATE__ = JSON\.parse\(("\{.+?\}")\);""")
