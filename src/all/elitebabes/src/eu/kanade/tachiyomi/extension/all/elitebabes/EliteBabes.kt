@@ -84,17 +84,16 @@ abstract class EliteBabes : Masonry() {
 
     private class HighlightsFilter(highlights: List<Pair<String, String>>) : SelectFilter("Highlights", highlights)
 
-    class ChannelFilter(channels: List<Tag> = emptyList()) : SelectFilter("Channels", channels.map { it.name to it.uriPart })
+    class ChannelFilter(channels: List<Tag> = emptyList()) : SelectFilter("Channels", listOf(Pair("Off", "")) + channels.map { it.name to it.uriPart })
 
-    private suspend fun fetchChannels(): List<Tag> = listOf(Tag("Off", "")) +
-        client.get("$baseUrl/erotic-art-channels/").asJsoup()
-            .select("#tagsList li > a")
-            .map {
-                Tag(
-                    it.selectFirst("span")!!.ownText(),
-                    it.attr("href").removeSuffix("/").substringAfterLast("/"),
-                )
-            }
+    private suspend fun fetchChannels(): List<Tag> = client.get("$baseUrl/erotic-art-channels/").asJsoup()
+        .select("#tagsList li > a")
+        .map {
+            Tag(
+                it.selectFirst("span")!!.ownText(),
+                it.attr("href").removeSuffix("/").substringAfterLast("/"),
+            )
+        }
 
     // Only browsing galleries has a video listing (/sort/videos/)
     override val sortOptions = super.sortOptions + Pair("Video only", "videos")
