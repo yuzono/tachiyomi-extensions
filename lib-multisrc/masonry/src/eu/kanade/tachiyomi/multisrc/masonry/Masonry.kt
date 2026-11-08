@@ -167,22 +167,10 @@ abstract class Masonry : KeiSource() {
     override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
         val boardFilter = filters.firstInstanceOrNull<BoardFilter>() ?: BoardFilter()
         val sort = (filters.firstInstanceOrNull<SortFilter>() ?: SortFilter()).selected
-        if (boardFilter.selected.isNotEmpty()) {
-            return getSearchPage(page) { p ->
-                val pagePath = if (p > 1) "mpage/$p/" else ""
-                "$baseUrl/pinboard/${boardFilter.selected}/sort/$sort/$pagePath".toHttpUrl()
-            }
-        }
+        if (boardFilter.selected.isNotEmpty()) return getBoardPage(boardFilter.selected, sort, page)
 
         val searchType = filters.firstInstanceOrNull<SearchTypeFilter>()?.selected ?: searchTypeOptions.first().second
-        if (query.isNotBlank()) {
-            return getSearchPage(page) { p ->
-                "$baseUrl/search/$searchType/".toHttpUrl().newBuilder()
-                    .addPathSegment(query.trim())
-                    .addPathSegments("mpage/$p/")
-                    .build()
-            }
-        }
+        if (query.isNotBlank()) return getTextSearchPage(searchType, query, page)
 
         // Filter listings only sort by popular or newest
         val order = sort.takeIf { it == "newest" } ?: "popular"
@@ -234,6 +222,18 @@ abstract class Masonry : KeiSource() {
             if (result.mangas.isNotEmpty() || !result.hasNextPage) return result
             current++
         }
+    }
+
+    private suspend fun getBoardPage(board: String, sort: String, page: Int): MangasPage = getSearchPage(page) { p ->
+        val pagePath = if (p > 1) "mpage/$p/" else ""
+        "$baseUrl/pinboard/$board/sort/$sort/$pagePath".toHttpUrl()
+    }
+
+    private suspend fun getTextSearchPage(searchType: String, query: String, page: Int): MangasPage = getSearchPage(page) { p ->
+        "$baseUrl/search/$searchType/".toHttpUrl().newBuilder()
+            .addPathSegment(query.trim())
+            .addPathSegments("mpage/$p/")
+            .build()
     }
 
     protected open fun parseSearchMangaList(document: Document): MangasPage {
@@ -344,15 +344,35 @@ abstract class Masonry : KeiSource() {
 
     // TODO: Related galleries; more sites/links
 
-    /** Resolves a pasted gallery (/<slug>/), model (/model/<slug>/) or collection (/collections/<slug>/) link of this site. */
+    /**
+     * Opens a link of this site: a gallery, model or collection link gives its entry, and any other link, such as a tag,
+     * a filter, a channel, a board or a search, lists that listing. The deeplink can't tell them apart.
+     */
+    override suspend fun getMangasByUrl(url: HttpUrl, page: Int): MangasPage {
+        if (url.host.removePrefix("www.") != baseUrl.toHttpUrl().host.removePrefix("www.")) return MangasPage(emptyList(), false)
+        if (page == 1) getMangaByUrl(url)?.let { return MangasPage(listOf(it), false) }
+
+        val segments = url.pathSegments.filter(String::isNotEmpty)
+        return when {
+            // A board's next pages need its sort, which is latest unless the link sets one
+            segments.size >= 2 && segments[0] == "pinboard" ->
+                getBoardPage(segments[1], segments.getOrNull(3)?.takeIf { segments[2] == "sort" } ?: "latest", page)
+            segments.size >= 3 && segments[0] == "search" -> getTextSearchPage(segments[1], segments[2], page)
+            else -> getListingPage(url.encodedPath.removePrefix("/"), page)
+        }
+    }
+
+    /** Resolves a gallery (/<slug>/), model (/model/<slug>/) or collection (/collections/<slug>/) link, or null for a listing link. */
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
         val segments = url.pathSegments.filter(String::isNotEmpty)
         val isGallery = segments.size == 1
-        val isModelOrCollection = segments.size == 2 && segments.first() in setOf("model", "collections")
-        if (url.host.removePrefix("www.") != baseUrl.toHttpUrl().host.removePrefix("www.") || !(isGallery || isModelOrCollection)) return null
+        // A model link can also carry the sort of its galleries, /model/<slug>/sort/<sort>/
+        val isModel = segments.size >= 2 && segments[0] == "model"
+        val isCollection = segments.size == 2 && segments[0] == "collections"
+        if (!(isGallery || isModel || isCollection)) return null
 
-        val manga = SManga.create().apply { this.url = "/${segments.joinToString("/")}/" }
-        if (isModelOrCollection) return fetchMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = false).manga
+        val manga = SManga.create().apply { this.url = "/${segments.take(2).joinToString("/")}/" }
+        if (isModel || isCollection) return fetchMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = false).manga
 
         // Listings such as /updates/, /models/ or a channel share the gallery link shape, only a gallery has photos or a video
         val document = client.get(getMangaUrl(manga), Fetch.DOCUMENT).asJsoup()
