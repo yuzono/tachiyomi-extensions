@@ -112,12 +112,19 @@ abstract class Masonry : KeiSource() {
         ?.let { API_URL_REGEX.find(it.data())?.groupValues?.get(1) }
         ?.takeIf(String::isNotEmpty)
 
+    /** The /gridapi/ URL of the last listing browsed, keyed by its path, so its next pages don't fetch its first page again. */
+    @Volatile
+    private var lastListingApiUrl: Pair<String, String>? = null
+
     /** Fetches page [page] of the listing at [path] (relative to [baseUrl]) through the /gridapi/ URL on its first page. */
     protected suspend fun getListingPage(path: String, page: Int): MangasPage {
         val mangaFromElement = listingMangaFromElement(path)
-        val document = client.get("$baseUrl/$path").asJsoup()
-        val apiUrl = document.gridApiUrl()
-            ?: return MangasPage(document.select(popularMangaSelector()).map(mangaFromElement), false)
+        val apiUrl = lastListingApiUrl?.takeIf { page > 1 && it.first == path }?.second ?: run {
+            val document = client.get("$baseUrl/$path").asJsoup()
+            document.gridApiUrl()
+                ?: return MangasPage(document.select(popularMangaSelector()).map(mangaFromElement), false)
+        }
+        lastListingApiUrl = path to apiUrl
         return getGridPage(apiUrl, page, mangaFromElement)
     }
 
