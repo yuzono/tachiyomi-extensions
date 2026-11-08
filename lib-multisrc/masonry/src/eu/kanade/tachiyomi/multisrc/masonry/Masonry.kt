@@ -167,7 +167,7 @@ abstract class Masonry : KeiSource() {
         }
 
         val searchType = filters.firstInstanceOrNull<SearchTypeFilter>()?.selected ?: searchTypeOptions.first().second
-        if (query.isNotEmpty()) {
+        if (query.isNotBlank()) {
             val url = "$baseUrl/search/$searchType/".toHttpUrl().newBuilder()
                 .addPathSegment(query.trim())
                 .addPathSegments("mpage/$page/")
