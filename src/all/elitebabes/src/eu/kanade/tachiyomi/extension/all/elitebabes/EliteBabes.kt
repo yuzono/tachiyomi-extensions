@@ -139,21 +139,17 @@ abstract class EliteBabes : Masonry() {
         val sortFilter = filters.firstInstanceOrNull<SortFilter>() ?: SortFilter()
 
         return when {
-            highlightsFilter.state != 0 -> parseSearchMangaList(client.get(highlightsFilter.selected).asJsoup())
+            highlightsFilter.selected != "-" -> parseHighlights(client.get(highlightsFilter.selected).asJsoup())
             channelFilter.selected.isNotEmpty() -> getListingPage("${channelFilter.selected}/s/${sortFilter.selected}/", page)
             else -> super.getSearchMangaList(page, query, filters)
         }
     }
 
-    override fun parseSearchMangaList(document: Document): MangasPage {
-        if (highlights.none { it.second == document.location() }) return super.parseSearchMangaList(document)
-
-        return MangasPage(
-            mangas = document.select("div.item a[href]:has(img)")
-                .map(::highlightMangaFromElement),
-            hasNextPage = false,
-        )
-    }
+    private fun parseHighlights(document: Document): MangasPage = MangasPage(
+        mangas = document.select("div.item a[href]:has(img)")
+            .map(::highlightMangaFromElement),
+        hasNextPage = false,
+    )
 
     private fun highlightMangaFromElement(element: Element) = SManga.create().apply {
         setUrlWithoutDomain(element.absUrl("href"))
