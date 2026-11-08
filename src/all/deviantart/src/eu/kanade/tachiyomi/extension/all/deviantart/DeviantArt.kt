@@ -52,7 +52,6 @@ abstract class DeviantArt :
     private fun backendBuilder() = backendBaseUrl.toHttpUrl().newBuilder()
 
     private val dateFormat by lazy { DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.ENGLISH) }
-    private val dateFormatZ by lazy { DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US) }
 
     private val baseUrlHost by lazy { baseUrl.toHttpUrl().host }
     private val backendBaseUrlHost by lazy { backendBaseUrl.toHttpUrl().host }
@@ -150,7 +149,7 @@ abstract class DeviantArt :
     }
 
     private suspend fun getArtByUrl(url: HttpUrl): SManga? {
-        if (url.host != baseUrl.toHttpUrl().host) return null
+        if (url.host.removePrefix("www.") != baseUrlHost.removePrefix("www.")) return null
         if (url.pathSegments.getOrNull(1) != "art") return null
 
         val username = url.pathSegments[0]
@@ -266,18 +265,12 @@ abstract class DeviantArt :
         val link = ART_LINK_REGEX.find(document.location())?.groupValues?.get(1)
             ?: document.location()
         setUrlWithoutDomain(link)
-        title = document.title()
+        // "{title} by {artist} on DeviantArt"
+        title = document.title().removeSuffix(" on DeviantArt").substringBeforeLast(" by ")
 
         try {
-            val script = document.selectFirst("script:containsData(__INITIAL_STATE__)")?.data() ?: return@apply
-            val matchResult = INITIAL_STATE_REGEX.find(script)?.groupValues ?: return@apply
-            val jsonString = matchResult[1]
-                .replace("\\\"", "\"")
-                .replace("\\\'", "\'")
-                .replace("\\\\", "\\")
-
-            val entities = jsonString.parseAs<StateContent>().entities
-            val deviationId = ART_ID_REGEX.find(link)?.groupValues?.get(1) ?: return@apply
+            val entities = document.parseScriptJson<StateContent>(INITIAL_STATE_REGEX)?.entities ?: return@apply
+            val deviationId = link.substringAfterLast('-')
             val deviation = entities.deviation.getObjectOrNull(deviationId)?.parseAs<DeviationState>() ?: return@apply
             val user = entities.user.getObjectOrNull(deviation.author.toString())?.parseAs<Author>()
             val author = user?.username
@@ -326,7 +319,7 @@ abstract class DeviantArt :
             SChapter.create().apply {
                 setUrlWithoutDomain(link)
                 name = "Art"
-                time?.let { date_upload = dateFormatZ.tryParse(it) }
+                time?.let { date_upload = DateTimeFormatter.ISO_OFFSET_DATE_TIME.tryParse(it) }
             },
         )
     }
@@ -400,15 +393,15 @@ abstract class DeviantArt :
         } else {
             // Art
             return try {
-                val script = document.selectFirst("script:containsData(__RCACHE__)")?.data() ?: return emptyList()
-                val matchResult = RCACHE_REGEX.find(script)?.groupValues ?: return emptyList()
-                val jsonString = matchResult[1]
-                    .replace("\\\"", "\"")
-                    .replace("\\\'", "\'")
-                    .replace("\\\\", "\\")
-
-                jsonString.parseAs<RCacheContent>().relatedContent?.relatedContent
-                    ?.mapNotNull { related ->
+                document.parseScriptJson<RCacheContent>(RCACHE_REGEX)?.relatedContent?.relatedContent
+                    ?.mapNotNull { element ->
+                        // Parse each entry on its own so one unexpected entry doesn't drop the rest
+                        val related = try {
+                            element.parseAs<Related>()
+                        } catch (e: SerializationException) {
+                            Log.e("DeviantArt", "Error parsing related content", e)
+                            return@mapNotNull null
+                        }
                         val contentType = related.contentType
                             ?: return@mapNotNull null
 
@@ -474,6 +467,13 @@ abstract class DeviantArt :
 
     private fun Response.asJsoupXml(): Document = Jsoup.parse(body.string(), request.url.toString(), Parser.xmlParser())
 
+    // The JSON is embedded as a JS string literal, which may contain `\'` (valid JS, invalid JSON)
+    private inline fun <reified T> Document.parseScriptJson(regex: Regex): T? {
+        val literal = select("script").firstNotNullOfOrNull { regex.find(it.data()) }
+            ?.groupValues?.get(1) ?: return null
+        return literal.replace("\\'", "'").parseAs<String>().parseAs<T>()
+    }
+
     private fun Element.getImgAttr(): String? = when {
         hasAttr("url") -> attr("abs:url")
         hasAttr("src") -> attr("abs:src")
@@ -537,7 +537,7 @@ abstract class DeviantArt :
         get() = getString(ArtistInTitle.PREF_KEY, ArtistInTitle.defaultValue.name)
 
     private val SharedPreferences.includeArtIdInChapterName
-        get() = getBoolean(CHAPTER_NAME_PREF, true)
+        get() = getBoolean(CHAPTER_NAME_PREF, false)
 
     private val catalogSearchQuery
         get() = preferences.getString(CATALOG_SEARCH_QUERY_PREF, "") ?: ""
@@ -581,7 +581,7 @@ abstract class DeviantArt :
 
     companion object {
         private const val SEARCH_FORMAT_MSG = "Browse user's gallery by searching for `gallery:{username}` or `gallery:{username}/{folderId}`\n" +
-            "Or search for his separated arts with `by:{username}`"
+            "Or search for an artist's individual arts with `by:{username}`"
         private const val FILTER_CATEGORY = "Category (<name> or <name1>/<name2>/...)"
         private const val CATALOG_CATEGORY = "in category (<name> or <name1>/<name2>/...)"
         private const val DESCRIPTION_GUIDE = "Click tag to show artist's gallery"
@@ -596,9 +596,8 @@ abstract class DeviantArt :
         private val GALLERY_QUERY_REGEX = Regex("""gallery:([\w-]+)(?:/(\d+))?""")
         private val GALLERY_LINK_REGEX = Regex("""(.+/gallery/[\w-]+)(?:/[\w-]+)?""")
         private val ART_LINK_REGEX = Regex("""(.+/art/[\w-]+)""")
-        private val ART_ID_REGEX = Regex("""-(\d+)""")
-        private val RCACHE_REGEX = Regex("""window\.__RCACHE__ = JSON\.parse\("(\{.+?\})"\);""")
-        private val INITIAL_STATE_REGEX = Regex("""window\.__INITIAL_STATE__ = JSON\.parse\("(\{.+?\})"\);""")
+        private val RCACHE_REGEX = Regex("""window\.__RCACHE__ = JSON\.parse\(("\{.+?\}")\);""")
+        private val INITIAL_STATE_REGEX = Regex("""window\.__INITIAL_STATE__ = JSON\.parse\(("\{.+?\}")\);""")
 
         private val STYLE_URL_REGEX = Regex("""background-image\s*:\s*url\('([^']+)'\)""")
     }

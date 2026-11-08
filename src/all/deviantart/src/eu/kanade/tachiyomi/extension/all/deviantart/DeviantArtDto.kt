@@ -2,40 +2,41 @@ package eu.kanade.tachiyomi.extension.all.deviantart
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
 @Serializable
 class Deviation(
-    val deviationId: Int,
-    val type: String, // "image", "film"
+    // val deviationId: Int,
+    // val type: String, // "image", "film"
     val url: String, // "https://www.deviantart.com/shw67/art/Beach-58-1007661685"
     val title: String,
-    val isVideo: Boolean,
-    val publishedTime: String, // "2024-01-03T03:17:25-0800"
-    val isMature: Boolean,
+    // val isVideo: Boolean,
+    // val publishedTime: String, // "2024-01-03T03:17:25-0800"
+    // val isMature: Boolean,
     val author: Author,
     val media: DeviationMedia,
 )
 
 @Serializable
 class DeviationState(
-    val deviationId: Int,
-    val type: String, // "image", "film"
+    // val deviationId: Int,
+    // val type: String, // "image", "film"
     val url: String, // "https://www.deviantart.com/shw67/art/Beach-58-1007661685"
     val title: String,
-    val isVideo: Boolean,
-    val publishedTime: String, // "2024-01-03T03:17:25-0800"
-    val isMature: Boolean,
+    // val isVideo: Boolean,
+    // val publishedTime: String, // "2024-01-03T03:17:25-0800"
+    // val isMature: Boolean,
     val author: Int,
     val media: DeviationMedia,
 )
 
 @Serializable
 class Author(
-    val userId: Int,
-    val useridUuid: String, // "8460dab0-bcab-49e8-bbae-18dc5c677b55"
+    // val userId: Int,
+    // val useridUuid: String, // "8460dab0-bcab-49e8-bbae-18dc5c677b55"
     val username: String, // "shw67",
-    val usericon: String, // "https://a.deviantart.net/avatars-big/s/h/shw67.jpg?2"
+    // val usericon: String, // "https://a.deviantart.net/avatars-big/s/h/shw67.jpg?2"
 )
 
 @Serializable
@@ -47,9 +48,11 @@ class DeviationMedia(
     // "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1cm46YXBwOjdlMGQxODg5ODIyNjQzNzNhNWYwZDQxNWVhMGQyNmUwIiwiaXNzIjoidXJuOmFwcDo3ZTBkMTg4OTgyMjY0MzczYTVmMGQ0MTVlYTBkMjZlMCIsIm9iaiI6W1t7InBhdGgiOiJcL2ZcLzg0NjBkYWIwLWJjYWItNDllOC1iYmFlLTE4ZGM1YzY3N2I1NVwvZGdueG9xZC0wNTRkYjhiMi01YmFmLTQxZjMtODA5Zi0zOWI5NDkyNTQxNWIuanBnIn1dXSwiYXVkIjpbInVybjpzZXJ2aWNlOmZpbGUuZG93bmxvYWQiXX0.V6UcjpOb2UYTe0inj8ffUkLNWR6zlwRyZ1_4VKyp4GQ"
     private val types: List<DeviationMediaType>?,
 ) {
-    fun getCoverUrl(): String? = token
-        ?.let { "$baseUri${getPreview()}?token=${token.random()}" }
-        ?: baseUri
+    fun getCoverUrl(): String? {
+        val uri = baseUri ?: return null
+        val jwt = token?.randomOrNull() ?: return uri
+        return "$uri${getPreview()}?token=$jwt"
+    }
 
     fun getFullView(): String {
         if (types.isNullOrEmpty()) return ""
@@ -83,22 +86,22 @@ class DeviationMediaType(
 
 @Serializable
 class User(
-    val user: Author,
+    // val user: Author,
     val deviations: List<Deviation>,
 )
 
 @Serializable
 class Collection(
-    val collection: CollectionInfo,
+    // val collection: CollectionInfo,
     val deviations: List<Deviation>,
 )
 
-@Serializable
-class CollectionInfo(
-    val folderId: Int,
-    val name: String,
-    val owner: Author,
-)
+// @Serializable
+// class CollectionInfo(
+//     val folderId: Int,
+//     val name: String,
+//     val owner: Author,
+// )
 
 @Serializable
 class StateContent(
@@ -119,7 +122,7 @@ class RCacheContent(
 
 @Serializable
 class RelatedContents(
-    val relatedContent: List<Related>?,
+    val relatedContent: List<JsonElement>?,
 )
 
 @Serializable
