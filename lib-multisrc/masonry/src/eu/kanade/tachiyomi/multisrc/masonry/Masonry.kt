@@ -361,7 +361,13 @@ abstract class Masonry : KeiSource() {
 
         // Listings such as /updates/, /models/ or a channel share the gallery link shape, only a gallery has photos or a video
         val document = client.get(getMangaUrl(manga), Fetch.DOCUMENT).asJsoup()
-        return document.takeIf { it.selectFirst(pageListSelector()) != null }?.let { parseMangaDetails(it, manga) }
+        return document.takeIf { it.selectFirst(pageListSelector()) != null }?.let { doc ->
+            parseMangaDetails(doc, manga).apply {
+                // Not in parseMangaDetails: the page lacks the cover listings show, so every refresh would swap it for the first photo
+                thumbnail_url = doc.selectFirst(".list-gallery a[href^=https://cdn.] img")?.imgAttr()
+                    ?: doc.selectFirst(videoSelector)?.absUrl("poster")
+            }
+        }
     }
 
     override suspend fun fetchMangaUpdate(
@@ -454,6 +460,8 @@ abstract class Masonry : KeiSource() {
                     val model = elm.selectFirst("h1")?.text() ?: "Model"
                     artist = model
                     title = "$model @$name"
+                    // The same portrait as the model's tile in listings
+                    thumbnail_url = elm.selectFirst("figure img")?.imgAttr()
                 }
                     ?.select("ul.list-inline li")
                     ?.eachText()?.joinToString()
