@@ -325,7 +325,11 @@ abstract class Masonry : KeiSource() {
         if (url.host.removePrefix("www.") != baseUrl.toHttpUrl().host.removePrefix("www.") || !(isGallery || isModelOrCollection)) return null
 
         val manga = SManga.create().apply { this.url = "/${segments.joinToString("/")}/" }
-        return fetchMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = false).manga
+        if (isModelOrCollection) return fetchMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = false).manga
+
+        // Listings such as /updates/, /models/ or a channel share the gallery link shape, only a gallery has photos or a video
+        val document = client.get(getMangaUrl(manga), Fetch.DOCUMENT).asJsoup()
+        return document.takeIf { it.selectFirst(pageListSelector()) != null }?.let { parseMangaDetails(it, manga) }
     }
 
     override suspend fun fetchMangaUpdate(
@@ -472,7 +476,9 @@ abstract class Masonry : KeiSource() {
         return pageListParse(document)
     }
 
-    protected open fun pageListParse(document: Document): List<Page> = document.select(".list-gallery a[href^=https://cdn.], $videoSelector")
+    protected open fun pageListSelector() = ".list-gallery a[href^=https://cdn.], $videoSelector"
+
+    protected open fun pageListParse(document: Document): List<Page> = document.select(pageListSelector())
         .mapIndexed { idx, img ->
             Page(
                 idx,
