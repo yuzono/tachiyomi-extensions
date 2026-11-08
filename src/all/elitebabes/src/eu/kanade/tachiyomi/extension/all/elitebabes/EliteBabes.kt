@@ -140,7 +140,7 @@ abstract class EliteBabes : Masonry() {
 
         return when {
             highlightsFilter.state != 0 -> parseSearchMangaList(client.get(highlightsFilter.selected).asJsoup())
-            channelFilter.state != 0 -> getListingPage("${channelFilter.selected}/s/${sortFilter.selected}/", page)
+            channelFilter.selected.isNotEmpty() -> getListingPage("${channelFilter.selected}/s/${sortFilter.selected}/", page)
             else -> super.getSearchMangaList(page, query, filters)
         }
     }

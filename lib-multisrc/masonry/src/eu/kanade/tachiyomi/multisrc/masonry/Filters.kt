@@ -10,7 +10,8 @@ abstract class SelectFilter(
     name,
     options.map { it.first }.toTypedArray(),
 ) {
-    val selected get() = options[state].second
+    // A saved search can restore an index past a fetched list that has since shrunk, which falls back to the first option
+    val selected get() = options.getOrElse(state) { options.first() }.second
 }
 
 class SortFilter(options: List<Pair<String, String>> = sortFilterOptions) : SelectFilter("Sort by", options)

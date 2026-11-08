@@ -171,7 +171,7 @@ abstract class Masonry : KeiSource() {
     override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
         val boardFilter = filters.firstInstanceOrNull<BoardFilter>() ?: BoardFilter()
         val sort = (filters.firstInstanceOrNull<SortFilter>() ?: SortFilter()).selected
-        if (boardFilter.state != 0) {
+        if (boardFilter.selected.isNotEmpty()) {
             val pagePath = if (page > 1) "mpage/$page/" else ""
             return parseSearchMangaList(client.get("$baseUrl/pinboard/${boardFilter.selected}/sort/$sort/$pagePath").asJsoup())
         }
