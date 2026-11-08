@@ -247,15 +247,13 @@ abstract class Masonry : KeiSource() {
     protected open suspend fun fetchModelFilters(): List<ModelFilterGroup> = client.get("$baseUrl/models/sort/filter/ord/popular/age/0/country/0/tags/0/mpage/1/").asJsoup()
         .select("#filter-b section[data-slot=tags], #filter-b section[data-slot=country]")
         .map { section ->
-            val slot = section.attr("data-slot")
             ModelFilterGroup(
                 name = section.attr("data-label"),
-                slot = slot,
+                slot = section.attr("data-slot"),
                 options = section.select("label").map {
-                    val name = it.select(".txt").text()
                     Tag(
                         // Model tags share names with gallery tags (Asian, Blonde...)
-                        if (slot == "tags") "M: $name" else name,
+                        "M: " + it.select(".txt").text(),
                         it.select("input").attr("value"),
                     )
                 },
