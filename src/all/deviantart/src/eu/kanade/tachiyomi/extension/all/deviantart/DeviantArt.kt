@@ -427,11 +427,11 @@ abstract class DeviantArt :
                             }
                         }
                     }?.flatten()
-                    ?.mapNotNull { deviation ->
+                    ?.map { deviation ->
                         SManga.create().apply {
                             setUrlWithoutDomain(deviation.url)
                             title = deviation.title
-                            thumbnail_url = deviation.media.getCoverUrl() ?: return@mapNotNull null
+                            thumbnail_url = deviation.media.getCoverUrl()
                             author = deviation.author.username
                             author?.let { genre = "gallery:$it, by:$it" }
                             description = DESCRIPTION_GUIDE

@@ -50,38 +50,55 @@ class DeviationMedia(
 ) {
     fun getCoverUrl(): String? {
         val uri = baseUri ?: return null
-        val jwt = token?.randomOrNull() ?: return uri
-        return "$uri${getPreview()}?token=$jwt"
+        // A token only authorizes the type that points at it: a resized path or the original file
+        val jwt = coverType?.let { token?.getOrNull(it.r) } ?: return uri
+        return "$uri${getPreviewPath()}?token=$jwt"
     }
 
-    fun getFullView(): String {
-        if (types.isNullOrEmpty()) return ""
-        return (types.firstOrNull { it.t == "fullview" } ?: types.maxByOrNull { it.w * it.h })
-            ?.let { "/v1/fill/w_${it.w},h_${it.h}/$prettyName-fullview.jpg" }
-            ?: ""
+    fun getFullViewUrl(): String? {
+        val uri = baseUri ?: return null
+        val jwt = fullViewOrBiggestType?.let { token?.getOrNull(it.r) } ?: return uri
+        return "$uri${getFullViewPath()}?token=$jwt"
     }
 
-    fun getPreview(): String {
-        if (types.isNullOrEmpty()) return ""
-        return (types.firstOrNull { it.t == "preview" } ?: types.maxByOrNull { it.w * it.h })
-            ?.let { "/v1/fill/w_${it.w},h_${it.h}/$prettyName-pre.jpg" }
-            ?: ""
+    // Only a type without `c` points at the original file, and only its `file.download` token opens it.
+    // Resized types' tokens get 403 there, so there is no original URL when every type has a `c`
+    fun getOriginalUrl(): String? {
+        val uri = baseUri ?: return getFullViewUrl()
+        if (token.isNullOrEmpty()) return uri
+        val jwt = types?.firstNotNullOfOrNull { type ->
+            token.getOrNull(type.r)?.takeIf { type.c == null }
+        } ?: return getFullViewUrl()
+        return "$uri?token=$jwt"
     }
 
-    fun getThumbnail(): String {
-        if (types.isNullOrEmpty()) return ""
-        return (types.firstOrNull { it.t == "400T" } ?: types.maxByOrNull { it.w * it.h })
-            ?.let { "/v1/fill/w_${it.w},h_${it.h}/$prettyName-400t.jpg" }
-            ?: ""
-    }
+    private fun getFullViewPath() = fullViewOrBiggestType
+        ?.c?.replace("<prettyName>", prettyName.orEmpty()).orEmpty()
+
+    // No `c` means the preview is the original file ($uri?token=$jwt instead of $uri/v1/fill/...-pre.jpg?token=$jwt)
+    // Return: /v1/fill/w_...-pre.jpg
+    private fun getPreviewPath(): String = coverType
+        ?.c?.replace("<prettyName>", prettyName.orEmpty()).orEmpty()
+
+    private fun getThumbnailPath() = (thumbnailType ?: smallestType)
+        ?.c?.replace("<prettyName>", prettyName.orEmpty()).orEmpty()
+
+    private val previewType get() = types?.firstOrNull { it.t == "preview" }
+    private val thumbnailType get() = types?.firstOrNull { it.t == "400T" } // 400px height
+    private val fullViewType get() = types?.firstOrNull { it.t == "fullview" }
+    private val fullViewOrBiggestType get() = fullViewType ?: biggestType
+    private val coverType get() = thumbnailType ?: previewType ?: smallestType
+    private val smallestType get() = types?.filter { it.w > 0 && it.h > 0 }?.minByOrNull { it.w * it.h }
+    private val biggestType get() = types?.maxByOrNull { it.w * it.h }
 }
 
 @Serializable
 class DeviationMediaType(
     val t: String, // fullview, social_preview, preview, 400T
-    val c: String?, // path segments: /v1/fill/w_1600,h_2400,q_80,strp/<prettyName>-fullview.jpg
-    val h: Int, // height
-    val w: Int, // width
+    val c: String? = null, // path segments: /v1/fill/w_1600,h_2400,q_80,strp/<prettyName>-fullview.jpg
+    val r: Int = 0, // index into `token`
+    val h: Int = 0, // height
+    val w: Int = 0, // width
 )
 
 @Serializable
