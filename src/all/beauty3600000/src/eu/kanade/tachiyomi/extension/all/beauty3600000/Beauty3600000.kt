@@ -172,6 +172,8 @@ abstract class Beauty3600000 : KeiSource() {
         return tags.parallelCatchingFlatMap { tag ->
             getPostsPage(1) { addQueryParameter("tags", tag.id.toString()) }.mangas
         }
+            .distinctBy { it.url }
+            .filter { it.url != postId.toString() }
     }
 
     override fun getMangaUrl(manga: SManga): String = manga.url.toIntOrNull()
