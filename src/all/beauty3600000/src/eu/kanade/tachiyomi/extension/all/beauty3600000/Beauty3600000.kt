@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.extension.all.beauty3600000
 
+import android.util.Log
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -15,10 +16,9 @@ import keiyoushi.source.KeiSource
 import keiyoushi.utils.firstInstance
 import keiyoushi.utils.parseAs
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonElement
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -232,13 +232,15 @@ abstract class Beauty3600000 : KeiSource() {
      * Parallel implementation of [Iterable.flatMap], but running
      * the transformation function inside a try-catch block.
      */
-    private suspend inline fun <A, B> Iterable<A>.parallelCatchingFlatMap(crossinline f: suspend (A) -> Iterable<B>): List<B> = withContext(Dispatchers.IO) {
+    private suspend inline fun <A, B> Iterable<A>.parallelCatchingFlatMap(crossinline f: suspend (A) -> Iterable<B>): List<B> = coroutineScope {
         map {
             async {
                 try {
                     f(it)
-                } catch (e: Throwable) {
-                    e.printStackTrace()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(name, "Parallel request failed", e)
                     emptyList()
                 }
             }
