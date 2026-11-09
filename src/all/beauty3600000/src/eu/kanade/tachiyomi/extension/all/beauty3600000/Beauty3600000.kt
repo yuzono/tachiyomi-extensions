@@ -101,7 +101,7 @@ abstract class Beauty3600000 : KeiSource() {
 
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
         val id = url.queryParameter("p")?.trim()
-        val apiUrl = apiUrl("posts").apply {
+        val apiUrl = postsUrl().apply {
             if (id != null) {
                 id.toIntOrNull()?.let { addQueryParameter("include", it.toString()) }
                     // Allow copy old entry's `manga.url` to search for old entry for migration which is in format "https://3600000.xyz/?p=/{slug}/"
@@ -134,7 +134,7 @@ abstract class Beauty3600000 : KeiSource() {
 
     private suspend fun getPost(postUrl: String): PostDto {
         val id = postUrl.toIntOrNull()
-        val url = apiUrl("posts").apply {
+        val url = postsUrl().apply {
             if (id != null) {
                 addPathSegment(id.toString())
             } else {
@@ -203,8 +203,11 @@ abstract class Beauty3600000 : KeiSource() {
         .addPathSegments(API_BASE)
         .addPathSegment(endpoint)
 
+    private fun postsUrl(): HttpUrl.Builder = apiUrl("posts")
+        .addQueryParameter("_fields", POST_FIELDS)
+
     private suspend fun getPostsPage(page: Int, configure: HttpUrl.Builder.() -> Unit = {}): MangasPage {
-        val url = apiUrl("posts")
+        val url = postsUrl()
             .addQueryParameter("page", page.toString())
             .addQueryParameter("per_page", PER_PAGE.toString())
             .apply(configure)
@@ -243,5 +246,6 @@ abstract class Beauty3600000 : KeiSource() {
     companion object {
         private const val API_BASE = "wp-json/wp/v2"
         private const val PER_PAGE = 100
+        private const val POST_FIELDS = "id,title,content,date_gmt"
     }
 }
