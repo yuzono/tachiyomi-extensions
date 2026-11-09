@@ -19,12 +19,12 @@ class PostDto(
     private val content: RenderedDto,
     @SerialName("date_gmt") private val dateGmt: String,
 ) {
-    fun toSManga() = SManga.create().apply {
+    fun toSManga(baseUrl: String) = SManga.create().apply {
         url = id.toString()
         title = this@PostDto.title.rendered.decodeHtmlEntities()
             .takeIf { it.isNotBlank() }
             ?: throw Exception("Title is mandatory")
-        thumbnail_url = images().firstOrNull()?.attr("src")
+        thumbnail_url = images(baseUrl).firstOrNull()?.absUrl("src")
         status = SManga.COMPLETED
         update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
     }
@@ -35,11 +35,11 @@ class PostDto(
         date_upload = DateTimeFormatter.ISO_LOCAL_DATE_TIME.tryParseDateTime(dateGmt, ZoneOffset.UTC)
     }
 
-    fun toPageList() = images().mapIndexed { i, img ->
-        Page(i, imageUrl = img.attr("src"))
+    fun toPageList(baseUrl: String) = images(baseUrl).mapIndexed { i, img ->
+        Page(i, imageUrl = img.absUrl("src"))
     }
 
-    private fun images() = Jsoup.parseBodyFragment(content.rendered).select("img")
+    private fun images(baseUrl: String) = Jsoup.parseBodyFragment(content.rendered, baseUrl).select("img")
 }
 
 @Serializable

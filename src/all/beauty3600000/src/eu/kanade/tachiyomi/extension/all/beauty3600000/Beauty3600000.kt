@@ -112,7 +112,7 @@ abstract class Beauty3600000 : KeiSource() {
             }
         }.build()
 
-        return client.get(apiUrl, Fetch.XHR).parseApi<List<PostDto>>().firstOrNull()?.toSManga()
+        return client.get(apiUrl, Fetch.XHR).parseApi<List<PostDto>>().firstOrNull()?.toSManga(baseUrl)
     }
 
     // ========================= Details =========================
@@ -125,7 +125,7 @@ abstract class Beauty3600000 : KeiSource() {
     ): SMangaUpdate {
         val post = getPost(manga.url)
         val details = if (fetchDetails) {
-            post.toSManga().apply { genre = getGenres(post.id) }
+            post.toSManga(baseUrl).apply { genre = getGenres(post.id) }
         } else {
             manga
         }
@@ -186,7 +186,7 @@ abstract class Beauty3600000 : KeiSource() {
 
     // ========================= Pages =========================
 
-    override suspend fun getPageList(chapter: SChapter): List<Page> = getPost(chapter.url).toPageList()
+    override suspend fun getPageList(chapter: SChapter): List<Page> = getPost(chapter.url).toPageList(baseUrl)
 
     // ========================= Filters =========================
 
@@ -214,7 +214,7 @@ abstract class Beauty3600000 : KeiSource() {
             .build()
         val response = client.get(url, Fetch.XHR)
         val totalPages = response.header("X-WP-TotalPages")?.toIntOrNull() ?: 0
-        val mangas = response.parseApi<List<PostDto>>().map { it.toSManga() }
+        val mangas = response.parseApi<List<PostDto>>().map { it.toSManga(baseUrl) }
         return MangasPage(mangas, page < totalPages)
     }
 
