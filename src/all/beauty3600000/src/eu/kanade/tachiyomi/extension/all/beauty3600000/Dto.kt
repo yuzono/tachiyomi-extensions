@@ -5,6 +5,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import keiyoushi.utils.tryParseDateTime
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import org.jsoup.Jsoup
 import org.jsoup.parser.Parser
@@ -16,7 +17,7 @@ class PostDto(
     val id: Int,
     private val title: RenderedDto,
     private val content: RenderedDto,
-    private val date: String,
+    @SerialName("date_gmt") private val dateGmt: String,
 ) {
     fun toSManga() = SManga.create().apply {
         url = id.toString()
@@ -31,7 +32,7 @@ class PostDto(
     fun toSChapter() = SChapter.create().apply {
         url = id.toString()
         name = "Gallery"
-        date_upload = DateTimeFormatter.ISO_LOCAL_DATE_TIME.tryParseDateTime(date, ZoneOffset.UTC)
+        date_upload = DateTimeFormatter.ISO_LOCAL_DATE_TIME.tryParseDateTime(dateGmt, ZoneOffset.UTC)
     }
 
     fun toPageList() = images().mapIndexed { i, img ->
