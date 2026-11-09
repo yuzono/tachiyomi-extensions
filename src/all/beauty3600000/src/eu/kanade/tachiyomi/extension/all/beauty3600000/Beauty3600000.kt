@@ -14,6 +14,7 @@ import keiyoushi.network.rateLimit
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.firstInstance
 import keiyoushi.utils.parseAs
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -56,9 +57,15 @@ abstract class Beauty3600000 : KeiSource() {
         if (noFilter && trimmedQuery.isEmpty()) return getPopularManga(page)
 
         val tagId = if (noFilter) {
-            runCatching { getTermsBySlug("tags", trimmedQuery) }.getOrNull()
-                ?.firstOrNull { it.name.equals(trimmedQuery, ignoreCase = true) }
-                ?.id
+            try {
+                getTermsBySlug("tags", trimmedQuery)
+                    .firstOrNull { it.name.equals(trimmedQuery, ignoreCase = true) }
+                    ?.id
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
         } else {
             null
         }
