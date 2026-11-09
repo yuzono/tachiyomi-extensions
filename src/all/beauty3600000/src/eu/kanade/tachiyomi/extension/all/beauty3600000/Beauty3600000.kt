@@ -58,7 +58,7 @@ abstract class Beauty3600000 : KeiSource() {
 
         val tagId = if (noFilter) {
             try {
-                getTermsBySlug("tags", trimmedQuery)
+                getTerms("tags", "slug", trimmedQuery)
                     .firstOrNull { it.name.equals(trimmedQuery, ignoreCase = true) }
                     ?.id
             } catch (e: CancellationException) {
@@ -93,7 +93,7 @@ abstract class Beauty3600000 : KeiSource() {
             else -> return super.getMangasByUrl(url, page)
         }
         val termId = segments.getOrNull(1)
-            ?.let { getTermsBySlug(taxonomy, it).firstOrNull()?.id }
+            ?.let { getTerms(taxonomy, "slug", it).firstOrNull()?.id }
             ?: return MangasPage(emptyList(), false)
 
         return getPostsPage(page) { addQueryParameter(taxonomy, termId.toString()) }
@@ -151,20 +151,13 @@ abstract class Beauty3600000 : KeiSource() {
     }
 
     private suspend fun getGenres(postId: Int): String? = listOf("categories", "tags")
-        .parallelCatchingFlatMap { getPostTerms(postId, it) }
+        .parallelCatchingFlatMap { getTerms(it, "post", postId.toString()) }
         .takeIf { it.isNotEmpty() }
         ?.joinToString { it.name }
 
-    private suspend fun getPostTerms(postId: Int, taxonomy: String): List<TermDto> {
+    private suspend fun getTerms(taxonomy: String, param: String, value: String): List<TermDto> {
         val url = apiUrl(taxonomy)
-            .addQueryParameter("post", postId.toString())
-            .build()
-        return client.get(url, Fetch.XHR).parseApi()
-    }
-
-    private suspend fun getTermsBySlug(taxonomy: String, slug: String): List<TermDto> {
-        val url = apiUrl(taxonomy)
-            .addQueryParameter("slug", slug)
+            .addQueryParameter(param, value)
             .build()
         return client.get(url, Fetch.XHR).parseApi()
     }
@@ -173,7 +166,7 @@ abstract class Beauty3600000 : KeiSource() {
 
     override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> {
         val postId = manga.url.toIntOrNull() ?: getPost(manga.url).id
-        val tags = getPostTerms(postId, "tags")
+        val tags = getTerms("tags", "post", postId.toString())
             .sortedBy { it.name.startsWith('[') }
 
         return tags.parallelCatchingFlatMap { tag ->
