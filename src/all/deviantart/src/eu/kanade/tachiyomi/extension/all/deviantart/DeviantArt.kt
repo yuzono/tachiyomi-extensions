@@ -275,7 +275,11 @@ abstract class DeviantArt :
             val user = entities.user.getObjectOrNull(deviation.author.toString())?.parseAs<Author>()
             val author = user?.username
             setUrlWithoutDomain(deviation.url)
-            title = deviation.title
+            title = if (preferences.includeArtIdInChapterName) {
+                "${deviation.title} [$deviationId]"
+            } else {
+                deviation.title
+            }
             deviation.media.getCoverUrl()?.let { thumbnail_url = it }
             author?.let {
                 this.author = it
