@@ -417,6 +417,8 @@ abstract class DeviantArt :
                                 related.collections
                                     ?.flatMap { collection -> collection.deviations }
                             }
+                            // Group profiles only, no deviations to show
+                            "groups" -> null
                             else -> {
                                 Log.w("DeviantArt", "contentType: $contentType")
                                 null
