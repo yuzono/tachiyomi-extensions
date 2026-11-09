@@ -76,9 +76,23 @@ abstract class Beauty3600000 : KeiSource() {
         }
     }
 
-    override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
-        if (url.host != baseUrl.toHttpUrl().host) return null
+    override suspend fun getMangasByUrl(url: HttpUrl, page: Int): MangasPage {
+        if (url.host != baseUrl.toHttpUrl().host) return MangasPage(emptyList(), false)
 
+        val segments = url.pathSegments.filter(String::isNotEmpty)
+        val taxonomy = when (segments.firstOrNull()) {
+            "category" -> "categories"
+            "tag" -> "tags"
+            else -> return super.getMangasByUrl(url, page)
+        }
+        val termId = segments.getOrNull(1)
+            ?.let { getTermsBySlug(taxonomy, it).firstOrNull()?.id }
+            ?: return MangasPage(emptyList(), false)
+
+        return getPostsPage(page) { addQueryParameter(taxonomy, termId.toString()) }
+    }
+
+    override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
         val id = url.queryParameter("p")?.trim()
         val apiUrl = apiUrl("posts").apply {
             if (id != null) {

@@ -15,6 +15,7 @@ keiyoushi {
         baseUrl = "https://3600000.xyz"
     }
 
+    // Galleries are /<slug>/, which a path pattern can't tell apart from listings; getMangasByUrl lists the listings
     deeplink {
         host("3600000.xyz")
         path("/..*")
