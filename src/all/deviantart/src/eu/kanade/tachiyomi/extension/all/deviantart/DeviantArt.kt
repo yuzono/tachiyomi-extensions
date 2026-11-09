@@ -108,11 +108,7 @@ abstract class DeviantArt :
 
             SManga.create().apply {
                 setUrlWithoutDomain(link)
-                title = if (preferences.includeArtIdInChapterName) {
-                    "$artName [$id]"
-                } else {
-                    artName
-                }
+                title = artTitle(artName, id)
                 author = creator
                 thumbnail_url = item.selectFirst("media|content")?.getImgAttr()
                 author?.let { genre = "gallery:$it, by:$it" }
@@ -265,21 +261,17 @@ abstract class DeviantArt :
         val link = ART_LINK_REGEX.find(document.location())?.groupValues?.get(1)
             ?: document.location()
         setUrlWithoutDomain(link)
+        val deviationId = link.substringAfterLast('-')
         // "{title} by {artist} on DeviantArt"
-        title = document.title().removeSuffix(" on DeviantArt").substringBeforeLast(" by ")
+        title = artTitle(document.title().removeSuffix(" on DeviantArt").substringBeforeLast(" by "), deviationId)
 
         try {
             val entities = document.parseScriptJson<StateContent>(INITIAL_STATE_REGEX)?.entities ?: return@apply
-            val deviationId = link.substringAfterLast('-')
             val deviation = entities.deviation.getObjectOrNull(deviationId)?.parseAs<DeviationState>() ?: return@apply
             val user = entities.user.getObjectOrNull(deviation.author.toString())?.parseAs<Author>()
             val author = user?.username
             setUrlWithoutDomain(deviation.url)
-            title = if (preferences.includeArtIdInChapterName) {
-                "${deviation.title} [$deviationId]"
-            } else {
-                deviation.title
-            }
+            title = artTitle(deviation.title, deviationId)
             deviation.media.getCoverUrl()?.let { thumbnail_url = it }
             author?.let {
                 this.author = it
@@ -337,11 +329,7 @@ abstract class DeviantArt :
 
         SChapter.create().apply {
             setUrlWithoutDomain(link)
-            name = if (preferences.includeArtIdInChapterName) {
-                "$artName [$id]"
-            } else {
-                artName
-            }
+            name = artTitle(artName, id)
             date_upload = it.selectFirst("pubDate")?.text()?.let(dateFormat::tryParse) ?: 0L
             // scanlator = it.selectFirst("media|credit")?.text()
         }
@@ -435,7 +423,7 @@ abstract class DeviantArt :
                     ?.map { deviation ->
                         SManga.create().apply {
                             setUrlWithoutDomain(deviation.url)
-                            title = deviation.title
+                            title = artTitle(deviation.title, deviation.url.substringAfterLast('-'))
                             thumbnail_url = deviation.media.getCoverUrl()
                             author = deviation.author.username
                             author?.let { genre = "gallery:$it, by:$it" }
@@ -485,6 +473,8 @@ abstract class DeviantArt :
         hasAttr("srcset") -> attr("abs:srcset").substringBefore(" ")
         else -> null
     }
+
+    private fun artTitle(name: String, id: String): String = if (preferences.includeArtIdInChapterName) "$name [$id]" else name
 
     // ============================== Settings ===================================
 
