@@ -116,7 +116,7 @@ abstract class Beauty3600000 : KeiSource() {
         fetchDetails: Boolean,
         fetchChapters: Boolean,
     ): SMangaUpdate {
-        val post = getPost(manga)
+        val post = getPost(manga.url)
         val details = if (fetchDetails) {
             post.toSManga().apply { genre = getGenres(post.id) }
         } else {
@@ -125,13 +125,13 @@ abstract class Beauty3600000 : KeiSource() {
         return SMangaUpdate(details, listOf(post.toSChapter()))
     }
 
-    private suspend fun getPost(manga: SManga): PostDto {
-        val id = manga.url.toIntOrNull()
+    private suspend fun getPost(postUrl: String): PostDto {
+        val id = postUrl.toIntOrNull()
         val url = apiUrl("posts").apply {
             if (id != null) {
                 addPathSegment(id.toString())
             } else {
-                addQueryParameter("slug", manga.url.removeSurrounding("/"))
+                addQueryParameter("slug", postUrl.removeSurrounding("/"))
             }
         }.build()
 
@@ -165,7 +165,7 @@ abstract class Beauty3600000 : KeiSource() {
     override val supportsRelatedMangas = true
 
     override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> {
-        val postId = manga.url.toIntOrNull() ?: getPost(manga).id
+        val postId = manga.url.toIntOrNull() ?: getPost(manga.url).id
         val tags = getPostTerms(postId, "tags")
             .sortedBy { it.name.startsWith('[') }
 
@@ -184,12 +184,7 @@ abstract class Beauty3600000 : KeiSource() {
 
     // ========================= Pages =========================
 
-    override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val url = apiUrl("posts")
-            .addPathSegment(chapter.url)
-            .build()
-        return client.get(url, Fetch.XHR).parseApi<PostDto>().toPageList()
-    }
+    override suspend fun getPageList(chapter: SChapter): List<Page> = getPost(chapter.url).toPageList()
 
     // ========================= Filters =========================
 
