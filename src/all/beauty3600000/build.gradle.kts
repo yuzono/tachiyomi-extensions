@@ -6,15 +6,16 @@ plugins {
 
 keiyoushi {
     name = "3600000 Beauty"
-    versionCode = 6
+    versionCode = 7
     contentWarning = ContentWarning.NSFW
-    libVersion = "1.4"
+    libVersion = "1.6"
 
     source {
         lang = "all"
         baseUrl = "https://3600000.xyz"
     }
 
+    // Galleries are /<slug>/, which a path pattern can't tell apart from listings; getMangasByUrl lists the listings
     deeplink {
         host("3600000.xyz")
         path("/..*")
