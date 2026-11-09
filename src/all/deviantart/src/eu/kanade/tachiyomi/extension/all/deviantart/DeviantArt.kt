@@ -385,9 +385,9 @@ abstract class DeviantArt :
 
                 SManga.create().apply {
                     setUrlWithoutDomain(galleryUrl)
-                    title = when (artistInTitle) {
-                        true -> "$creator - $galleryName"
-                        false -> galleryName
+                    title = when {
+                        artistInTitle && !creator.isNullOrBlank() -> "$creator - $galleryName"
+                        else -> galleryName
                     }
                     thumbnail_url = gallery.selectFirst("img")?.getImgAttr()
                     author = creator
