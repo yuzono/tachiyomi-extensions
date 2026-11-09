@@ -105,7 +105,7 @@ abstract class Beauty3600000 : KeiSource() {
             }
         }.build()
 
-        return client.get(apiUrl, Fetch.XHR).parsePosts().firstOrNull()?.toSManga()
+        return client.get(apiUrl, Fetch.XHR).parseApi<List<PostDto>>().firstOrNull()?.toSManga()
     }
 
     // ========================= Details =========================
@@ -137,9 +137,9 @@ abstract class Beauty3600000 : KeiSource() {
 
         val response = client.get(url, Fetch.XHR)
         return if (id != null) {
-            response.parseAs()
+            response.parseApi()
         } else {
-            response.parsePosts().firstOrNull() ?: throw Exception("Post not found")
+            response.parseApi<List<PostDto>>().firstOrNull() ?: throw Exception("Post not found")
         }
     }
 
@@ -152,14 +152,14 @@ abstract class Beauty3600000 : KeiSource() {
         val url = apiUrl(taxonomy)
             .addQueryParameter("post", postId.toString())
             .build()
-        return client.get(url, Fetch.XHR).parseAs()
+        return client.get(url, Fetch.XHR).parseApi()
     }
 
     private suspend fun getTermsBySlug(taxonomy: String, slug: String): List<TermDto> {
         val url = apiUrl(taxonomy)
             .addQueryParameter("slug", slug)
             .build()
-        return client.get(url, Fetch.XHR).parseAs()
+        return client.get(url, Fetch.XHR).parseApi()
     }
 
     override val supportsRelatedMangas = true
@@ -188,7 +188,7 @@ abstract class Beauty3600000 : KeiSource() {
         val url = apiUrl("posts")
             .addPathSegment(chapter.url)
             .build()
-        return client.get(url, Fetch.XHR).parseAs<PostDto>().toPageList()
+        return client.get(url, Fetch.XHR).parseApi<PostDto>().toPageList()
     }
 
     // ========================= Filters =========================
@@ -214,13 +214,13 @@ abstract class Beauty3600000 : KeiSource() {
             .build()
         val response = client.get(url, Fetch.XHR)
         val totalPages = response.header("X-WP-TotalPages")?.toIntOrNull() ?: 0
-        val mangas = response.parsePosts().map { it.toSManga() }
+        val mangas = response.parseApi<List<PostDto>>().map { it.toSManga() }
         return MangasPage(mangas, page < totalPages)
     }
 
     // The site prints PHP warnings and errors as HTML around the JSON, still with HTTP 200
-    private fun Response.parsePosts(): List<PostDto> = parseAs { body ->
-        body.lineSequence().firstOrNull { it.startsWith("[") }
+    private inline fun <reified T> Response.parseApi(): T = parseAs { body ->
+        body.lineSequence().firstOrNull { it.startsWith("[") || it.startsWith("{") }
             ?: throw Exception("The site returned an error, try again later")
     }
 
