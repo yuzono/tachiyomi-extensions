@@ -506,6 +506,10 @@ abstract class DeviantArt :
             title = CATALOG_FORMAT_MSG
             summary = CATALOG_SEARCH_QUERY + (preferences.getString(CATALOG_SEARCH_QUERY_PREF, "") ?: "")
             setDefaultValue("")
+            setOnPreferenceChangeListener { _, newValue ->
+                summary = CATALOG_SEARCH_QUERY + newValue
+                true
+            }
         }.also(screen::addPreference)
 
         EditTextPreference(screen.context).apply {
@@ -513,6 +517,10 @@ abstract class DeviantArt :
             title = CATALOG_CATEGORY
             summary = preferences.getString(CATALOG_CATEGORY_PREF, "") ?: ""
             setDefaultValue("")
+            setOnPreferenceChangeListener { _, newValue ->
+                summary = newValue as String
+                true
+            }
         }.also(screen::addPreference)
     }
 
