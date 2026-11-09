@@ -1,26 +1,29 @@
 package eu.kanade.tachiyomi.extension.all.beauty3600000
 
+import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
+import keiyoushi.utils.tryParseDateTime
 import kotlinx.serialization.Serializable
 import org.jsoup.Jsoup
 import org.jsoup.parser.Parser
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 @Serializable
 class PostDto(
     val id: Int,
-    val link: String,
-    val title: RenderedDto,
-    val content: RenderedDto,
-    val date: String,
+    private val title: RenderedDto,
+    private val content: RenderedDto,
+    private val date: String,
 ) {
     fun toSManga() = SManga.create().apply {
         url = id.toString()
         title = this@PostDto.title.rendered.decodeHtmlEntities()
             .takeIf { it.isNotBlank() }
             ?: throw Exception("Title is mandatory")
-        thumbnail_url = Jsoup.parseBodyFragment(content.rendered).selectFirst("img")?.attr("src")
+        thumbnail_url = images().firstOrNull()?.attr("src")
         status = SManga.COMPLETED
         update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
     }
@@ -28,7 +31,14 @@ class PostDto(
     fun toSChapter() = SChapter.create().apply {
         url = id.toString()
         name = "Gallery"
+        date_upload = DateTimeFormatter.ISO_LOCAL_DATE_TIME.tryParseDateTime(date, ZoneOffset.UTC)
     }
+
+    fun toPageList() = images().mapIndexed { i, img ->
+        Page(i, imageUrl = img.attr("src"))
+    }
+
+    private fun images() = Jsoup.parseBodyFragment(content.rendered).select("img")
 }
 
 @Serializable
@@ -42,5 +52,4 @@ private fun String.decodeHtmlEntities(): String = Parser.unescapeEntities(this, 
 class TermDto(
     val id: Int,
     val name: String,
-    val slug: String,
 )
