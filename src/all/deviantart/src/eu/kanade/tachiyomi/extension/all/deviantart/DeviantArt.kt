@@ -595,7 +595,7 @@ abstract class DeviantArt :
 
         private val GALLERY_QUERY_REGEX = Regex("""gallery:([\w-]+)(?:/(\d+))?""")
         private val GALLERY_LINK_REGEX = Regex("""(.+/gallery/[\w-]+)(?:/[^/]+)?""")
-        private val ART_LINK_REGEX = Regex("""(.+/art/[\w-]+)""")
+        private val ART_LINK_REGEX = Regex("""(.+/art/[^/?#]+)""")
         private val RCACHE_REGEX = Regex("""window\.__RCACHE__ = JSON\.parse\(("\{.+?\}")\);""")
         private val INITIAL_STATE_REGEX = Regex("""window\.__INITIAL_STATE__ = JSON\.parse\(("\{.+?\}")\);""")
 
