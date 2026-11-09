@@ -218,8 +218,11 @@ abstract class Beauty3600000 : KeiSource() {
         return MangasPage(mangas, page < totalPages)
     }
 
-    // The site may print PHP warnings before the JSON
-    private fun Response.parsePosts(): List<PostDto> = parseAs { jsonArrayRegex.find(it)?.value ?: "[]" }
+    // The site prints PHP warnings and errors as HTML around the JSON, still with HTTP 200
+    private fun Response.parsePosts(): List<PostDto> = parseAs { body ->
+        body.lineSequence().firstOrNull { it.startsWith("[") }
+            ?: throw Exception("The site returned an error, try again later")
+    }
 
     /**
      * Parallel implementation of [Iterable.flatMap], but running
@@ -241,6 +244,5 @@ abstract class Beauty3600000 : KeiSource() {
     companion object {
         private const val API_BASE = "wp-json/wp/v2"
         private const val PER_PAGE = 100
-        private val jsonArrayRegex by lazy { Regex("""\[.*]\s*$""") }
     }
 }
