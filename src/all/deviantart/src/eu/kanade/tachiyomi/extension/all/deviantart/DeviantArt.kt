@@ -14,6 +14,7 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
+import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import keiyoushi.annotation.Source
 import keiyoushi.network.get
 import keiyoushi.network.rateLimit
@@ -113,6 +114,7 @@ abstract class DeviantArt :
                 thumbnail_url = item.selectFirst("media|content")?.getImgAttr()
                 author?.let { genre = "gallery:$it, by:$it" }
                 description = DESCRIPTION_GUIDE
+                update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
             }
         }
     }
@@ -253,6 +255,7 @@ abstract class DeviantArt :
 
     private fun parseArtDetails(document: Document): SManga = SManga.create().apply {
         status = SManga.COMPLETED
+        update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
 
         // Update higher resolution thumbnail
         thumbnail_url = document.selectFirst("img[property=contentUrl]")?.getImgAttr()
@@ -428,6 +431,7 @@ abstract class DeviantArt :
                             author = deviation.author.username
                             author?.let { genre = "gallery:$it, by:$it" }
                             description = DESCRIPTION_GUIDE
+                            update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
                         }
                     }
                     ?: emptyList()
