@@ -151,7 +151,7 @@ abstract class DeviantArt :
         if (url.pathSegments.getOrNull(1) != "art") return null
 
         val username = url.pathSegments[0]
-        val artId = url.pathSegments.getOrNull(2) ?: return null
+        val artId = url.encodedPathSegments.getOrNull(2) ?: return null
         val document = client.get("$baseUrl/$username/art/$artId").asJsoup()
 
         return parseArtDetails(document)
