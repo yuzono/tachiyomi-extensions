@@ -129,7 +129,7 @@ abstract class DeviantArt :
     }
 
     override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
-        val matchGroups = GALLERY_QUERY_REGEX.matchEntire(query)?.groupValues
+        val matchGroups = GALLERY_QUERY_REGEX.matchEntire(query.trim())?.groupValues
         if (matchGroups != null) {
             val username = matchGroups[1]
             val folderId = matchGroups[2].ifEmpty { "all" }
@@ -204,7 +204,8 @@ abstract class DeviantArt :
         // "{artist}'s Gallery on DeviantArt" or "{folder} by {artist} on DeviantArt"
         val pageTitle = document.title().removeSuffix(" on DeviantArt")
         val isAllGallery = link.toHttpUrl().pathSegments[2] == "all"
-        val artistName = pageTitle.removeSuffix("'s Gallery").substringAfterLast(" by ").takeIf(String::isNotBlank)
+        val artistName = pageTitle.removeSuffix("'s Gallery")
+            .substringAfterLast(" by ").takeIf(String::isNotBlank)
         val galleryName = if (isAllGallery) "All" else pageTitle.substringBeforeLast(" by ")
         val artistInTitle = (preferences.artistInTitle == ArtistInTitle.ALWAYS.name) ||
             ((preferences.artistInTitle == ArtistInTitle.ONLY_ALL_GALLERIES.name) && isAllGallery)
@@ -335,28 +336,29 @@ abstract class DeviantArt :
 
         if (manga.url.contains("/gallery/")) {
             // Return other galleries of this user
-            val creator = document.selectFirst("#background-container + div a[data-username] > span")?.ownText()
+            // Read the artist the way parseGalleryDetails does, so related titles match the galleries' own
+            val artistName = document.title().removeSuffix(" on DeviantArt").removeSuffix("'s Gallery")
+                .substringAfterLast(" by ").takeIf(String::isNotBlank)
             val galleries = document.select("#background-container + div #content section:has(a[href*=/gallery/])")
             return galleries.mapNotNull { gallery ->
                 val galleryLink = gallery.selectFirst("a")
                     ?.absUrl("href") ?: return@mapNotNull null
                 val matchResult = GALLERY_LINK_REGEX.matchEntire(galleryLink)?.groupValues
                     ?: return@mapNotNull null
-                if (matchResult.size < 2) return@mapNotNull null
                 val galleryUrl = matchResult[1]
                 val galleryName = gallery.selectFirst("[title]")?.ownText() ?: return@mapNotNull null
                 val artistInTitle = preferences.artistInTitle == ArtistInTitle.ALWAYS.name ||
-                    (preferences.artistInTitle == ArtistInTitle.ONLY_ALL_GALLERIES.name && galleryName == "All")
+                    (preferences.artistInTitle == ArtistInTitle.ONLY_ALL_GALLERIES.name && galleryUrl.endsWith("/all"))
 
                 SManga.create().apply {
                     setUrlWithoutDomain(galleryUrl)
                     title = when {
-                        artistInTitle && !creator.isNullOrBlank() -> "$creator - $galleryName"
+                        artistInTitle && !artistName.isNullOrBlank() -> "$artistName - $galleryName"
                         else -> galleryName
                     }
                     thumbnail_url = gallery.selectFirst("img")?.getImgAttr()
-                    author = creator
-                    author?.let { genre = "by:$author" }
+                    author = artistName
+                    author?.let { genre = "gallery:$it, by:$it" }
                     description = DESCRIPTION_GUIDE
                 }
             }
@@ -475,7 +477,7 @@ abstract class DeviantArt :
 
         SwitchPreferenceCompat(screen.context).apply {
             key = CHAPTER_NAME_PREF
-            title = "Include Art ID in chapter name (to avoid duplicate chapter name)"
+            title = "Include Art ID in art titles and chapter names (avoids duplicate download names)"
             summaryOff = "Title only"
             summaryOn = "Title [ID]"
             setDefaultValue(false)
