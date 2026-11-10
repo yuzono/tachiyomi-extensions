@@ -46,6 +46,7 @@ import kotlin.time.Duration.Companion.minutes
 abstract class DeviantArt :
     KeiSource(),
     ConfigurableSource {
+    override val supportsLatest = false
 
     private val preferences: SharedPreferences by getPreferencesLazy()
 
@@ -79,16 +80,19 @@ abstract class DeviantArt :
         val url = queryBuilder(page)
             .apply {
                 val queryString = listOfNotNull(
-                    "boost:popular",
                     catalogCategory.takeIf { it.isNotBlank() }?.let { "in:$it" },
                     catalogSearchQuery.takeIf { it.isNotBlank() },
                 ).joinToString("+")
-                addEncodedQueryParameter("q", queryString)
+                if (queryString.isNotEmpty()) {
+                    addEncodedQueryParameter("q", queryString)
+                }
             }
             .build()
 
         return parseMangaListPage(client.get(url))
     }
+
+    override suspend fun getLatestUpdates(page: Int): MangasPage = throw UnsupportedOperationException(SEARCH_FORMAT_MSG)
 
     private fun parseMangaListPage(response: Response): MangasPage {
         val document = response.asJsoupXml()
@@ -120,23 +124,6 @@ abstract class DeviantArt :
         }
     }
 
-    // ============================== Latest ==================================
-
-    override suspend fun getLatestUpdates(page: Int): MangasPage {
-        val url = queryBuilder(page)
-            .apply {
-                val queryString = listOfNotNull(
-                    "sort:time",
-                    catalogCategory.takeIf { it.isNotBlank() }?.let { "in:$it" },
-                    catalogSearchQuery.takeIf { it.isNotBlank() },
-                ).joinToString("+")
-                addEncodedQueryParameter("q", queryString)
-            }
-            .build()
-
-        return parseMangaListPage(client.get(url))
-    }
-
     // ============================== Search ===================================
 
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
@@ -161,7 +148,6 @@ abstract class DeviantArt :
         val url = queryBuilder(page)
             .apply {
                 val queryString = listOfNotNull(
-                    filters.filterIsInstance<SortFilter>().firstOrNull()?.selected,
                     filters.filterIsInstance<CategoryFilter>().firstOrNull()?.state
                         ?.takeIf { it.isNotBlank() }?.let { "in:$it" },
                     query.takeIf { it.isNotBlank() },
@@ -558,7 +544,6 @@ abstract class DeviantArt :
     // ============================== Filters =====================================
 
     override fun getFilterList(data: JsonElement?): FilterList = FilterList(
-        SortFilter(),
         Filter.Header(FILTER_CATEGORY),
         CategoryFilter("Category"),
         Filter.Separator(),
@@ -566,26 +551,6 @@ abstract class DeviantArt :
         Filter.Separator(),
         Filter.Header("Paste full URL into search bar to open gallery/art."),
     )
-
-    class SortFilter : SelectFilter("Sort By", sort) {
-        companion object {
-            private val sort = listOf(
-                Pair("Popular", "boost:popular"),
-                Pair("Newest", "sort:time"),
-            )
-        }
-    }
-
-    abstract class SelectFilter(
-        name: String,
-        private val options: List<Pair<String, String>>,
-    ) : Filter.Select<String>(
-        name,
-        options.map { it.first }.toTypedArray(),
-        0,
-    ) {
-        val selected get() = options[state].second.takeUnless { it.isEmpty() }
-    }
 
     private class CategoryFilter(name: String) : Filter.Text(name)
 
@@ -596,7 +561,7 @@ abstract class DeviantArt :
         private const val CATALOG_CATEGORY = "in category (<name> or <name1>/<name2>/...)"
         private const val DESCRIPTION_GUIDE = "Click tag to show artist's gallery"
 
-        private const val CATALOG_FORMAT_MSG = "Show Popular/Latest with:"
+        private const val CATALOG_FORMAT_MSG = "Show Popular with:"
         private const val CATALOG_SEARCH_QUERY = "search query of: "
         private const val CATALOG_SEARCH_QUERY_PREF = "catalog_search_query_pref"
 
