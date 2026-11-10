@@ -54,14 +54,15 @@ abstract class DeviantArt :
 
     private val dateFormat by lazy { DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.ENGLISH) }
 
-    private val baseUrlHost by lazy { baseUrl.toHttpUrl().host }
-    private val backendBaseUrlHost by lazy { backendBaseUrl.toHttpUrl().host }
     override fun OkHttpClient.Builder.configureClient(): OkHttpClient.Builder = apply {
         rateLimit(30, 1.minutes) { it.host == baseUrlHost }
         // rateLimit(5, 1.minutes) { it.host == backendBaseUrlHost }
         rateLimit(30, 5.minutes) { it.host == backendBaseUrlHost }
         addInterceptor(OriginalImageInterceptor())
     }
+
+    private val baseUrlHost by lazy { baseUrl.toHttpUrl().host }
+    private val backendBaseUrlHost by lazy { backendBaseUrl.toHttpUrl().host }
 
     private fun queryBuilder(page: Int): HttpUrl.Builder = backendBuilder()
         .addPathSegment("rss.xml")
@@ -146,17 +147,6 @@ abstract class DeviantArt :
         return parseGalleryDetails(document, link)
     }
 
-    private suspend fun getArtByUrl(url: HttpUrl): SManga? {
-        if (url.host.removePrefix("www.") != baseUrlHost.removePrefix("www.")) return null
-        if (url.pathSegments.getOrNull(1) != "art") return null
-
-        val username = url.pathSegments[0]
-        val artId = url.pathSegments.getOrNull(2) ?: return null
-        val document = client.get("$baseUrl/$username/art/$artId").asJsoup()
-
-        return parseArtDetails(document)
-    }
-
     override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
         val matchGroups = GALLERY_QUERY_REGEX.matchEntire(query)?.groupValues
         if (matchGroups != null) {
@@ -181,6 +171,17 @@ abstract class DeviantArt :
             .build()
 
         return parseMangaListPage(client.get(url))
+    }
+
+    private suspend fun getArtByUrl(url: HttpUrl): SManga? {
+        if (url.host.removePrefix("www.") != baseUrlHost.removePrefix("www.")) return null
+        if (url.pathSegments.getOrNull(1) != "art") return null
+
+        val username = url.pathSegments[0]
+        val artId = url.pathSegments.getOrNull(2) ?: return null
+        val document = client.get("$baseUrl/$username/art/$artId").asJsoup()
+
+        return parseArtDetails(document)
     }
 
     // ============================== Details + Chapters =======================
@@ -253,6 +254,61 @@ abstract class DeviantArt :
         }
     }
 
+    private suspend fun fetchGalleryChapterList(manga: SManga): List<SChapter> {
+        val pathSegments = getMangaUrl(manga).toHttpUrl().pathSegments
+        val username = pathSegments[0]
+        val query = when (val folderId = pathSegments[2]) {
+            "all" -> "gallery:$username"
+            else -> "gallery:$username/$folderId"
+        }
+
+        val url = backendBuilder()
+            .addPathSegment("rss.xml")
+            .addQueryParameter("q", query)
+            .build()
+
+        val document = client.get(url).asJsoupXml()
+        val chapterList = parseToChapterList(document).toMutableList()
+        var nextUrl = document.selectFirst("[rel=next]")?.absUrl("href")
+
+        while (nextUrl != null) {
+            val newDocument = client.get(nextUrl).asJsoupXml()
+            chapterList.addAll(parseToChapterList(newDocument))
+
+            nextUrl = newDocument.selectFirst("[rel=next]")?.absUrl("href")
+        }
+
+        return chapterList.also(::orderChapterList).toList()
+    }
+
+    private fun parseToChapterList(document: Document): List<SChapter> = document.select("item").map {
+        val artName = it.selectFirst("title")!!.text()
+        val link = it.selectFirst("link")!!.text()
+        val id = link.removeSuffix("/")
+            .substringAfterLast('/')
+            .substringAfterLast('-')
+
+        SChapter.create().apply {
+            setUrlWithoutDomain(link)
+            name = artTitle(artName, id)
+            date_upload = it.selectFirst("pubDate")?.text()?.let(dateFormat::tryParse) ?: 0L
+            // scanlator = it.selectFirst("media|credit")?.text()
+        }
+    }
+
+    private fun orderChapterList(chapterList: MutableList<SChapter>) {
+        if (chapterList.isEmpty()) return
+        // In Mihon's updates tab, chapters are ordered by source instead
+        // of chapter number, so to avoid updates being shown in reverse,
+        // disregard source order and order chronologically instead
+        if (chapterList.first().date_upload < chapterList.last().date_upload) {
+            chapterList.reverse()
+        }
+        chapterList.forEachIndexed { i, chapter ->
+            chapter.chapter_number = chapterList.size - i.toFloat()
+        }
+    }
+
     private fun parseArtDetails(document: Document): SManga = SManga.create().apply {
         status = SManga.COMPLETED
         update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
@@ -285,33 +341,6 @@ abstract class DeviantArt :
         }
     }
 
-    private suspend fun fetchGalleryChapterList(manga: SManga): List<SChapter> {
-        val pathSegments = getMangaUrl(manga).toHttpUrl().pathSegments
-        val username = pathSegments[0]
-        val query = when (val folderId = pathSegments[2]) {
-            "all" -> "gallery:$username"
-            else -> "gallery:$username/$folderId"
-        }
-
-        val url = backendBuilder()
-            .addPathSegment("rss.xml")
-            .addQueryParameter("q", query)
-            .build()
-
-        val document = client.get(url).asJsoupXml()
-        val chapterList = parseToChapterList(document).toMutableList()
-        var nextUrl = document.selectFirst("[rel=next]")?.absUrl("href")
-
-        while (nextUrl != null) {
-            val newDocument = client.get(nextUrl).asJsoupXml()
-            chapterList.addAll(parseToChapterList(newDocument))
-
-            nextUrl = newDocument.selectFirst("[rel=next]")?.absUrl("href")
-        }
-
-        return chapterList.also(::orderChapterList).toList()
-    }
-
     private fun parseArtChapterList(document: Document, link: String): List<SChapter> {
         val time = document.selectFirst("span:contains(Published) time")?.attr("datetime")
         return listOf(
@@ -321,34 +350,6 @@ abstract class DeviantArt :
                 time?.let { date_upload = DateTimeFormatter.ISO_OFFSET_DATE_TIME.tryParse(it) }
             },
         )
-    }
-
-    private fun parseToChapterList(document: Document): List<SChapter> = document.select("item").map {
-        val artName = it.selectFirst("title")!!.text()
-        val link = it.selectFirst("link")!!.text()
-        val id = link.removeSuffix("/")
-            .substringAfterLast('/')
-            .substringAfterLast('-')
-
-        SChapter.create().apply {
-            setUrlWithoutDomain(link)
-            name = artTitle(artName, id)
-            date_upload = it.selectFirst("pubDate")?.text()?.let(dateFormat::tryParse) ?: 0L
-            // scanlator = it.selectFirst("media|credit")?.text()
-        }
-    }
-
-    private fun orderChapterList(chapterList: MutableList<SChapter>) {
-        if (chapterList.isEmpty()) return
-        // In Mihon's updates tab, chapters are ordered by source instead
-        // of chapter number, so to avoid updates being shown in reverse,
-        // disregard source order and order chronologically instead
-        if (chapterList.first().date_upload < chapterList.last().date_upload) {
-            chapterList.reverse()
-        }
-        chapterList.forEachIndexed { i, chapter ->
-            chapter.chapter_number = chapterList.size - i.toFloat()
-        }
     }
 
     // ============================== Related ===================================
@@ -458,13 +459,13 @@ abstract class DeviantArt :
         return listOf(createImagePage(0, posterUrl))
     }
 
-    override suspend fun getImageUrl(page: Page) = throw Exception("Open Webview to view this")
-
     override fun getImageRequest(page: Page): Request = super.getImageRequest(page).newBuilder()
         .tag(Page::class.java, page)
         .build()
 
     private fun Response.asJsoupXml(): Document = Jsoup.parse(body.string(), request.url.toString(), Parser.xmlParser())
+
+    override suspend fun getImageUrl(page: Page) = throw Exception("Open Webview to view this")
 
     // The JSON is embedded as a JS string literal, which may contain `\'` (valid JS, invalid JSON)
     private inline fun <reified T> Document.parseScriptJson(regex: Regex): T? {
