@@ -79,13 +79,7 @@ abstract class DeviantArt :
     override suspend fun getPopularManga(page: Int): MangasPage {
         val url = queryBuilder(page)
             .apply {
-                val queryString = listOfNotNull(
-                    catalogCategory.takeIf { it.isNotBlank() }?.let { "in:$it" },
-                    catalogSearchQuery.takeIf { it.isNotBlank() },
-                ).joinToString("+")
-                if (queryString.isNotEmpty()) {
-                    addEncodedQueryParameter("q", queryString)
-                }
+                catalogSearchQuery.takeIf { it.isNotBlank() }?.let { addEncodedQueryParameter("q", it) }
             }
             .build()
 
@@ -146,14 +140,7 @@ abstract class DeviantArt :
         }
 
         val url = queryBuilder(page)
-            .apply {
-                val queryString = listOfNotNull(
-                    filters.filterIsInstance<CategoryFilter>().firstOrNull()?.state
-                        ?.takeIf { it.isNotBlank() }?.let { "in:$it" },
-                    query.takeIf { it.isNotBlank() },
-                ).joinToString("+")
-                addEncodedQueryParameter("q", queryString)
-            }
+            .addEncodedQueryParameter("q", query.trim())
             .build()
 
         return parseMangaListPage(client.get(url))
@@ -504,17 +491,6 @@ abstract class DeviantArt :
                 true
             }
         }.also(screen::addPreference)
-
-        EditTextPreference(screen.context).apply {
-            key = CATALOG_CATEGORY_PREF
-            title = CATALOG_CATEGORY
-            summary = preferences.getString(CATALOG_CATEGORY_PREF, "") ?: ""
-            setDefaultValue("")
-            setOnPreferenceChangeListener { _, newValue ->
-                summary = newValue as String
-                true
-            }
-        }.also(screen::addPreference)
     }
 
     private enum class ArtistInTitle(val text: String) {
@@ -538,34 +514,23 @@ abstract class DeviantArt :
     private val catalogSearchQuery
         get() = preferences.getString(CATALOG_SEARCH_QUERY_PREF, "") ?: ""
 
-    private val catalogCategory
-        get() = preferences.getString(CATALOG_CATEGORY_PREF, "") ?: ""
-
     // ============================== Filters =====================================
 
     override fun getFilterList(data: JsonElement?): FilterList = FilterList(
-        Filter.Header(FILTER_CATEGORY),
-        CategoryFilter("Category"),
-        Filter.Separator(),
         Filter.Header(SEARCH_FORMAT_MSG),
         Filter.Separator(),
         Filter.Header("Paste full URL into search bar to open gallery/art."),
     )
 
-    private class CategoryFilter(name: String) : Filter.Text(name)
-
     companion object {
         private const val SEARCH_FORMAT_MSG = "Browse user's gallery by searching for `gallery:{username}` or `gallery:{username}/{folderId}`\n" +
             "Or search for an artist's individual arts with `by:{username}`"
-        private const val FILTER_CATEGORY = "Category (<name> or <name1>/<name2>/...)"
-        private const val CATALOG_CATEGORY = "in category (<name> or <name1>/<name2>/...)"
         private const val DESCRIPTION_GUIDE = "Click tag to show artist's gallery"
 
         private const val CATALOG_FORMAT_MSG = "Show Popular with:"
         private const val CATALOG_SEARCH_QUERY = "search query of: "
         private const val CATALOG_SEARCH_QUERY_PREF = "catalog_search_query_pref"
 
-        private const val CATALOG_CATEGORY_PREF = "catalog_category_pref"
         private const val CHAPTER_NAME_PREF = "includeArtIdAsChapterNamePref"
 
         private val GALLERY_QUERY_REGEX = Regex("""gallery:([\w-]+)(?:/(\d+))?""")
