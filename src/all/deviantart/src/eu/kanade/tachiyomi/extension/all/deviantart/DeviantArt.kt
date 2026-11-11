@@ -6,7 +6,6 @@ import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import androidx.preference.SwitchPreferenceCompat
-import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -14,53 +13,57 @@ import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
-import eu.kanade.tachiyomi.source.online.HttpSource
+import eu.kanade.tachiyomi.source.model.SMangaUpdate
+import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import keiyoushi.annotation.Source
+import keiyoushi.network.get
+import keiyoushi.network.rateLimit
+import keiyoushi.source.KeiSource
 import keiyoushi.utils.asJsoup
+import keiyoushi.utils.getObjectOrNull
 import keiyoushi.utils.getPreferencesLazy
-import keiyoushi.utils.tryParse
+import keiyoushi.utils.parseAs
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import okhttp3.Headers
+import kotlinx.serialization.json.JsonElement
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import org.jsoup.parser.Parser
-import rx.Observable
-import java.text.SimpleDateFormat
+import java.time.DateTimeException
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.time.Duration.Companion.minutes
 
 @Source
 abstract class DeviantArt :
-    HttpSource(),
+    KeiSource(),
     ConfigurableSource {
-    override val supportsLatest = true
+    override val supportsLatest = false
 
     private val preferences: SharedPreferences by getPreferencesLazy()
-
-    override fun headersBuilder() = Headers.Builder().apply {
-        add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0")
-    }
 
     private val backendBaseUrl = "https://backend.deviantart.com"
     private fun backendBuilder() = backendBaseUrl.toHttpUrl().newBuilder()
 
-    private val json = Json { ignoreUnknownKeys = true }
+    private val dateFormat by lazy { DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.ENGLISH) }
 
-    private val dateFormat by lazy {
-        SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.ENGLISH)
+    override fun OkHttpClient.Builder.configureClient(): OkHttpClient.Builder = apply {
+        rateLimit(30, 1.minutes) { it.host == baseUrlHost }
+        // rateLimit(5, 1.minutes) { it.host == backendBaseUrlHost }
+        rateLimit(30, 5.minutes) { it.host == backendBaseUrlHost }
+        addInterceptor(OriginalImageInterceptor())
     }
 
-    private val dateFormatZ by lazy {
-        SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
-    }
+    private val baseUrlHost by lazy { baseUrl.toHttpUrl().host }
+    private val backendBaseUrlHost by lazy { backendBaseUrl.toHttpUrl().host }
 
     private fun queryBuilder(page: Int): HttpUrl.Builder = backendBuilder()
         .addPathSegment("rss.xml")
@@ -71,24 +74,23 @@ abstract class DeviantArt :
             }
         }
 
-    override fun popularMangaRequest(page: Int): Request {
+    // ============================== Popular ================================
+
+    override suspend fun getPopularManga(page: Int): MangasPage {
         val url = queryBuilder(page)
             .apply {
-                val queryString = listOfNotNull(
-                    "boost:popular",
-                    catalogCategory.takeIf { it.isNotBlank() }?.let { "in:$it" },
-                    catalogSearchQuery.takeIf { it.isNotBlank() },
-                ).joinToString("+")
-                addEncodedQueryParameter("q", queryString)
+                catalogSearchQuery.takeIf { it.isNotBlank() }?.let { addEncodedQueryParameter("q", it) }
             }
             .build()
 
-        return GET(url, headers)
+        return parseMangaListPage(client.get(url))
     }
 
-    override fun popularMangaParse(response: Response): MangasPage {
+    override suspend fun getLatestUpdates(page: Int): MangasPage = throw UnsupportedOperationException(SEARCH_FORMAT_MSG)
+
+    private fun parseMangaListPage(response: Response): MangasPage {
         val document = response.asJsoupXml()
-        val mangaList = parseToMangaList(document).toMutableList()
+        val mangaList = parseToMangaList(document)
         val nextUrl = document.selectFirst("[rel=next]")?.absUrl("href")
 
         return MangasPage(mangaList, nextUrl != null)
@@ -96,280 +98,172 @@ abstract class DeviantArt :
 
     private fun parseToMangaList(document: Document): List<SManga> {
         val items = document.select("item")
-        return items.map {
-            val creator = it.selectFirst("media|credit")?.text()
-            val artName = it.selectFirst("title")!!.text()
-            val link = it.selectFirst("link")!!.text()
+        return items.map { item ->
+            val creator = item.selectFirst("media|credit")?.text()
+            val artName = item.selectFirst("title")!!.text()
+            val link = item.selectFirst("link")!!.text()
             val id = link.removeSuffix("/")
                 .substringAfterLast('/')
                 .substringAfterLast('-')
 
             SManga.create().apply {
                 setUrlWithoutDomain(link)
-                title = if (preferences.includeArtIdInChapterName) {
-                    "$artName [$id]"
-                } else {
-                    artName
-                }
+                title = artTitle(artName, id)
                 author = creator
-                thumbnail_url = it.selectFirst("media|content")?.getImgAttr()
-                author?.let { genre = "gallery:$author, by:$author" }
-                description = "Click tag to show artist's gallery"
+                thumbnail_url = item.selectFirst("media|content")?.getImgAttr()
+                author?.let { genre = "gallery:$it, by:$it" }
+                description = DESCRIPTION_GUIDE
+                update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
             }
         }
     }
 
-    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
-        if (query.startsWith("https://")) {
-            val url = query.toHttpUrl()
-            if (url.host != baseUrl.toHttpUrl().host) {
-                throw Exception("Unsupported url")
-            }
-            val username = url.pathSegments[0]
-            val folderId = url.pathSegments[2]
-            return super.fetchSearchManga(page, "gallery:$username/$folderId", filters)
-        }
-        return super.fetchSearchManga(page, query, filters)
+    // ============================== Search ===================================
+
+    override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
+        val path = url.toGalleryPath(baseUrl) ?: return getArtByUrl(url)
+        val link = "$baseUrl$path"
+        val document = client.get(link).asJsoup()
+
+        return parseGalleryDetails(document, link)
     }
 
-    override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
-        val matchGroups = Regex("""gallery:([\w-]+)(?:/(\d+))?""").matchEntire(query)?.groupValues
+    override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
+        val matchGroups = GALLERY_QUERY_REGEX.matchEntire(query.trim())?.groupValues
         if (matchGroups != null) {
             val username = matchGroups[1]
             val folderId = matchGroups[2].ifEmpty { "all" }
-            return GET("$baseUrl/$username/gallery/$folderId", headers)
-        } else {
-            return GET(
-                queryBuilder(page)
-                    .apply {
-                        val queryString = listOfNotNull(
-                            filters.filterIsInstance<SortFilter>().firstOrNull()?.selected,
-                            filters.filterIsInstance<CategoryFilter>().firstOrNull()?.state
-                                ?.takeIf { it.isNotBlank() }?.let { "in:$it" },
-                            query.takeIf { it.isNotBlank() },
-                        ).joinToString("+")
-                        addEncodedQueryParameter("q", queryString)
-                    }
-                    .build(),
-                headers,
-            )
-        }
-    }
+            val link = "$baseUrl/$username/gallery/$folderId"
+            val document = client.get(link).asJsoup()
 
-    override fun searchMangaParse(response: Response): MangasPage {
-        val url = response.request.url.toString()
-        if (url.contains("rss.xml")) {
-            return popularMangaParse(response)
-        } else {
-            val manga = mangaDetailsParse(response)
-            return MangasPage(listOf(manga), false)
+            return MangasPage(listOf(parseGalleryDetails(document, link)), false)
         }
-    }
 
-    override fun latestUpdatesRequest(page: Int): Request {
         val url = queryBuilder(page)
-            .apply {
-                val queryString = listOfNotNull(
-                    "sort:time",
-                    catalogCategory.takeIf { it.isNotBlank() }?.let { "in:$it" },
-                    catalogSearchQuery.takeIf { it.isNotBlank() },
-                ).joinToString("+")
-                addEncodedQueryParameter("q", queryString)
-            }
+            .addEncodedQueryParameter("q", query.trim())
             .build()
 
-        return GET(url, headers)
+        return parseMangaListPage(client.get(url))
     }
 
-    override fun latestUpdatesParse(response: Response) = popularMangaParse(response)
+    private suspend fun getArtByUrl(url: HttpUrl): SManga? {
+        if (url.host.removePrefix("www.") != baseUrlHost.removePrefix("www.")) return null
+        if (url.pathSegments.getOrNull(1) != "art") return null
 
-    override fun mangaDetailsParse(response: Response): SManga {
-        val document = response.asJsoup()
-        val link = response.request.url.toString()
-        if (link.contains("/gallery/")) {
-            val gallery = document.selectFirst("#sub-folder-gallery")
+        val username = url.pathSegments[0]
+        val artId = url.encodedPathSegments.getOrNull(2) ?: return null
+        val document = client.get("$baseUrl/$username/art/$artId").asJsoup()
 
-            // If manga is sub-gallery then use sub-gallery name, else use gallery name
-            val galleryName = gallery?.selectFirst("._2vMZg + ._2vMZg")?.text()?.substringBeforeLast(" ")
-                ?: gallery?.selectFirst("[aria-haspopup=listbox] > div")!!.ownText()
-            val artistInTitle = (preferences.artistInTitle == ArtistInTitle.ALWAYS.name) ||
-                ((preferences.artistInTitle == ArtistInTitle.ONLY_ALL_GALLERIES.name) && (galleryName == "All"))
-
-            return SManga.create().apply {
-                setUrlWithoutDomain(link)
-                author = document.title().substringBefore(" ")
-                title = when {
-                    artistInTitle -> "$author - $galleryName"
-                    else -> galleryName
-                }
-                description = gallery.selectFirst(".legacy-journal")?.wholeText()
-                    ?.let { "$it\n\nClick tag to show artist's gallery" }
-                    ?: "Click tag to show artist's gallery"
-                thumbnail_url = gallery.selectFirst("img[property=contentUrl]")?.getImgAttr()
-                    ?: document.selectFirst("#background-container + div a[data-icon]")?.attr("abs:data-icon")
-                author?.let { genre = "gallery:$author, by:$author" }
-                status = SManga.ONGOING
-            }
-        } else {
-            return SManga.create().apply {
-                // Update higher resolution thumbnail
-                thumbnail_url = document.selectFirst("img[property=contentUrl]")?.getImgAttr()
-                status = SManga.COMPLETED
-            }
-        }
+        return parseArtDetails(document)
     }
 
-    override fun chapterListRequest(manga: SManga): Request {
-        if (manga.url.contains("/gallery/")) {
-            val pathSegments = getMangaUrl(manga).toHttpUrl().pathSegments
-            val username = pathSegments[0]
-            val query = when (val folderId = pathSegments[2]) {
-                "all" -> "gallery:$username"
-                else -> "gallery:$username/$folderId"
-            }
+    // ============================== Details + Chapters =======================
 
-            val url = backendBuilder()
-                .addPathSegment("rss.xml")
-                .addQueryParameter("q", query)
-                .build()
+    override suspend fun fetchMangaUpdate(
+        manga: SManga,
+        chapters: List<SChapter>,
+        fetchDetails: Boolean,
+        fetchChapters: Boolean,
+    ): SMangaUpdate {
+        val link = getMangaUrl(manga)
 
-            return GET(url, headers)
-        } else {
-            return GET(getMangaUrl(manga), headers)
-        }
-    }
-
-    override fun chapterListParse(response: Response): List<SChapter> {
-        val document = response.asJsoupXml()
-        val url = response.request.url.toString()
-        if (url.contains("rss.xml")) {
-            val chapterList = parseToChapterList(document).toMutableList()
-            var nextUrl = document.selectFirst("[rel=next]")?.absUrl("href")
-
-            while (nextUrl != null) {
-                val newRequest = GET(nextUrl, headers)
-                val newResponse = client.newCall(newRequest).execute()
-                val newDocument = newResponse.asJsoupXml()
-                val newChapterList = parseToChapterList(newDocument)
-                chapterList.addAll(newChapterList)
-
-                nextUrl = newDocument.selectFirst("[rel=next]")?.absUrl("href")
-            }
-
-            return chapterList.also(::orderChapterList).toList()
-        } else {
-            val time = document.selectFirst("span:contains(Published) time")
-                ?.attr("datetime")
-            return listOf(
-                SChapter.create().apply {
-                    setUrlWithoutDomain(url)
-                    name = "Art"
-                    time?.let { date_upload = dateFormatZ.tryParse(it) }
-                },
+        if (!manga.url.contains("/gallery/")) {
+            val document = client.get(link).asJsoup()
+            return SMangaUpdate(
+                manga = parseArtDetails(document),
+                chapters = parseArtChapterList(document, link),
             )
         }
+
+        var updatedManga = manga
+        var updatedChapters = chapters
+
+        coroutineScope {
+            val mangaDeferred = if (fetchDetails) {
+                async { parseGalleryDetails(client.get(link).asJsoup(), link) }
+            } else {
+                null
+            }
+
+            val chaptersDeferred = if (fetchChapters) {
+                async { fetchGalleryChapterList(manga) }
+            } else {
+                null
+            }
+
+            mangaDeferred?.let { updatedManga = it.await() }
+            chaptersDeferred?.let { updatedChapters = it.await() }
+        }
+
+        return SMangaUpdate(updatedManga, updatedChapters)
     }
 
-    override fun relatedMangaListParse(response: Response): List<SManga> {
-        val url = response.request.url.toString()
-        val document = response.asJsoup()
-        if (url.contains("/gallery/")) {
-            /* Return other galleries of this user */
-            val creator = document.selectFirst("#background-container + div a[data-username] > span")?.ownText()
-            val galleries = document.select("#background-container + div #content section._1olSA")
-            return galleries.mapNotNull { gallery ->
-                val link = gallery.selectFirst("a")
-                    ?.absUrl("href") ?: return@mapNotNull null
-                val matchResult = Regex("""(.+gallery/[\w-]+)(?:/[\w-]+)?""").matchEntire(link)?.groupValues
-                    ?: return@mapNotNull null
-                if (matchResult.size < 2) return@mapNotNull null
-                val galleryLink = matchResult[1]
-                val galleryName = gallery.selectFirst("[title]")?.ownText() ?: return@mapNotNull null
-                val artistInTitle = preferences.artistInTitle == ArtistInTitle.ALWAYS.name ||
-                    (preferences.artistInTitle == ArtistInTitle.ONLY_ALL_GALLERIES.name && galleryName == "All")
+    private fun parseGalleryDetails(document: Document, link: String): SManga {
+        val gallery = document.selectFirst("#content")
 
-                SManga.create().apply {
-                    setUrlWithoutDomain(galleryLink)
-                    title = when (artistInTitle) {
-                        true -> "$creator - $galleryName"
-                        false -> galleryName
-                    }
-                    thumbnail_url = gallery.selectFirst("img")?.getImgAttr()
-                    author = creator
-                    author?.let { genre = "by:$author" }
-                    description = "Click tag to show artist's gallery"
-                }
+        // "{artist}'s Gallery on DeviantArt" or "{folder} by {artist} on DeviantArt"
+        val pageTitle = document.title().removeSuffix(" on DeviantArt")
+        val isAllGallery = link.toHttpUrl().pathSegments[2] == "all"
+        val artistName = pageTitle.removeSuffix("'s Gallery")
+            .substringAfterLast(" by ").takeIf(String::isNotBlank)
+        val galleryName = if (isAllGallery) "All" else pageTitle.substringBeforeLast(" by ")
+        val artistInTitle = (preferences.artistInTitle == ArtistInTitle.ALWAYS.name) ||
+            ((preferences.artistInTitle == ArtistInTitle.ONLY_ALL_GALLERIES.name) && isAllGallery)
+
+        return SManga.create().apply {
+            setUrlWithoutDomain(link)
+            author = artistName
+            title = when {
+                artistInTitle && artistName != null -> "$artistName - $galleryName"
+                else -> galleryName
             }
-        } else {
-            val script = document.selectFirst("script:containsData(__RCACHE__)")?.data() ?: return emptyList()
-            val matchResult = Regex("""window\.__RCACHE__ = JSON\.parse\("(.+?)"\);""")
-                .find(script)?.groupValues ?: return emptyList()
-            val jsonString = matchResult[1]
-                .replace("\\\"", "\"")
-                .replace("\\\'", "\'")
-                .replace("\\\\", "\\")
-
-            try {
-                val jsonArray = json.parseToJsonElement(jsonString)
-                    .jsonObject["relatedContent"]?.let { it.jsonObject["relatedContent"] }
-                jsonArray?.let {
-                    it.jsonArray.mapNotNull { jsonElement ->
-                        try {
-                            val contentType = jsonElement.jsonObject["contentType"]?.jsonPrimitive?.content
-                                ?: return@mapNotNull null
-
-                            when (contentType) {
-                                "gallery", "boosted", "recommended",
-                                "monetization_promotion_tier_thirdparty",
-                                "monetization_promotion_dreamup_thirdparty",
-                                "monetization_promotion_pcp_firstparty",
-                                -> {
-                                    val deviations = json.decodeFromString<List<Deviation>>(
-                                        jsonElement.jsonObject["deviations"]?.jsonArray.toString(),
-                                    )
-                                    deviations
-                                }
-                                "users" -> {
-                                    val users = json.decodeFromString<List<User>>(
-                                        jsonElement.jsonObject["users"]?.jsonArray.toString(),
-                                    )
-                                    val deviations = users.map { user -> user.deviations }.flatten()
-                                    deviations
-                                }
-                                "collections" -> {
-                                    val collections = json.decodeFromString<List<Collection>>(
-                                        jsonElement.jsonObject["collections"]?.jsonArray.toString(),
-                                    )
-                                    val deviations = collections.map { collection -> collection.deviations }.flatten()
-                                    deviations
-                                }
-                                else -> {
-                                    Log.e("DeviantArt", "contentType: $contentType | ${jsonElement.jsonObject}")
-                                    return@mapNotNull null
-                                }
-                            }
-                        } catch (e: SerializationException) {
-                            Log.e("DeviantArt", "Error parsing JSON", e)
-                            return@mapNotNull null
-                        }
-                    }.flatten()
-                        .map { deviation ->
-                            SManga.create().apply {
-                                setUrlWithoutDomain(deviation.url)
-                                title = deviation.title
-                                thumbnail_url = deviation.media.getCoverUrl()
-                                author = deviation.author.username
-                                author?.let { genre = "gallery:$author, by:$author" }
-                                description = "Click tag to show artist's gallery"
-                            }
-                        }
-                }?.let { return it }
-            } catch (e: SerializationException) {
-                Log.e("DeviantArt", "Error parsing JSON", e)
-            }
-
-            return emptyList()
+            description = listOfNotNull(
+                gallery?.selectFirst(".legacy-journal")?.wholeText(),
+                DESCRIPTION_GUIDE,
+            ).joinToString("\n\n")
+            thumbnail_url = gallery?.selectFirst("img[property=contentUrl]")?.getImgAttr()
+                ?: document.selectFirst("#background-container + div a[data-icon]")?.attr("abs:data-icon")
+            artistName?.let { genre = "gallery:$it, by:$it" }
+            status = SManga.ONGOING
         }
+    }
+
+    private suspend fun fetchGalleryChapterList(manga: SManga): List<SChapter> {
+        val pathSegments = getMangaUrl(manga).toHttpUrl().pathSegments
+        val username = pathSegments[0]
+        val folderId = pathSegments[2]
+        val query = when {
+            folderId == "all" -> "gallery:$username"
+            (folderId.toLongOrNull() ?: 0) > 0 -> "gallery:$username/$folderId"
+            // A DeviantArt folder other than "All" is linked by name, e.g. "Scraps" at /{username}/gallery/scraps,
+            // and the feed has no query for it: gallery:{username}/scraps and gallery:{username}/-2 both return
+            // the whole gallery, so listing it from the feed would show the wrong arts.
+            // TODO: list it from the folder page's state instead. Its stream (`folder-deviations-gallery-{ID}`,
+            //  e.g. `folder-deviations-gallery--2`, read with StateContent.folderDeviationIds) only holds the first
+            //  items, see FolderDeviationStream.hasMore
+            //  or use DeviantArt's internal gallery API (/_puppy/dashared/gallection/contents, folder -2) for the scraps chapter list.
+            // Until then, no chapters rather than an error, so the gallery's details still refresh:
+            // Chapters of the "{folderId}" folder are not implemented: DeviantArt's feed has no query for it
+            else -> return emptyList()
+        }
+
+        val url = backendBuilder()
+            .addPathSegment("rss.xml")
+            .addQueryParameter("q", query)
+            .build()
+
+        val document = client.get(url).asJsoupXml()
+        val chapterList = parseToChapterList(document).toMutableList()
+        var nextUrl = document.selectFirst("[rel=next]")?.absUrl("href")
+
+        while (nextUrl != null) {
+            val newDocument = client.get(nextUrl).asJsoupXml()
+            chapterList.addAll(parseToChapterList(newDocument))
+
+            nextUrl = newDocument.selectFirst("[rel=next]")?.absUrl("href")
+        }
+
+        return chapterList.also(::orderChapterList).toList()
     }
 
     private fun parseToChapterList(document: Document): List<SChapter> = document.select("item").map {
@@ -378,20 +272,19 @@ abstract class DeviantArt :
         val id = link.removeSuffix("/")
             .substringAfterLast('/')
             .substringAfterLast('-')
+        // The feed gives a video only thumbnails, no media:content
+        val isVideo = it.selectFirst("media|content") == null
 
         SChapter.create().apply {
             setUrlWithoutDomain(link)
-            name = if (preferences.includeArtIdInChapterName) {
-                "$artName [$id]"
-            } else {
-                artName
-            }
-            date_upload = dateFormat.tryParse(it.selectFirst("pubDate")?.text())
+            name = artTitle(if (isVideo) "$artName (video)" else artName, id)
+            date_upload = it.selectFirst("pubDate")?.text()?.let(dateFormat::tryParse) ?: 0L
             // scanlator = it.selectFirst("media|credit")?.text()
         }
     }
 
     private fun orderChapterList(chapterList: MutableList<SChapter>) {
+        if (chapterList.isEmpty()) return
         // In Mihon's updates tab, chapters are ordered by source instead
         // of chapter number, so to avoid updates being shown in reverse,
         // disregard source order and order chronologically instead
@@ -403,26 +296,201 @@ abstract class DeviantArt :
         }
     }
 
-    override fun pageListParse(response: Response): List<Page> {
-        val document = response.asJsoup()
-        val buttons = document.selectFirst("[draggable=false]")?.children()
-        return if (buttons == null) {
-            val imageUrl = document.selectFirst("img[fetchpriority=high]")?.absUrl("src")
-            listOf(Page(0, imageUrl = imageUrl))
+    private fun parseArtDetails(document: Document): SManga = SManga.create().apply {
+        status = SManga.COMPLETED
+        update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
+
+        // Update higher resolution thumbnail
+        thumbnail_url = document.selectFirst("img[property=contentUrl]")?.getImgAttr()
+        description = DESCRIPTION_GUIDE
+
+        // The canonical link stays clean even when the page was opened through an encoded one, which DeviantArt
+        // serves without a redirect: …/art/Eye-Contact%2D1367064967 would otherwise give the ID "Contact%2D1367064967"
+        val link = document.selectFirst("link[rel=canonical]")?.attr("abs:href")
+            ?: ART_LINK_REGEX.find(document.location())?.groupValues?.get(1)
+            ?: document.location()
+        setUrlWithoutDomain(link)
+        val deviationId = link.substringAfterLast('-')
+        // "{title} by {artist} on DeviantArt"
+        title = artTitle(document.title().removeSuffix(" on DeviantArt").substringBeforeLast(" by "), deviationId)
+
+        try {
+            val entities = document.parseScriptJson<StateContent>(INITIAL_STATE_REGEX)?.entities ?: return@apply
+            val deviation = entities.deviation.getObjectOrNull(deviationId)?.parseAs<DeviationState>() ?: return@apply
+            val user = entities.user.getObjectOrNull(deviation.author.toString())?.parseAs<Author>()
+            val author = user?.username
+            setUrlWithoutDomain(deviation.url)
+            title = artTitle(deviation.title, deviationId)
+            deviation.media.getCoverUrl()?.let { thumbnail_url = it }
+            author?.let {
+                this.author = it
+                genre = "gallery:$it, by:$it"
+            }
+            if (deviation.isVideo) {
+                // A mature video only lists its mp4 for a logged-in viewer
+                val videoLink = deviation.media.getVideoUrl()?.let { "[Direct video link]($it)" }
+                    ?: "[Log in via WebView to see this video link]".takeIf { deviation.isMature }
+                videoLink?.let { description = "$it\n\n$DESCRIPTION_GUIDE" }
+            }
+        } catch (e: SerializationException) {
+            Log.w("DeviantArt", "Error parsing JSON", e)
+        }
+    }
+
+    private fun parseArtChapterList(document: Document, link: String): List<SChapter> {
+        val time = document.selectFirst("span:contains(Published) time")?.attr("datetime")
+        val isVideo = document.deviationState(link.removeSuffix("/").substringAfterLast('-'))?.isVideo == true
+        return listOf(
+            SChapter.create().apply {
+                setUrlWithoutDomain(link)
+                name = if (isVideo) "Video" else "Art"
+                time?.let { date_upload = DateTimeFormatter.ISO_OFFSET_DATE_TIME.tryParse(it) }
+            },
+        )
+    }
+
+    // ============================== Related ===================================
+
+    override val supportsRelatedMangas = true
+
+    override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> {
+        val link = getMangaUrl(manga)
+        val document = client.get(link).asJsoup()
+
+        if (manga.url.contains("/gallery/")) {
+            // Return other galleries of this user, from the page's state
+            val artistName = document.title().removeSuffix(" on DeviantArt").removeSuffix("'s Gallery")
+                .substringAfterLast(" by ").takeIf(String::isNotBlank)
+            val username = link.toHttpUrl().pathSegments[0]
+            return try {
+                val state = document.parseScriptJson<StateContent>(INITIAL_STATE_REGEX) ?: return emptyList()
+                val folders = state.entities.galleryFolder
+                state.galleryFolderIds?.items.orEmpty().mapNotNull { folders[it.toString()] }.map { folder ->
+                    val isAllGallery = folder.specialType == "all"
+                    val artistInTitle = preferences.artistInTitle == ArtistInTitle.ALWAYS.name ||
+                        (preferences.artistInTitle == ArtistInTitle.ONLY_ALL_GALLERIES.name && isAllGallery)
+                    // DeviantArt's own folders have negative IDs, and their links use the lowercased name
+                    // instead of the ID: "All" (-1) is /{username}/gallery/all and "Scraps" (-2) is
+                    // /{username}/gallery/scraps. Going by the sign rather than a list of names covers any other one
+                    // Example: https://www.deviantart.com/arven92/gallery/scraps
+                    val folderPath = if (folder.folderId < 0) folder.name.lowercase() else folder.folderId.toString()
+
+                    SManga.create().apply {
+                        url = "/$username/gallery/$folderPath"
+                        title = when {
+                            artistInTitle && !artistName.isNullOrBlank() -> "$artistName - ${folder.name}"
+                            else -> folder.name
+                        }
+                        // Decode each cover on its own, so one that doesn't decode only costs that folder its cover
+                        thumbnail_url = folder.thumb?.let { state.entities.deviation.getObjectOrNull(it.toString()) }
+                            ?.let { thumb ->
+                                try {
+                                    thumb.parseAs<DeviationState>().media.getCoverUrl()
+                                } catch (e: SerializationException) {
+                                    Log.w("DeviantArt", "Error parsing the cover of folder ${folder.folderId}", e)
+                                    null
+                                }
+                            }
+                        author = artistName
+                        author?.let { genre = "gallery:$it, by:$it" }
+                        description = DESCRIPTION_GUIDE
+                    }
+                }
+            } catch (e: SerializationException) {
+                Log.e("DeviantArt", "Error parsing JSON", e)
+                emptyList()
+            }
         } else {
-            buttons.mapIndexed { i, button ->
-                // Remove everything past "/v1/" to get original instead of thumbnail
-                // But need to preserve the query parameter where the token is
-                val imageUrl = button.selectFirst("img")?.absUrl("src")
-                    ?.replaceFirst(Regex("""/v1(/.*)?(?=\?)"""), "")
-                Page(i, imageUrl = imageUrl)
+            // Art
+            return try {
+                document.parseScriptJson<RCacheContent>(RCACHE_REGEX)?.relatedContent?.relatedContent
+                    ?.mapNotNull { element ->
+                        // Parse each entry on its own so one unexpected entry doesn't drop the rest
+                        val related = try {
+                            element.parseAs<Related>()
+                        } catch (e: SerializationException) {
+                            Log.e("DeviantArt", "Error parsing related content", e)
+                            return@mapNotNull null
+                        }
+                        val contentType = related.contentType
+                            ?: return@mapNotNull null
+
+                        when (contentType) {
+                            "gallery", "boosted", "recommended",
+                            "monetization_promotion_tier_thirdparty",
+                            "monetization_promotion_dreamup_thirdparty",
+                            "monetization_promotion_pcp_firstparty",
+                            -> {
+                                related.deviations
+                            }
+                            "users" -> {
+                                related.users
+                                    ?.flatMap { user -> user.deviations }
+                            }
+                            "collections" -> {
+                                related.collections
+                                    ?.flatMap { collection -> collection.deviations }
+                            }
+                            // Group profiles only, no deviations to show
+                            "groups" -> null
+                            else -> {
+                                Log.w("DeviantArt", "contentType: $contentType")
+                                null
+                            }
+                        }
+                    }?.flatten()
+                    ?.map { deviation ->
+                        SManga.create().apply {
+                            setUrlWithoutDomain(deviation.url)
+                            title = artTitle(deviation.title, deviation.url.substringAfterLast('-'))
+                            thumbnail_url = deviation.media.getCoverUrl()
+                            author = deviation.author.username
+                            author?.let { genre = "gallery:$it, by:$it" }
+                            description = DESCRIPTION_GUIDE
+                            update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
+                        }
+                    }
+                    ?: emptyList()
+            } catch (e: SerializationException) {
+                Log.e("DeviantArt", "Error parsing JSON", e)
+                emptyList()
             }
         }
     }
 
-    override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
+    // ============================== Pages =====================================
+
+    override suspend fun getPageList(chapter: SChapter): List<Page> {
+        val url = getChapterUrl(chapter).toHttpUrl()
+        val document = client.get(url).asJsoup()
+        val deviationId = url.pathSegments.last().substringAfterLast('-')
+        val deviation = document.deviationState(deviationId)
+        if (deviation == null || !deviation.isVideo) return document.parsePages(deviationId)
+
+        // The reader can't play the video, and pages without an image fail to download, so only show its poster
+        return listOf(createImagePage(0, deviation.media.getOriginalUrl()))
+    }
+
+    override fun getImageRequest(page: Page): Request = super.getImageRequest(page).newBuilder()
+        .tag(Page::class.java, page)
+        .build()
 
     private fun Response.asJsoupXml(): Document = Jsoup.parse(body.string(), request.url.toString(), Parser.xmlParser())
+
+    // The JSON is embedded as a JS string literal, which may contain `\'` (valid JS, invalid JSON)
+    private inline fun <reified T> Document.parseScriptJson(regex: Regex): T? {
+        val literal = select("script").firstNotNullOfOrNull { regex.find(it.data()) }
+            ?.groupValues?.get(1) ?: return null
+        return literal.replace("\\'", "'").parseAs<String>().parseAs<T>()
+    }
+
+    private fun Document.deviationState(deviationId: String): DeviationState? = try {
+        parseScriptJson<StateContent>(INITIAL_STATE_REGEX)?.entities?.deviation
+            ?.getObjectOrNull(deviationId)?.parseAs<DeviationState>()
+    } catch (e: SerializationException) {
+        Log.w("DeviantArt", "Error parsing JSON", e)
+        null
+    }
 
     private fun Element.getImgAttr(): String? = when {
         hasAttr("url") -> attr("abs:url")
@@ -430,6 +498,10 @@ abstract class DeviantArt :
         hasAttr("srcset") -> attr("abs:srcset").substringBefore(" ")
         else -> null
     }
+
+    private fun artTitle(name: String, id: String): String = if (preferences.includeArtIdInChapterName) "$name [$id]" else name
+
+    // ============================== Settings ===================================
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         val artistInTitlePref = ListPreference(screen.context).apply {
@@ -448,7 +520,7 @@ abstract class DeviantArt :
 
         SwitchPreferenceCompat(screen.context).apply {
             key = CHAPTER_NAME_PREF
-            title = "Include Art ID in chapter name (to avoid duplicate chapter name)"
+            title = "Include Art ID in art titles and chapter names (avoids duplicate download names)"
             summaryOff = "Title only"
             summaryOn = "Title [ID]"
             setDefaultValue(false)
@@ -459,21 +531,12 @@ abstract class DeviantArt :
             title = CATALOG_FORMAT_MSG
             summary = CATALOG_SEARCH_QUERY + (preferences.getString(CATALOG_SEARCH_QUERY_PREF, "") ?: "")
             setDefaultValue("")
-        }.also(screen::addPreference)
-
-        EditTextPreference(screen.context).apply {
-            key = CATALOG_CATEGORY_PREF
-            title = CATALOG_CATEGORY
-            summary = preferences.getString(CATALOG_CATEGORY_PREF, "") ?: ""
-            setDefaultValue("")
+            setOnPreferenceChangeListener { _, newValue ->
+                summary = CATALOG_SEARCH_QUERY + newValue
+                true
+            }
         }.also(screen::addPreference)
     }
-
-    private val catalogSearchQuery
-        get() = preferences.getString(CATALOG_SEARCH_QUERY_PREF, "") ?: ""
-
-    private val catalogCategory
-        get() = preferences.getString(CATALOG_CATEGORY_PREF, "") ?: ""
 
     private enum class ArtistInTitle(val text: String) {
         NEVER("Never"),
@@ -487,52 +550,43 @@ abstract class DeviantArt :
         }
     }
 
-    override fun getFilterList(): FilterList = FilterList(
-        SortFilter(),
-        Filter.Header(FILTER_CATEGORY),
-        CategoryFilter("Category"),
-        Filter.Separator(),
-        Filter.Header(SEARCH_FORMAT_MSG),
-    )
-
-    class SortFilter : SelectFilter("Sort By", sort) {
-        companion object {
-            private val sort = listOf(
-                Pair("Popular", "boost:popular"),
-                Pair("Newest", "sort:time"),
-            )
-        }
-    }
-
-    abstract class SelectFilter(
-        name: String,
-        private val options: List<Pair<String, String>>,
-    ) : Filter.Select<String>(
-        name,
-        options.map { it.first }.toTypedArray(),
-        0,
-    ) {
-        val selected get() = options[state].second.takeUnless { it.isEmpty() }
-    }
-
-    private class CategoryFilter(name: String) : Filter.Text(name)
-
     private val SharedPreferences.artistInTitle
         get() = getString(ArtistInTitle.PREF_KEY, ArtistInTitle.defaultValue.name)
 
     private val SharedPreferences.includeArtIdInChapterName
-        get() = getBoolean(CHAPTER_NAME_PREF, true)
+        get() = getBoolean(CHAPTER_NAME_PREF, false)
+
+    private val catalogSearchQuery
+        get() = preferences.getString(CATALOG_SEARCH_QUERY_PREF, "") ?: ""
+
+    // ============================== Filters =====================================
+
+    override fun getFilterList(data: JsonElement?): FilterList = FilterList(
+        Filter.Header(SEARCH_FORMAT_MSG),
+        Filter.Separator(),
+        Filter.Header("Paste full URL into search bar to open gallery/art."),
+    )
 
     companion object {
         private const val SEARCH_FORMAT_MSG = "Browse user's gallery by searching for `gallery:{username}` or `gallery:{username}/{folderId}`\n" +
-            "Or search for his separated arts with `by:{username}"
-        private const val FILTER_CATEGORY = "Category (<name> or <name1>/<name2>/...)"
-        private const val CATALOG_FORMAT_MSG = "Show Popular/Latest with:"
+            "Or search for an artist's individual arts with `by:{username}`"
+        private const val DESCRIPTION_GUIDE = "Click tag to show artist's gallery"
+
+        private const val CATALOG_FORMAT_MSG = "Show Popular with:"
         private const val CATALOG_SEARCH_QUERY = "search query of: "
         private const val CATALOG_SEARCH_QUERY_PREF = "catalog_search_query_pref"
-        private const val CATALOG_CATEGORY = "in category (<name> or <name1>/<name2>/...)"
-        private const val CATALOG_CATEGORY_PREF = "catalog_category_pref"
 
         private const val CHAPTER_NAME_PREF = "includeArtIdAsChapterNamePref"
+
+        private val GALLERY_QUERY_REGEX = Regex("""gallery:([\w-]+)(?:/(\d+))?""")
+        private val ART_LINK_REGEX = Regex("""(.+/art/[^/?#]+)""")
+        private val RCACHE_REGEX = Regex("""window\.__RCACHE__ = JSON\.parse\(("\{.+?\}")\);""")
+        private val INITIAL_STATE_REGEX = Regex("""window\.__INITIAL_STATE__ = JSON\.parse\(("\{.+?\}")\);""")
     }
+}
+
+private fun DateTimeFormatter.tryParse(date: String): Long = try {
+    ZonedDateTime.parse(date, this).toInstant().toEpochMilli()
+} catch (_: DateTimeException) {
+    0L
 }
