@@ -304,7 +304,10 @@ abstract class DeviantArt :
         thumbnail_url = document.selectFirst("img[property=contentUrl]")?.getImgAttr()
         description = DESCRIPTION_GUIDE
 
-        val link = ART_LINK_REGEX.find(document.location())?.groupValues?.get(1)
+        // The canonical link stays clean even when the page was opened through an encoded one, which DeviantArt
+        // serves without a redirect: …/art/Eye-Contact%2D1367064967 would otherwise give the ID "Contact%2D1367064967"
+        val link = document.selectFirst("link[rel=canonical]")?.attr("abs:href")
+            ?: ART_LINK_REGEX.find(document.location())?.groupValues?.get(1)
             ?: document.location()
         setUrlWithoutDomain(link)
         val deviationId = link.substringAfterLast('-')
