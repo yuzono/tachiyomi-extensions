@@ -381,8 +381,16 @@ abstract class DeviantArt :
                             artistInTitle && !artistName.isNullOrBlank() -> "$artistName - ${folder.name}"
                             else -> folder.name
                         }
+                        // Decode each cover on its own, so one that doesn't decode only costs that folder its cover
                         thumbnail_url = folder.thumb?.let { state.entities.deviation.getObjectOrNull(it.toString()) }
-                            ?.parseAs<DeviationState>()?.media?.getCoverUrl()
+                            ?.let { thumb ->
+                                try {
+                                    thumb.parseAs<DeviationState>().media.getCoverUrl()
+                                } catch (e: SerializationException) {
+                                    Log.w("DeviantArt", "Error parsing the cover of folder ${folder.folderId}", e)
+                                    null
+                                }
+                            }
                         author = artistName
                         author?.let { genre = "gallery:$it, by:$it" }
                         description = DESCRIPTION_GUIDE
