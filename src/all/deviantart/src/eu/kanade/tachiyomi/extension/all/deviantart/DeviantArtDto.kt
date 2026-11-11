@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.extension.all.deviantart
 
+import keiyoushi.utils.getObjectOrNull
+import keiyoushi.utils.parseAs
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -128,12 +130,51 @@ class Collection(
 class StateContent(
     @SerialName("@@entities")
     val entities: StateEntities,
-)
+    // Streams keyed by name, each with its own shape, and some names include an ID, so read them by key below
+    @SerialName("@@streams")
+    private val streams: JsonObject? = null,
+) {
+    // Only on gallery pages. Lazy so it's parsed once, and only when read: a delegated property isn't serialized,
+    // while a plain initialized one would be parsed while decoding every page's state, art pages included
+    val galleryFolderIds: FolderIdStream? by lazy {
+        streams?.getObjectOrNull("GALLERY_FOLDER_IDS_STREAM")?.parseAs<FolderIdStream>()
+    }
+
+    // On a folder's gallery page, e.g. `folder-deviations-gallery--2` on /{username}/gallery/scraps
+    fun folderDeviationIds(folderId: Long): FolderDeviationStream? = streams?.getObjectOrNull("folder-deviations-gallery-$folderId")
+        ?.parseAs<FolderDeviationStream>()
+}
 
 @Serializable
 class StateEntities(
     val user: JsonObject,
     val deviation: JsonObject,
+    val galleryFolder: Map<String, GalleryFolder> = emptyMap(),
+)
+
+// The user's folders in display order, "All" first
+@Serializable
+class FolderIdStream(
+    val items: List<Long>, // folder IDs
+    // True when the user has more folders than the page lists (25 plus "All"); the site loads the rest as you scroll
+    val hasMore: Boolean = false,
+)
+
+// The deviations of one folder; see the TODO in fetchGalleryChapterList
+@Serializable
+class FolderDeviationStream(
+    val items: List<Long>, // deviation IDs
+    // True when the folder has more deviations than the page lists (only the first ones); the site loads
+    // the rest, 24 at a time from `nextOffset`, through its gallery API as you scroll
+    val hasMore: Boolean = false,
+)
+
+@Serializable
+class GalleryFolder(
+    val folderId: Long,
+    val name: String,
+    val specialType: String? = null, // "all", "scraps", "featured"
+    val thumb: Long? = null, // deviation ID of the cover
 )
 
 @Serializable
