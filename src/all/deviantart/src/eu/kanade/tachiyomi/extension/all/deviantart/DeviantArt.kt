@@ -261,10 +261,12 @@ abstract class DeviantArt :
         val id = link.removeSuffix("/")
             .substringAfterLast('/')
             .substringAfterLast('-')
+        // The feed gives a video only thumbnails, no media:content
+        val isVideo = it.selectFirst("media|content") == null
 
         SChapter.create().apply {
             setUrlWithoutDomain(link)
-            name = artTitle(artName, id)
+            name = artTitle(if (isVideo) "$artName (video)" else artName, id)
             date_upload = it.selectFirst("pubDate")?.text()?.let(dateFormat::tryParse) ?: 0L
             // scanlator = it.selectFirst("media|credit")?.text()
         }
@@ -310,6 +312,12 @@ abstract class DeviantArt :
                 this.author = it
                 genre = "gallery:$it, by:$it"
             }
+            if (deviation.isVideo) {
+                // A mature video only lists its mp4 for a logged-in viewer
+                val videoLink = deviation.media.getVideoUrl()?.let { "[Direct video link]($it)" }
+                    ?: "[Log in via WebView to see this video link]".takeIf { deviation.isMature }
+                videoLink?.let { description = "$it\n\n$DESCRIPTION_GUIDE" }
+            }
         } catch (e: SerializationException) {
             Log.w("DeviantArt", "Error parsing JSON", e)
         }
@@ -317,10 +325,11 @@ abstract class DeviantArt :
 
     private fun parseArtChapterList(document: Document, link: String): List<SChapter> {
         val time = document.selectFirst("span:contains(Published) time")?.attr("datetime")
+        val isVideo = document.deviationState(link.removeSuffix("/").substringAfterLast('-'))?.isVideo == true
         return listOf(
             SChapter.create().apply {
                 setUrlWithoutDomain(link)
-                name = "Art"
+                name = if (isVideo) "Video" else "Art"
                 time?.let { date_upload = DateTimeFormatter.ISO_OFFSET_DATE_TIME.tryParse(it) }
             },
         )
@@ -425,13 +434,12 @@ abstract class DeviantArt :
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         val url = getChapterUrl(chapter).toHttpUrl()
         val document = client.get(url).asJsoup()
-        val pages = document.parsePages(url.pathSegments.last().substringAfterLast('-'))
-        if (pages.first().imageUrl != null) return pages
+        val deviationId = url.pathSegments.last().substringAfterLast('-')
+        val deviation = document.deviationState(deviationId)
+        if (deviation == null || !deviation.isVideo) return document.parsePages(deviationId)
 
-        // Video art has no image, use its poster instead
-        val posterUrl = document.selectFirst(".v-poster")?.attr("style")
-            ?.let { STYLE_URL_REGEX.find(it)?.groupValues?.get(1) }
-        return listOf(createImagePage(0, posterUrl))
+        // The reader can't play the video, and pages without an image fail to download, so only show its poster
+        return listOf(createImagePage(0, deviation.media.getOriginalUrl()))
     }
 
     override fun getImageRequest(page: Page): Request = super.getImageRequest(page).newBuilder()
@@ -440,13 +448,19 @@ abstract class DeviantArt :
 
     private fun Response.asJsoupXml(): Document = Jsoup.parse(body.string(), request.url.toString(), Parser.xmlParser())
 
-    override suspend fun getImageUrl(page: Page) = throw Exception("Open Webview to view this")
-
     // The JSON is embedded as a JS string literal, which may contain `\'` (valid JS, invalid JSON)
     private inline fun <reified T> Document.parseScriptJson(regex: Regex): T? {
         val literal = select("script").firstNotNullOfOrNull { regex.find(it.data()) }
             ?.groupValues?.get(1) ?: return null
         return literal.replace("\\'", "'").parseAs<String>().parseAs<T>()
+    }
+
+    private fun Document.deviationState(deviationId: String): DeviationState? = try {
+        parseScriptJson<StateContent>(INITIAL_STATE_REGEX)?.entities?.deviation
+            ?.getObjectOrNull(deviationId)?.parseAs<DeviationState>()
+    } catch (e: SerializationException) {
+        Log.w("DeviantArt", "Error parsing JSON", e)
+        null
     }
 
     private fun Element.getImgAttr(): String? = when {
@@ -540,8 +554,6 @@ abstract class DeviantArt :
         private val ART_LINK_REGEX = Regex("""(.+/art/[^/?#]+)""")
         private val RCACHE_REGEX = Regex("""window\.__RCACHE__ = JSON\.parse\(("\{.+?\}")\);""")
         private val INITIAL_STATE_REGEX = Regex("""window\.__INITIAL_STATE__ = JSON\.parse\(("\{.+?\}")\);""")
-
-        private val STYLE_URL_REGEX = Regex("""background-image\s*:\s*url\('([^']+)'\)""")
     }
 }
 

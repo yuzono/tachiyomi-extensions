@@ -24,9 +24,9 @@ class DeviationState(
     // val type: String, // "image", "film"
     val url: String, // "https://www.deviantart.com/shw67/art/Beach-58-1007661685"
     val title: String,
-    // val isVideo: Boolean,
+    val isVideo: Boolean = false,
     // val publishedTime: String, // "2024-01-03T03:17:25-0800"
-    // val isMature: Boolean,
+    val isMature: Boolean = false,
     val author: Int,
     val media: DeviationMedia,
 )
@@ -72,6 +72,9 @@ class DeviationMedia(
         return "$uri?token=$jwt"
     }
 
+    // A video art lists one `video` type per quality, each with its mp4 in `b`
+    fun getVideoUrl(): String? = types?.filter { it.t == "video" && it.b != null }?.maxByOrNull { it.w * it.h }?.b
+
     private fun getFullViewPath() = fullViewOrBiggestType
         ?.c?.replace("<prettyName>", prettyName.orEmpty()).orEmpty()
 
@@ -94,11 +97,12 @@ class DeviationMedia(
 
 @Serializable
 class DeviationMediaType(
-    val t: String, // fullview, social_preview, preview, 400T
+    val t: String, // fullview, social_preview, preview, 400T, video
     val c: String? = null, // path segments: /v1/fill/w_1600,h_2400,q_80,strp/<prettyName>-fullview.jpg
     val r: Int = 0, // index into `token`
     val h: Int = 0, // height
     val w: Int = 0, // width
+    val b: String? = null, // mp4 URL of a `video` type
 )
 
 @Serializable
