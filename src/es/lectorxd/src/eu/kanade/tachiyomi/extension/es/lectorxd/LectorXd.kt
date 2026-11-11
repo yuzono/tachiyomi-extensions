@@ -7,12 +7,14 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
+import keiyoushi.network.Fetch
 import keiyoushi.network.get
 import keiyoushi.network.rateLimit
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.asJsoup
 import keiyoushi.utils.firstInstanceOrNull
 import keiyoushi.utils.parseAs
+import keiyoushi.utils.ratingStars
 import keiyoushi.utils.toJsonElement
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -21,7 +23,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import okhttp3.Headers
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -40,9 +41,6 @@ abstract class LectorXd : KeiSource() {
         request.host == baseUrl.toHttpUrl().host
     }
 
-    // Origin gets a stale Cloudflare cache of series pages
-    override fun Headers.Builder.configureHeaders() = removeAll("Origin")
-
     // ========================================================================
     // FILTROS
     // ========================================================================
@@ -56,7 +54,7 @@ abstract class LectorXd : KeiSource() {
             .addQueryParameter("adult", "all")
             .build()
 
-        return client.get(url).use { response ->
+        return client.get(url, Fetch.DOCUMENT).use { response ->
             val document = response.asJsoup()
             val genres = document
                 .select("#categoryOptions label[data-category-name]")
@@ -230,7 +228,7 @@ abstract class LectorXd : KeiSource() {
             defaultOrder = "rating",
         )
 
-        return client.get(url).use { response ->
+        return client.get(url, Fetch.DOCUMENT).use { response ->
             val document = response.asJsoup()
 
             MangasPage(
@@ -252,7 +250,7 @@ abstract class LectorXd : KeiSource() {
             defaultOrder = "recent",
         )
 
-        return client.get(url).use { response ->
+        return client.get(url, Fetch.DOCUMENT).use { response ->
             val document = response.asJsoup()
 
             MangasPage(
@@ -278,7 +276,7 @@ abstract class LectorXd : KeiSource() {
             defaultOrder = "recent",
         )
 
-        return client.get(url).use { response ->
+        return client.get(url, Fetch.DOCUMENT).use { response ->
             val document = response.asJsoup()
 
             MangasPage(
@@ -369,6 +367,7 @@ abstract class LectorXd : KeiSource() {
 
         return client.get(
             mangaUrl.toHttpUrl(),
+            Fetch.DOCUMENT,
         ).use { response ->
             val document = response.asJsoup()
 
@@ -490,6 +489,7 @@ abstract class LectorXd : KeiSource() {
 
         return client.get(
             chapterUrl.toHttpUrl(),
+            Fetch.DOCUMENT,
         ).use { response ->
             val document = response.asJsoup()
 
@@ -544,7 +544,7 @@ abstract class LectorXd : KeiSource() {
             .addQueryParameter("id", mangaId)
             .build()
 
-        return client.get(url).use { response ->
+        return client.get(url, Fetch.XHR).use { response ->
             val data = response.body.string()
                 .parseAs<JsonElement>()
                 .jsonObject
@@ -570,11 +570,8 @@ abstract class LectorXd : KeiSource() {
             .setScale(1, RoundingMode.DOWN)
             .toPlainString()
 
-        val filledStars = rating.toInt()
-
         return buildString {
-            append("★".repeat(filledStars))
-            append("☆".repeat(5 - filledStars))
+            append(ratingStars(rating.toDouble(), max = 5))
             append(" ")
             append(ratingText)
             append("/5.0")

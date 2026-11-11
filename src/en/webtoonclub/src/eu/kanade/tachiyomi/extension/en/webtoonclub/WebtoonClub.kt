@@ -11,6 +11,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
+import keiyoushi.network.Fetch
 import keiyoushi.network.get
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.asJsoup
@@ -19,6 +20,7 @@ import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.int
 import keiyoushi.utils.intOrNull
 import keiyoushi.utils.parseAs
+import keiyoushi.utils.ratingStars
 import keiyoushi.utils.textOrNull
 import keiyoushi.utils.toJsonElement
 import kotlinx.coroutines.async
@@ -30,7 +32,6 @@ import kotlinx.serialization.json.put
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.nodes.Document
-import kotlin.math.roundToInt
 
 @Source
 abstract class WebtoonClub :
@@ -54,7 +55,7 @@ abstract class WebtoonClub :
     }
 
     private suspend fun getCards(listUrl: HttpUrl): MangasPage {
-        val document = client.get(listUrl).asJsoup()
+        val document = client.get(listUrl, Fetch.DOCUMENT).asJsoup()
         val mangas = document.select("a[href^=/webtoon/]:has(img[data-cover])").map { element ->
             SManga.create().apply {
                 this.url = element.absUrl("href").toHttpUrl().pathSegments[1]
@@ -107,12 +108,12 @@ abstract class WebtoonClub :
         // The chapter list API takes the numeric id, found only on the series page
         val knownId = manga.memo[COMIC_ID]?.intOrNull
         val details = async {
-            if (fetchDetails || knownId == null) parseDetails(manga, client.get(getMangaUrl(manga)).asJsoup()) else manga
+            if (fetchDetails || knownId == null) parseDetails(manga, client.get(getMangaUrl(manga), Fetch.DOCUMENT).asJsoup()) else manga
         }
         val chapterList = async {
             if (!fetchChapters) return@async chapters
             val comicId = knownId ?: details.await().memo[COMIC_ID]!!.int
-            client.get("$baseUrl/api/comics/$comicId/chapters").parseAs<ChaptersDto>().chapters.map { it.toSChapter(manga.url) }
+            client.get("$baseUrl/api/comics/$comicId/chapters", Fetch.XHR).parseAs<ChaptersDto>().chapters.map { it.toSChapter(manga.url) }
         }
 
         SMangaUpdate(details.await(), chapterList.await())
@@ -134,10 +135,7 @@ abstract class WebtoonClub :
         // The page's rating widget; JSON-LD only carries ratings with more votes
         val rating = document.extractNextJs<RatingDto> { it is JsonObject && "ratingAvg" in it && "ratingCount" in it }
             ?.takeIf { it.ratingCount > 0 }
-            ?.let {
-                val stars = it.ratingAvg.roundToInt()
-                "★".repeat(stars) + "☆".repeat(5 - stars) + " ${it.ratingAvg} (${it.ratingCount})"
-            }
+            ?.let { "${ratingStars(it.ratingAvg.toDouble(), max = 5)} ${it.ratingAvg} (${it.ratingCount})" }
         // "None" is a placeholder in the site's alt title data
         val altTitles = book.alternateName.filterNot { it == "None" || it == title }.distinct()
         description = listOfNotNull(
@@ -157,7 +155,7 @@ abstract class WebtoonClub :
     override fun getChapterUrl(chapter: SChapter): String = "$baseUrl/webtoon/${chapter.url}"
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val reader = client.get(getChapterUrl(chapter)).asJsoup().extractNextJs<ReaderChapterDto> {
+        val reader = client.get(getChapterUrl(chapter), Fetch.DOCUMENT).asJsoup().extractNextJs<ReaderChapterDto> {
             it is JsonObject && "images" in it && "comicId" in it
         }!!
 
@@ -168,7 +166,7 @@ abstract class WebtoonClub :
 
     override val supportsFilterFetching = true
 
-    override suspend fun fetchFilterData(): JsonElement = client.get("$baseUrl/genres").asJsoup()
+    override suspend fun fetchFilterData(): JsonElement = client.get("$baseUrl/genres", Fetch.DOCUMENT).asJsoup()
         .select("a[href^=/genre/]:has(span[title])")
         .map { it.selectFirst("span")!!.text() to it.absUrl("href").toHttpUrl().pathSegments[1] }
         .sortedBy { it.first.lowercase() }

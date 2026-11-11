@@ -11,6 +11,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.source.online.HttpSource
+import keiyoushi.network.BaseUrlFetchInterceptor
 import keiyoushi.network.BrowserCallInterceptor
 import keiyoushi.network.BrowserHeadersInterceptor
 import keiyoushi.network.CacheControlInterceptor
@@ -26,11 +27,14 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.okio.decodeFromBufferedSource
 import kotlinx.serialization.json.okio.encodeToBufferedSink
 import okhttp3.CompressionInterceptor
+import okhttp3.Dispatcher
 import okhttp3.Gzip
 import okhttp3.Headers
 import okhttp3.HttpUrl
@@ -49,6 +53,9 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.seconds
+
+private val BASE_URL_FETCH_TIMEOUT = 10.seconds
 
 abstract class KeiSource : HttpSource() {
 
@@ -107,6 +114,11 @@ abstract class KeiSource : HttpSource() {
                 }
             }
 
+            // first, so source interceptors only see the fetched url
+            fetchableBaseUrl?.let { preferences ->
+                addInterceptor(BaseUrlFetchInterceptor({ baseUrl }) { fetchBaseUrlsBlocking(preferences) })
+            }
+
             configureClient()
 
             // cf interceptor below source specific interceptors
@@ -141,17 +153,49 @@ abstract class KeiSource : HttpSource() {
     }
 
     /**
+     * Base url preferences of a source overriding [fetchBaseUrls].
+     * Do not override by hand.
+     */
+    protected open val fetchableBaseUrl: FetchableBaseUrl? get() = null
+
+    /**
+     * Fetches the site's current base urls, in the site's order: one url, or every mirror it lists.
+     *
+     * Needs a `mirrors(...)` or `custom(...)` baseUrl. Runs once per source per app launch, before its first request:
+     * the urls replace the mirror list, or the first one becomes the custom url and its default.
+     *
+     * @param client the client to use for the lookup: requests on [KeiSource.client] wait for it to finish.
+     */
+    protected open suspend fun fetchBaseUrls(client: OkHttpClient): List<String> = emptyList()
+
+    private fun fetchBaseUrlsBlocking(preferences: FetchableBaseUrl) {
+        // Without the interceptor that waits for this lookup, and with its own request slots
+        val lookupClient = client.newBuilder()
+            .dispatcher(Dispatcher())
+            .callTimeout(BASE_URL_FETCH_TIMEOUT)
+            .apply { interceptors().removeAll { it is BaseUrlFetchInterceptor } }
+            .build()
+        try {
+            val urls = runBlocking { withTimeout(BASE_URL_FETCH_TIMEOUT) { fetchBaseUrls(lookupClient) } }
+                .mapNotNull { it.toHttpUrlOrNull()?.resolve("/")?.toString()?.removeSuffix("/") }
+                .distinct()
+            if (urls.isNotEmpty()) preferences.update(urls)
+        } catch (e: Exception) {
+            Log.e(name, "Failed to fetch base urls", e)
+        }
+    }
+
+    /**
      * Customizes the base Headers builder. Subclasses can override this to append source-specific
      * headers.
      *
-     * Note: `User-Agent`, `Referer` and `Origin` are set here. The other browser headers are added per request
-     * kind, which also drops this `Origin` where browsers send none; headers set here or on a request are kept.
+     * Note: `User-Agent` and `Referer` are set here. The other browser headers, `Origin` included, are added per
+     * request kind; headers set here or on a request are kept.
      */
     protected open fun Headers.Builder.configureHeaders(): Headers.Builder = this
 
     final override fun headersBuilder() = super.headersBuilder()
         .set("Referer", "$baseUrl/")
-        .set("Origin", baseUrl)
         .configureHeaders()
 
     /**
@@ -452,10 +496,10 @@ abstract class KeiSource : HttpSource() {
     abstract override suspend fun getPageList(chapter: SChapter): List<Page>
 
     /**
-     * How page images and the covers the app loads go out. Set [Fetch.IMAGE] to send the headers a browser sends for
-     * them; [Fetch.NONE] sends them as built.
+     * How page images and the covers the app loads go out: [Fetch.IMAGE] sends the headers a browser sends for them;
+     * [Fetch.NONE] sends them as built.
      */
-    protected open val imageFetch: Fetch get() = Fetch.NONE
+    protected open val imageFetch: Fetch get() = Fetch.IMAGE
 
     /**
      * Builds the request for a page's image. A GET without a [Fetch] is sent with [imageFetch].

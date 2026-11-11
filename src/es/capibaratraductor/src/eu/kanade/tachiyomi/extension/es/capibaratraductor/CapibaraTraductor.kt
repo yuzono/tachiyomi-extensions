@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.extension.es.capibaratraductor
 
+import android.webkit.WebResourceResponse
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -8,14 +9,19 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
+import keiyoushi.network.Fetch
 import keiyoushi.network.get
 import keiyoushi.network.rateLimit
 import keiyoushi.source.KeiSource
+import keiyoushi.utils.WebViewTimeoutException
 import keiyoushi.utils.parseAs
+import keiyoushi.utils.runWebView
 import keiyoushi.utils.stringOrNull
 import keiyoushi.utils.toJsonElement
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -26,6 +32,8 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
+import java.io.ByteArrayInputStream
+import java.io.IOException
 import kotlin.time.Clock
 
 @Source
@@ -91,7 +99,7 @@ abstract class CapibaraTraductor : KeiSource() {
         .addQueryParameter("type", COMIC_TYPES)
 
     private suspend fun parseMangaList(url: HttpUrl, page: Int, headers: Headers): MangasPage {
-        val result = client.get(url, headers).parseAs<Data<SeriesListDataDto>>()
+        val result = client.get(url, headers, Fetch.XHR).parseAs<Data<SeriesListDataDto>>()
 
         val mangas = result.data.series.map { it.toSManga() }
         val hasNextPage = page < result.data.maxPage
@@ -106,7 +114,7 @@ abstract class CapibaraTraductor : KeiSource() {
         val seriesSlug = segments[2]
 
         if (segments[0] == "joint") {
-            val series = client.get("$baseUrl/api/joint/$seriesSlug").parseAs<Data<SeriesDto>>().data
+            val series = client.get("$baseUrl/api/joint/$seriesSlug", Fetch.XHR).parseAs<Data<SeriesDto>>().data
             return series.toSMangaDetails(series.leaderSlug()).apply {
                 memo = buildJsonObject { put("jointSlug", seriesSlug) }
                 initialized = true
@@ -151,23 +159,58 @@ abstract class CapibaraTraductor : KeiSource() {
     override fun getChapterUrl(chapter: SChapter): String {
         val (chapterSlug, seriesSlug, organizationSlug) = chapter.url.split("/", limit = 3)
 
-        return "$baseUrl/$organizationSlug/manga/$seriesSlug/chapters/$chapterSlug"
+        return if (chapter.memo["jointId"] != null) {
+            "$baseUrl/joint/manga/${chapter.memo["jointSlug"]?.stringOrNull ?: seriesSlug}/chapters/$chapterSlug"
+        } else {
+            "$baseUrl/$organizationSlug/manga/$seriesSlug/chapters/$chapterSlug"
+        }
     }
 
+    // The site's reader decodes the page tokens and removes decoy pages, read its result
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         val (chapterSlug, seriesSlug, organizationSlug) = chapter.url.split("/", limit = 3)
-
         val seriesPath = if (chapter.memo["jointId"] != null) {
             "joint/${chapter.memo["jointSlug"]?.stringOrNull ?: seriesSlug}"
         } else {
             "manga-custom/$seriesSlug"
         }
 
-        val result = client.get("$baseUrl/api/$seriesPath/chapter/$chapterSlug/pages", getScanHeaders(organizationSlug))
-            .parseAs<Data<List<PageDto>>>()
-        return result.data.mapIndexed { i, page ->
-            Page(i, imageUrl = decodePageUrl(page.pg, result.rv!!, i))
+        // The site's login errors and empty chapters, which the reader only shows on screen
+        val pages = client.get("$baseUrl/api/$seriesPath/chapter/$chapterSlug/pages", getScanHeaders(organizationSlug), Fetch.XHR)
+            .parseAs<Data<JsonArray>>()
+            .data
+        if (pages.isEmpty()) return emptyList()
+
+        val script = javaClass.getResource("/assets/page_list.js")!!.readText()
+        val urls = try {
+            runWebView<List<String>> {
+                blockImages = true
+                userAgent = headers["User-Agent"].orEmpty()
+                // Keeps the site's ads out, but not Cloudflare's challenge
+                interceptRequest { request ->
+                    val host = request.url.host
+                    if (host == null || host == baseUrlHost || host.endsWith(".$baseUrlHost") || host == "challenges.cloudflare.com") {
+                        null
+                    } else {
+                        WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
+                    }
+                }
+                poll {
+                    evaluateJs(script) { result ->
+                        result.parseAs<List<String>?>()?.let(::resolve)
+                    }
+                }
+                loadUrl(getChapterUrl(chapter))
+            }
+        } catch (_: WebViewTimeoutException) {
+            throw Exception("Failed to load the chapter, open it in WebView")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            throw IOException(e.message, e)
         }
+
+        return urls.mapIndexed { index, url -> Page(index, imageUrl = url) }
     }
 
     override val supportsRelatedMangas get() = true
@@ -179,7 +222,7 @@ abstract class CapibaraTraductor : KeiSource() {
             .addQueryParameter("type", COMIC_TYPES)
             .build()
 
-        return client.get(url).parseAs<Data<SeriesListDataDto>>().data.series.map { it.toSManga() }
+        return client.get(url, Fetch.XHR).parseAs<Data<SeriesListDataDto>>().data.series.map { it.toSManga() }
     }
 
     override val supportsFilterFetching get() = true
@@ -187,8 +230,8 @@ abstract class CapibaraTraductor : KeiSource() {
     override suspend fun fetchFilterData(): JsonElement = coroutineScope {
         val sfwScans = async { fetchAllScans(includeNsfw = false) }
         val nsfwScans = async { fetchAllScans(includeNsfw = true) }
-        val genres = async { client.get("$baseUrl/api/genre").parseAs<Data<List<FilterOptionDto>>>().data }
-        val demographies = async { client.get("$baseUrl/api/demography").parseAs<Data<List<FilterOptionDto>>>().data }
+        val genres = async { client.get("$baseUrl/api/genre", Fetch.XHR).parseAs<Data<List<FilterOptionDto>>>().data }
+        val demographies = async { client.get("$baseUrl/api/demography", Fetch.XHR).parseAs<Data<List<FilterOptionDto>>>().data }
 
         val scans = (sfwScans.await() + nsfwScans.await())
             .distinctBy { it.second }
@@ -256,7 +299,7 @@ abstract class CapibaraTraductor : KeiSource() {
                 }
                 .build()
 
-            val response = client.get(url)
+            val response = client.get(url, Fetch.XHR)
                 .parseAs<Data<ScanListDto>>()
                 .data
 
@@ -276,7 +319,7 @@ abstract class CapibaraTraductor : KeiSource() {
         val (seriesSlug, organizationSlug) = manga.url.split("/", limit = 2)
         val seriesPath = manga.memo["jointSlug"]?.stringOrNull?.let { "joint/$it" } ?: "manga-custom/$seriesSlug"
 
-        return client.get("$baseUrl/api/$seriesPath", getScanHeaders(organizationSlug))
+        return client.get("$baseUrl/api/$seriesPath", getScanHeaders(organizationSlug), Fetch.XHR)
             .parseAs<Data<SeriesDto>>()
             .data
     }

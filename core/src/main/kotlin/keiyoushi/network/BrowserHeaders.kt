@@ -12,7 +12,7 @@ import java.util.Locale
 
 /**
  * Starts a call's [BrowserCall], which [BrowserHeadersInterceptor] works from on each hop: for a request with a
- * [Fetch.from] page, or one of a [Fetch.Kind] with a `User-Agent` naming Chrome or Firefox. The covers the apps load
+ * [Fetch.from] page, or one of a [Fetch.Kind] with a `User-Agent` naming Chrome, Firefox or WebKit. The covers the apps load
  * go out with [imageFetch].
  */
 internal class BrowserCallInterceptor(
@@ -32,13 +32,12 @@ internal class BrowserCallInterceptor(
         val from = request.tag(FromPage::class.java)
         // Nothing to do, and baseUrl stays unread
         if (from == null && (kind == null || kind == Fetch.Kind.NONE)) return chain.proceed(request)
-        val siteUrl = siteUrl()
-        val site = siteUrl.toHttpUrlOrNull()
+        val site = siteUrl().toHttpUrlOrNull()
         val page = from?.let { it.page.toHttpUrlOrNull() ?: site?.resolve(it.page) }
         val browserHeaders = kind != null && kind != Fetch.Kind.NONE && site != null && Browser.of(request.header("User-Agent").orEmpty()) != null
         if (page == null && !browserHeaders) return chain.proceed(request)
         // A fresh one per call: a request or builder can be sent more than once
-        val call = BrowserCall(page, site.takeIf { browserHeaders }, siteUrl)
+        val call = BrowserCall(page, site.takeIf { browserHeaders })
         return chain.proceed(request.newBuilder().tag(BrowserCall::class.java, call).build())
     }
 }
@@ -47,7 +46,7 @@ internal class BrowserCallInterceptor(
  * A call's page and site, and what its redirect chain has passed through so far. [site] is set when the call gets
  * browser headers.
  */
-internal class BrowserCall(val page: HttpUrl?, val site: HttpUrl?, val siteUrl: String) {
+internal class BrowserCall(val page: HttpUrl?, val site: HttpUrl?) {
     // The page as last sent as Referer, trimmed further on each hop
     var referer: HttpUrl? = page
 
@@ -60,9 +59,9 @@ internal class BrowserCall(val page: HttpUrl?, val site: HttpUrl?, val siteUrl: 
 }
 
 /**
- * Adds the headers Chrome or Firefox, as named in a request's `User-Agent`, sends for its [Fetch.Kind] and puts them in
- * that browser's order: client hints, `Accept-Language`, fetch metadata, `Accept` and `Priority`, and KeiSource's
- * default `Origin` only where browsers send one. Any other request goes out as built, apart from the `Referer` of
+ * Adds the headers Chrome, Firefox or WebKit, as named in a request's `User-Agent`, sends for its [Fetch.Kind] and puts them in
+ * that browser's order: client hints, `Accept-Language`, fetch metadata, `Accept` and `Priority`, and `Origin`
+ * where browsers send one. Any other request goes out as built, apart from the `Referer` of
  * [Fetch.from].
  *
  * Runs per hop on the network level, so it sees `Cookie`, the body headers OkHttp adds and each redirect. Every hop
@@ -72,7 +71,7 @@ internal object BrowserHeadersInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
         val call = original.tag(BrowserCall::class.java) ?: return chain.proceed(original)
-        val http2 = chain.connection()?.protocol() == Protocol.HTTP_2
+        val http2 = (chain.connection()?.protocol() ?: original.tag(TransportProtocol::class.java)?.protocol) == Protocol.HTTP_2
         val response = chain.proceed(call.hop(original).inWireOrder(http2))
         return response.newBuilder()
             // The cache keeps the request as the source built it
@@ -121,7 +120,7 @@ internal fun BrowserCall.hop(request: Request): Request {
                 else -> "no-cors"
             },
         )
-        if (kind == Fetch.Kind.DOCUMENT) fill("Sec-Fetch-User", "?1")
+        if (kind == Fetch.Kind.DOCUMENT && browser.sendsFetchUser) fill("Sec-Fetch-User", "?1")
         fill(
             "Sec-Fetch-Dest",
             when (kind) {
@@ -132,14 +131,17 @@ internal fun BrowserCall.hop(request: Request): Request {
                 Fetch.Kind.NONE -> error("Not sent with browser headers")
             },
         )
+        // Credentialed cross-site requests, of which images are the only kind here
+        if (kind == Fetch.Kind.IMAGE && (request.header("Sec-Fetch-Site") ?: fetchSite) == "cross-site") {
+            fill("Sec-Fetch-Storage-Access", browser.storageAccess(userAgent))
+        }
     }
-    if (kind == Fetch.Kind.DOCUMENT) fill("Upgrade-Insecure-Requests", "1")
+    if (kind == Fetch.Kind.DOCUMENT && browser.sendsUpgradeInsecureRequests(url)) fill("Upgrade-Insecure-Requests", "1")
     fill("Priority", browser.priority(kind))
-    // KeiSource's default Origin is ours to keep or drop; one the source set or removed itself stays
-    if (request.header("Origin").let { it == siteUrl || it == site.origin() }) {
-        // Browsers send Origin on methods other than GET and HEAD and on cross-origin XHRs
+    // Browsers send Origin on methods other than GET and HEAD and on cross-origin XHRs; one the source set itself stays
+    if (request.header("Origin") == null) {
         val sendsOrigin = (request.method != "GET" && request.method != "HEAD") || (kind == Fetch.Kind.XHR && initiator.origin() != origin)
-        if (sendsOrigin) builder.header("Origin", if (tainted) "null" else initiator.origin()) else builder.removeHeader("Origin")
+        if (sendsOrigin) builder.header("Origin", if (tainted) "null" else initiator.origin())
     }
     return builder.build()
 }
@@ -203,6 +205,9 @@ internal sealed class Browser {
     abstract fun accept(kind: Fetch.Kind, userAgent: String): String
     abstract fun priority(kind: Fetch.Kind): String
     open fun clientHints(userAgent: String): Map<String, String> = emptyMap()
+    open fun storageAccess(userAgent: String): String? = null
+    open fun sendsUpgradeInsecureRequests(url: HttpUrl) = true
+    open val sendsFetchUser = true
 
     // The orders measured over HTTP/2, [SITE] marking where a page's own headers go. Over HTTP/1.1 browsers also
     // move Connection and Cookie and change name case; matching that too would take a lot more rules for little gain
@@ -224,6 +229,13 @@ internal sealed class Browser {
                 Fetch.Kind.IMAGE -> "${jxl}image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
                 else -> "*/*"
             }
+        }
+
+        // "none" from Chrome 133, "active" from 142
+        override fun storageAccess(userAgent: String) = when (chromeVersion(userAgent)!!) {
+            in 142..Int.MAX_VALUE -> "active"
+            in 133..141 -> "none"
+            else -> null
         }
 
         // Scripts as loaded from the page's head
@@ -259,8 +271,8 @@ internal sealed class Browser {
         )
         override val subresourceOrder = listOf(
             "Host", "Connection", "Content-Length", "Sec-CH-UA-Platform", "User-Agent", "Sec-CH-UA", "Content-Type",
-            "Sec-CH-UA-Mobile", SITE, "Accept", "Origin", "Sec-Fetch-Site", "Sec-Fetch-Mode", "Sec-Fetch-Dest", "Referer",
-            "Accept-Encoding", "Accept-Language", "Priority", "Cookie",
+            "Sec-CH-UA-Mobile", SITE, "Accept", "Origin", "Sec-Fetch-Site", "Sec-Fetch-Mode", "Sec-Fetch-Dest",
+            "Sec-Fetch-Storage-Access", "Referer", "Accept-Encoding", "Accept-Language", "Priority", "Cookie",
         )
 
         override val formSubmitCacheControl = "max-age=0"
@@ -268,11 +280,18 @@ internal sealed class Browser {
 
     // Firefox 158
     data object Firefox : Browser() {
-        override fun accept(kind: Fetch.Kind, userAgent: String) = when (kind) {
-            Fetch.Kind.DOCUMENT -> "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-            Fetch.Kind.IMAGE -> "image/avif,image/jxl,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5"
-            else -> "*/*"
+        // image/jxl from Firefox 158
+        override fun accept(kind: Fetch.Kind, userAgent: String): String {
+            val jxl = if (firefoxVersion(userAgent)!! >= 158) "image/jxl," else ""
+            return when (kind) {
+                Fetch.Kind.DOCUMENT -> "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                Fetch.Kind.IMAGE -> "image/avif,${jxl}image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5"
+                else -> "*/*"
+            }
         }
+
+        // "none" from Firefox 147
+        override fun storageAccess(userAgent: String) = if (firefoxVersion(userAgent)!! >= 147) "none" else null
 
         // XHR as fetch() sends it (Firefox's XMLHttpRequest sends none); scripts from the page's head
         override fun priority(kind: Fetch.Kind) = when (kind) {
@@ -288,18 +307,53 @@ internal sealed class Browser {
             "Sec-Fetch-User", "Priority", "TE", "Cookie",
         )
         override val subresourceOrder = listOf(
-            "Host", "User-Agent", "Accept", "Accept-Language", "Accept-Encoding", "Connection", "Referer", SITE,
-            "Content-Type", "Content-Length", "Origin", "Sec-Fetch-Dest", "Sec-Fetch-Mode", "Sec-Fetch-Site", "Priority",
-            "TE", "Cookie",
+            "Host", "User-Agent", "Accept", "Accept-Language", "Accept-Encoding", "Sec-Fetch-Storage-Access", "Connection",
+            "Referer", SITE, "Content-Type", "Content-Length", "Origin", "Sec-Fetch-Dest", "Sec-Fetch-Mode", "Sec-Fetch-Site",
+            "Priority", "TE", "Cookie",
         )
         override val priorityOnHttp1 = true
         override val sendsTeTrailers = true
     }
 
+    // iOS 26/27 on iPhone 17, mobile and desktop modes; WKWebView and Safari use the same values.
+    data object WebKit : Browser() {
+        override fun accept(kind: Fetch.Kind, userAgent: String) = when (kind) {
+            Fetch.Kind.DOCUMENT -> "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            Fetch.Kind.IMAGE ->
+                "image/webp,image/avif,image/jxl,image/heic,image/heic-sequence,video/*;q=0.8," +
+                    "image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5"
+            else -> "*/*"
+        }
+
+        override fun priority(kind: Fetch.Kind) = when (kind) {
+            Fetch.Kind.DOCUMENT -> "u=0, i"
+            Fetch.Kind.SCRIPT -> "u=1, i"
+            Fetch.Kind.XHR -> "u=3, i"
+            else -> "u=5, i"
+        }
+
+        // Match WebKit's navigation rule: advertise upgrade support on HTTP, but omit the header on HTTPS.
+        // https://github.com/WebKit/WebKit/blob/main/Source/WebCore/loader/cache/CachedResourceLoader.cpp
+        override fun sendsUpgradeInsecureRequests(url: HttpUrl) = !url.isHttps
+
+        override val sendsFetchUser = false
+
+        override val priorityOnHttp1 = true
+
+        // Safari's GET order over HTTP/1.1 and HTTP/2; native transports may reorder it again.
+        override val documentOrder = listOf(
+            "Host", "Sec-Fetch-Dest", "User-Agent", "Upgrade-Insecure-Requests", "Accept", SITE, "Origin",
+            "Content-Type", "Content-Length", "Referer", "Sec-Fetch-Site", "Sec-Fetch-Mode", "Accept-Language",
+            "Priority", "Accept-Encoding", "Connection", "Cookie",
+        )
+        override val subresourceOrder = documentOrder
+    }
+
     companion object {
         fun of(userAgent: String): Browser? = when {
             chromeVersion(userAgent) != null -> Chrome
-            FIREFOX_VERSION_REGEX.containsMatchIn(userAgent) -> Firefox
+            firefoxVersion(userAgent) != null -> Firefox
+            APPLE_PLATFORM_REGEX.containsMatchIn(userAgent) && "AppleWebKit/" in userAgent -> WebKit
             else -> null
         }
     }
@@ -317,6 +371,8 @@ internal fun chromeBrands(version: Int, brand: String = "Google Chrome", brandVe
 }
 
 internal fun chromeVersion(userAgent: String): Int? = CHROME_VERSION_REGEX.find(userAgent)?.groupValues?.get(1)?.toIntOrNull()
+
+private fun firefoxVersion(userAgent: String): Int? = FIREFOX_VERSION_REGEX.find(userAgent)?.groupValues?.get(1)?.toIntOrNull()
 
 private fun platform(userAgent: String) = when {
     "Android" in userAgent -> "Android"
@@ -377,7 +433,8 @@ private const val SITE = "*"
 
 private val CHROMIUM_FORKS = listOf("OPR/", "SamsungBrowser/", "YaBrowser/")
 private val EDGE_VERSION_REGEX = Regex("""EdgA?/(\d+)""")
-private val FIREFOX_VERSION_REGEX = Regex("""Firefox/\d+""")
+private val FIREFOX_VERSION_REGEX = Regex("""Firefox/(\d+)""")
+private val APPLE_PLATFORM_REGEX = Regex("""\((?:iPhone|iPad|iPod|Macintosh);""")
 
 private val GREASE_CHARS = listOf(" ", "(", ":", "-", ".", "/", ")", ";", "=", "?", "_")
 private val GREASE_VERSIONS = listOf("8", "99", "24")

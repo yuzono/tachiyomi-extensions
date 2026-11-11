@@ -7,20 +7,20 @@ import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SManga
 import keiyoushi.annotation.Source
+import keiyoushi.network.Fetch
 import keiyoushi.network.get
 import keiyoushi.utils.asJsoup
 import keiyoushi.utils.attrOrNull
 import keiyoushi.utils.parseAs
+import keiyoushi.utils.ratingStars
 import keiyoushi.utils.toJsonElement
 import kotlinx.serialization.json.JsonElement
-import okhttp3.Headers
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.TextNode
-import kotlin.math.roundToInt
 
 @Source
 abstract class Zazamanga : MadaraNoAjax() {
@@ -33,9 +33,6 @@ abstract class Zazamanga : MadaraNoAjax() {
         intl["status_filter_completed"] to "completed",
         intl["status_filter_canceled"] to "drop",
     )
-
-    // Image hosts answer 503 to requests carrying Origin
-    override fun Headers.Builder.configureHeaders(): Headers.Builder = removeAll("Origin")
 
     override fun nextPageSelector() = "ul.pagination > li:last-child:not(.disabled) > a[href]"
 
@@ -72,8 +69,7 @@ abstract class Zazamanga : MadaraNoAjax() {
         }
         val ratingCount = document.selectFirst("#countrate")?.text()?.toIntOrNull()?.takeIf { it > 0 }
         val ratingLine = document.selectFirst("#averagerate")?.text()?.toDoubleOrNull()?.takeIf { ratingCount != null }?.let { rating ->
-            val stars = rating.roundToInt().coerceIn(0, 5)
-            "${"★".repeat(stars)}${"☆".repeat(5 - stars)} $rating ($ratingCount ratings)"
+            "${ratingStars(rating, max = 5)} $rating ($ratingCount ratings)"
         }
         val altNames = document.selectFirst(altNameSelector)?.ownText()?.takeIf { it.isNotEmpty() && !isUpdating(it) }
         description = listOfNotNull(
@@ -96,7 +92,7 @@ abstract class Zazamanga : MadaraNoAjax() {
         else -> element.attr("src")
     }
 
-    override suspend fun fetchFilterData(): JsonElement = client.get(searchUrl()).asJsoup()
+    override suspend fun fetchFilterData(): JsonElement = client.get(searchUrl(), Fetch.DOCUMENT).asJsoup()
         .select("form.search-advanced-form input[name=genre[]]")
         .map { GenreOption(it.nextElementSibling()!!.text(), it.attr("value")) }
         .distinctBy(GenreOption::slug)
@@ -127,7 +123,7 @@ abstract class Zazamanga : MadaraNoAjax() {
 
     // Past page 100 the site repeats page 100
     private suspend fun listPage(url: HttpUrl, page: Int): MangasPage {
-        val document = client.get(url).asJsoup()
+        val document = client.get(url, Fetch.DOCUMENT).asJsoup()
         return MangasPage(parseArchive(document), page < LAST_PAGE && document.selectFirst(nextPageSelector()) != null)
     }
 

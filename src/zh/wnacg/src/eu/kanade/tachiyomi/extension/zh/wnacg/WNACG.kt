@@ -11,7 +11,9 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import keiyoushi.annotation.Source
+import keiyoushi.network.Fetch
 import keiyoushi.network.get
+import keiyoushi.network.rateLimit
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.asJsoup
 import keiyoushi.utils.attrOrNull
@@ -25,6 +27,7 @@ import kotlinx.serialization.json.JsonElement
 import okhttp3.Headers
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
 import org.jsoup.nodes.Document
@@ -32,25 +35,37 @@ import org.jsoup.nodes.Element
 import java.io.IOException
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.time.Duration.Companion.minutes
 
 @Source
 abstract class WNACG :
     KeiSource(),
     ConfigurableSource {
-
     private val preferences = getPreferences { preferenceMigration() }
 
-    override val baseUrl get() = preferences.baseUrl
-
-    private val updateUrlInterceptor = UpdateUrlInterceptor(preferences)
+    override suspend fun fetchBaseUrls(client: OkHttpClient): List<String> = client.get(DOMAIN_LIST_URL, Fetch.DOCUMENT).body.string().split(',')
 
     override fun OkHttpClient.Builder.configureClient() = apply {
-        addInterceptor(updateUrlInterceptor)
+        addInterceptor(::loginHintInterceptor)
+        // Cloudflare answers 429 past 60 page requests a minute
+        rateLimit(50, 1.minutes) { mirrorHostRegex.containsMatchIn(it.host) }
     }
 
     // Mobile user agents get a mobile layout
     override fun Headers.Builder.configureHeaders() = apply {
         set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0")
+    }
+
+    // Guests get 404 on some galleries and on login-only categories
+    private fun loginHintInterceptor(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        val response = chain.proceed(request)
+        val path = request.url.encodedPath
+        if (response.code == 404 && (path.startsWith("/photos-") || unlistedCategoryId(path) != null)) {
+            response.close()
+            throw IOException(LOGIN_HINT)
+        }
+        return response
     }
 
     private val popularPagingState = FilterPagingState()
@@ -59,7 +74,7 @@ abstract class WNACG :
         val blacklist = preferences.titleBlacklist
         if (blacklist.isEmpty()) {
             popularPagingState.reset()
-            return mangaListParse(client.get(popularMangaUrl(page))).filterBlockedTitles()
+            return mangaListParse(client.get(popularMangaUrl(page), Fetch.DOCUMENT)).filterBlockedTitles()
         }
         val maxScanPages = preferences.blacklistMaxScanPages
 
@@ -81,7 +96,7 @@ abstract class WNACG :
         val blacklist = preferences.titleBlacklist
         if (blacklist.isEmpty()) {
             latestPagingState.reset()
-            return mangaListParse(client.get(latestUpdatesUrl(page))).filterBlockedTitles()
+            return mangaListParse(client.get(latestUpdatesUrl(page), Fetch.DOCUMENT)).filterBlockedTitles()
         }
         val maxScanPages = preferences.blacklistMaxScanPages
 
@@ -103,7 +118,7 @@ abstract class WNACG :
         val blacklist = preferences.titleBlacklist
         if (!preferences.filterSearchResults || blacklist.isEmpty()) {
             searchPagingState.reset()
-            return mangaListParse(client.get(searchMangaUrl(page, query, filters)))
+            return mangaListParse(client.get(searchMangaUrl(page, query, filters), Fetch.DOCUMENT))
         }
 
         val urlForPage = { sourcePage: Int -> searchMangaUrl(sourcePage, query, filters) }
@@ -147,7 +162,7 @@ abstract class WNACG :
         val (aid, sid) = mangaUrlRegex.matchEntire(url.encodedPath)?.destructured ?: return null
         val path = "/photos-index-aid-${sid.ifEmpty { aid }}.html"
 
-        return mangaDetailsParse(client.get(baseUrl + path).asJsoup()).apply {
+        return mangaDetailsParse(client.get(baseUrl + path, Fetch.DOCUMENT).asJsoup()).apply {
             this.url = path
             initialized = true
         }
@@ -159,7 +174,7 @@ abstract class WNACG :
         fetchDetails: Boolean,
         fetchChapters: Boolean,
     ): SMangaUpdate {
-        val document = client.get(getMangaUrl(manga)).asJsoup()
+        val document = client.get(getMangaUrl(manga), Fetch.DOCUMENT).asJsoup()
         return SMangaUpdate(
             mangaDetailsParse(document).apply { url = manga.url },
             if (fetchChapters) chaptersParse(document, manga) else chapters,
@@ -194,7 +209,7 @@ abstract class WNACG :
         val aid = mangaAidRegex.find(manga.url)!!.groupValues[1]
         val otherPages = coroutineScope {
             (2..lastPage).map { page ->
-                async { client.get("$baseUrl/photos-index-aid-$aid-page-$page.html").asJsoup().select(CHAPTER_SELECTOR) }
+                async { client.get("$baseUrl/photos-index-aid-$aid-page-$page.html", Fetch.DOCUMENT).asJsoup().select(CHAPTER_SELECTOR) }
             }.awaitAll()
         }
         val chapterElements = (document.select(CHAPTER_SELECTOR) + otherPages.flatten())
@@ -226,7 +241,7 @@ abstract class WNACG :
 
     override val supportsRelatedMangas get() = true
 
-    override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> = client.get(getMangaUrl(manga)).asJsoup()
+    override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> = client.get(getMangaUrl(manga), Fetch.DOCUMENT).asJsoup()
         .select("a.ar_item")
         .mapNotNull { element ->
             SManga.create().apply {
@@ -237,7 +252,7 @@ abstract class WNACG :
         }
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val html = client.get(getChapterUrl(chapter).replace("-index-", "-gallery-")).body.string()
+        val html = client.get(getChapterUrl(chapter).replace("-index-", "-gallery-"), Fetch.XHR).body.string()
         return pageImageRegex.findAll(html).mapIndexedTo(ArrayList()) { index, match ->
             Page(index, imageUrl = match.value.toImageUrl())
         }
@@ -258,7 +273,7 @@ abstract class WNACG :
     )
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
-        getPreferencesInternal(screen.context, preferences, updateUrlInterceptor.isUpdated)
+        getPreferencesInternal(screen.context, preferences)
             .forEach(screen::addPreference)
     }
 
@@ -303,7 +318,7 @@ abstract class WNACG :
         val snapshot = state.snapshot(appPage, key)
         var sourcePage = appPage + snapshot.offset
         repeat(maxScanPages) {
-            val page = mangaListParse(client.get(urlForPage(sourcePage))).filterBlockedTitles(blacklist)
+            val page = mangaListParse(client.get(urlForPage(sourcePage), Fetch.DOCUMENT)).filterBlockedTitles(blacklist)
             when {
                 page.mangas.isNotEmpty() -> {
                     state.updateOffset(key, snapshot.generation, sourcePage - appPage)
@@ -327,6 +342,8 @@ abstract class WNACG :
     private fun String.toImageUrl() = "https://" + trimStart('/')
 
     companion object {
+        private const val LOGIN_HINT = "内容不存在或需要登录，请在 WebView 中登录后重试"
+        private const val DOMAIN_LIST_URL = "https://stevenyomi.github.io/source-domains/wnacg.txt"
         private const val CHAPTER_SELECTOR = "div.sr_compact a.tagshow[data-chid]"
         private val pageImageRegex = Regex(
             """//[^\s"'\\]+\.(?:jpeg|jpg|png|webp|gif)(?:\?[^\s"'\\]*)?""",
@@ -335,7 +352,7 @@ abstract class WNACG :
 
         // Gallery page, reader and chapter links; a chapter's sid is its collection
         private val mangaUrlRegex = Regex("""/photos-(?:index|slide|list|gallery)(?:-page-\d+)?-aid-(\d+)(?:-sid-(\d+))?(?:-page-\d+)?\.html""")
-        private val mirrorHostRegex = Regex("""^(?:www\.)?wn(?:acg|\d+)\.""")
+        private val mirrorHostRegex = Regex("""^(?:www\.)?wn(?:acg\w*|\d+)\.""")
         private val mangaAidRegex = Regex("""photos-index-aid-(\d+)""")
         private val chapterListPageRegex = Regex("""photos-index-aid-\d+-page-(\d+)\.html""")
         private val chapterDateRegex = Regex("""\d{4}-\d{2}-\d{2}""")

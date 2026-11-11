@@ -10,6 +10,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
+import keiyoushi.network.Fetch
 import keiyoushi.network.get
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.boolean
@@ -32,8 +33,8 @@ abstract class WebdexScans :
 
     private val preferences by getPreferencesLazy()
 
-    private val supabaseUrl = "https://nrqghtbdrdnoywxjkgkf.supabase.co/rest/v1"
-    private val supabaseApiKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ycWdodGJkcmRub3l3eGprZ2tmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4Njg4NDEsImV4cCI6MjA5MjQ0NDg0MX0.Gnrn33_LMxFA9m_OdCpybBZ-Cjcc5rdsJlD8Y9eOICg"
+    private val supabaseUrl = "https://apidb.webdexscans.com/rest/v1"
+    private val supabaseApiKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzkyMzI5NzkxLCJleHAiOjE5NTAwMDk3OTF9.ub3n4yzBgZ1madOiy7R_QE5yOLRJISh8-C_wa0Ud8mQ"
 
     private val supabaseHeaders: Headers
         get() = headersBuilder()
@@ -53,7 +54,7 @@ abstract class WebdexScans :
             .addQueryParameter("limit", "24")
             .build()
 
-        return mangaListParse(client.get(url, supabaseHeaders))
+        return mangaListParse(client.get(url, supabaseHeaders, Fetch.XHR))
     }
 
     private fun mangaListParse(response: Response): MangasPage {
@@ -72,7 +73,7 @@ abstract class WebdexScans :
             .addQueryParameter("limit", "24")
             .build()
 
-        return mangaListParse(client.get(url, supabaseHeaders))
+        return mangaListParse(client.get(url, supabaseHeaders, Fetch.XHR))
     }
 
     // ============================== Search ===============================
@@ -111,7 +112,7 @@ abstract class WebdexScans :
         url.addQueryParameter("offset", offset.toString())
         url.addQueryParameter("limit", "24")
 
-        return mangaListParse(client.get(url.build(), supabaseHeaders))
+        return mangaListParse(client.get(url.build(), supabaseHeaders, Fetch.XHR))
     }
 
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
@@ -125,7 +126,7 @@ abstract class WebdexScans :
             .addQueryParameter("select", "*,genres(name)")
             .build()
 
-        val series = client.get(apiUrl, supabaseHeaders).parseAs<List<SeriesInfo>>().firstOrNull() ?: return null
+        val series = client.get(apiUrl, supabaseHeaders, Fetch.XHR).parseAs<List<SeriesInfo>>().firstOrNull() ?: return null
         return series.toSManga(baseUrl)
     }
 
@@ -159,7 +160,7 @@ abstract class WebdexScans :
                     .addQueryParameter("id", "eq.${manga.url}")
                     .addQueryParameter("select", "*,genres(name)")
                     .build()
-                client.get(url, supabaseHeaders).parseAs<List<SeriesInfo>>().firstOrNull()
+                client.get(url, supabaseHeaders, Fetch.XHR).parseAs<List<SeriesInfo>>().firstOrNull()
             }
         } else {
             null
@@ -172,7 +173,7 @@ abstract class WebdexScans :
                     .addQueryParameter("select", "id,chapter_number,title,slug,created_at,is_premium,free_at,series(slug)")
                     .addQueryParameter("order", "chapter_number.desc")
                     .build()
-                client.get(url, supabaseHeaders).parseAs<List<ChapterInfo>>()
+                client.get(url, supabaseHeaders, Fetch.XHR).parseAs<List<ChapterInfo>>()
             }
         } else {
             null
@@ -222,7 +223,7 @@ abstract class WebdexScans :
             .addQueryParameter("order", "page_number.asc")
             .build()
 
-        val pages = client.get(url, supabaseHeaders).parseAs<List<PageInfo>>()
+        val pages = client.get(url, supabaseHeaders, Fetch.XHR).parseAs<List<PageInfo>>()
         return pages.mapIndexed { i, page ->
             Page(i, imageUrl = page.imageUrl.toAbsoluteUrl(baseUrl))
         }

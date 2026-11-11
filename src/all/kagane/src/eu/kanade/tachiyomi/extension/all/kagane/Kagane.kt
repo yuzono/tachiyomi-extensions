@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.extension.all.kagane
 
+import android.util.LruCache
 import androidx.preference.ListPreference
 import androidx.preference.MultiSelectListPreference
 import androidx.preference.PreferenceScreen
@@ -13,6 +14,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
+import keiyoushi.network.Fetch
 import keiyoushi.network.get
 import keiyoushi.network.post
 import keiyoushi.network.rateLimit
@@ -39,19 +41,23 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okio.IOException
+import org.jsoup.Jsoup
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Instant
 
 @Source
 abstract class Kagane :
     KeiSource(),
     ConfigurableSource {
-
     private val kaganeLangs: List<String>
         get() = listOf(lang)
 
-    private val domain get() = baseUrl.removePrefix("https://")
-    private val apiUrl get() = "https://$domain/api/v2"
+    private val apiUrl get() = "$baseUrl/api/v2"
 
     private val prefs = getPreferences()
 
@@ -60,40 +66,58 @@ abstract class Kagane :
         rateLimit(3)
     }
 
+    // The image host 404s without the site's Origin
+    override val imageFetch = Fetch.XHR
+
+    override suspend fun fetchBaseUrls(client: OkHttpClient): List<String> = client.get(HUB_URL, Fetch.DOCUMENT)
+        // Mirror cards sit at the top of a 1.2 MB page
+        .use { Jsoup.parse(it.peekBody(HUB_BYTES).string(), HUB_URL) }
+        .select("li:has(p[aria-live]) a[href^=https://]")
+        .map { it.absUrl("href") }
+
     private fun refreshTokenInterceptor(chain: Interceptor.Chain): Response {
         val request = chain.request()
         val url = request.url
-        if (!url.queryParameterNames.contains("token")) {
-            return chain.proceed(request)
+        val urlToken = url.queryParameter("token") ?: return chain.proceed(request)
+
+        val chapterId = url.pathSegments[url.pathSize - 2]
+
+        val token = pageTokens.get(chapterId)?.value ?: urlToken
+        val response = chain.proceed(request.withToken(token))
+
+        if (response.code != 401 && response.code != 403 && response.code != 507) {
+            return response
         }
 
-        val chapterId = if (url.pathSegments[4] == "datasaver") {
-            url.pathSegments[5]
-        } else {
-            url.pathSegments[4]
+        response.close()
+        if (response.code == 403 && response.header("Content-Type").orEmpty().startsWith("text/html")) {
+            throw IOException("${url.host} is blocking this network, try another connection")
         }
 
-        var response = chain.proceed(
-            request.newBuilder()
-                .url(url.newBuilder().setQueryParameter("token", accessToken).build())
-                .build(),
-        )
+        return chain.proceed(request.withToken(refreshToken(chapterId, token)))
+    }
 
-        if (response.code == 401 || response.code == 403 || response.code == 507) {
-            response.close()
-            val challenge = runBlocking {
-                runCatching { getChallengeResponse(chapterId) }
-            }.getOrElse { throw IOException("Failed to retrieve token") }
+    private fun Request.withToken(token: String): Request = newBuilder()
+        .url(url.newBuilder().setQueryParameter("token", token).build())
+        .build()
 
-            accessToken = challenge.accessToken
-            response = chain.proceed(
-                request.newBuilder()
-                    .url(url.newBuilder().setQueryParameter("token", accessToken).build())
-                    .build(),
-            )
+    @Synchronized
+    private fun refreshToken(chapterId: String, rejected: String): String {
+        val known = pageTokens.get(chapterId)
+        if (known != null && known.value != rejected) return known.value
+
+        val now = Clock.System.now()
+        if (known != null && now - known.issuedAt < TOKEN_REFRESH_INTERVAL) {
+            throw IOException("Failed to retrieve token")
         }
 
-        return response
+        pageTokens.put(chapterId, PageToken(rejected, now))
+        val challenge = runBlocking {
+            runCatching { getChallengeResponse(chapterId) }
+        }.getOrElse { throw IOException("Failed to retrieve token") }
+
+        pageTokens.put(chapterId, PageToken(challenge.accessToken, now))
+        return challenge.accessToken
     }
 
     // ============================== Popular ===============================
@@ -277,7 +301,7 @@ abstract class Kagane :
             if (sortParam.isNotEmpty()) addQueryParameter("sort", sortParam)
         }.build()
 
-        val response = client.post(url, body)
+        val response = client.post(url, Fetch.XHR, body)
         val dto = response.parseAs<SearchDto>()
         val mangas = dto.content.map { it.toSManga(apiUrl, showSource, sources, cleanTitle) }
         return MangasPage(mangas, hasNextPage = dto.hasNextPage())
@@ -302,7 +326,7 @@ abstract class Kagane :
 
     private suspend fun searchStaff(name: String): List<String> {
         val body = buildJsonObject { put("name", name) }.toJsonRequestBody()
-        return client.post("$apiUrl/search/staff", body)
+        return client.post("$apiUrl/search/staff", Fetch.XHR, body)
             .parseAs<StaffSearchDto>()
             .content
             .filter { staff ->
@@ -318,7 +342,7 @@ abstract class Kagane :
             .addQueryParameter("q", name)
             .addQueryParameter("limit", "8")
             .build()
-        return client.get(url)
+        return client.get(url, Fetch.XHR)
             .parseAs<GroupSearchDto>()
             .items
             .filter { it.title.equals(name, ignoreCase = true) }
@@ -329,13 +353,13 @@ abstract class Kagane :
 
     private suspend fun getMangaById(seriesId: String): DetailsDto {
         val url = "$apiUrl/series/$seriesId"
-        return client.get(url).parseAs<DetailsDto>()
+        return client.get(url, Fetch.XHR).parseAs<DetailsDto>()
     }
 
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
-        if (url.host != baseUrl.toHttpUrl().host) return null
+        if (url.host !in LINK_HOSTS) return null
         val segments = url.pathSegments
-        if (segments.size < 2) return null
+        if (segments.size < 2 || segments[0] != "series") return null
         val seriesId = segments[1].takeLast(36)
         return parseMangaDetails(getMangaById(seriesId)).apply {
             this.url = seriesId
@@ -381,7 +405,7 @@ abstract class Kagane :
             manga
         }
         val updatedChapters = if (fetchChapters) {
-            val index = client.get("$apiUrl/series/$seriesId/books/index?fields=List")
+            val index = client.get("$apiUrl/series/$seriesId/books/index?fields=List", Fetch.XHR)
                 .parseAs<BookIndexDto>()
             val slug = updatedManga.memoString("slug")
             parseChapterList(index.toBooks(), chapterFormat(updatedManga), seriesId, slug)
@@ -423,7 +447,7 @@ abstract class Kagane :
     override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> {
         val trackerId = manga.memo["trackerId"]?.string ?: return emptyList()
 
-        val series = client.get("$apiUrl/trackers/$trackerId/series")
+        val series = client.get("$apiUrl/trackers/$trackerId/series", Fetch.XHR)
             .parseAs<TrackerDto>()
             .bookSeries
         return series
@@ -440,16 +464,15 @@ abstract class Kagane :
         val chapterId = "$baseUrl${chapter.url}".toHttpUrl().pathSegments.last().takeLast(36)
         val challengeResp = getChallengeResponse(chapterId)
 
-        accessToken = challengeResp.accessToken
+        val accessToken = challengeResp.accessToken
+        pageTokens.put(chapterId, PageToken(accessToken, Clock.System.now()))
         val cacheUrl = challengeResp.cacheUrl
 
         val pageList = challengeResp.manifest?.pages ?: emptyList()
 
         return pageList.map { page ->
             val pageUrl = "$cacheUrl/api/v2/books/page".toHttpUrl().newBuilder().apply {
-                if (dataSaver) {
-                    addPathSegment("datasaver")
-                }
+                addPathSegment(if (dataSaver) "datasaver" else "original")
                 addPathSegment(chapterId)
                 addPathSegment("${page.pageUuid}.${page.ext ?: "jxl"}")
                 addQueryParameter("token", accessToken)
@@ -459,20 +482,23 @@ abstract class Kagane :
         }
     }
 
-    private var accessToken: String = ""
+    private class PageToken(val value: String, val issuedAt: Instant)
+
+    // Tokens are valid for one book only
+    private val pageTokens = LruCache<String, PageToken>(16)
+
     private var integrityToken: String = ""
-    private var integrityExp = System.currentTimeMillis()
+    private var integrityExp = Instant.DISTANT_PAST
 
     private suspend fun getIntegrityToken(): String {
-        if (integrityExp < System.currentTimeMillis()) {
-            client.get("$baseUrl/").close()
-
+        if (integrityExp < Clock.System.now()) {
             val res = client.post(
                 "$baseUrl/api/integrity",
+                Fetch.XHR,
                 "".toJsonRequestBody(),
             ).parseAs<IntegrityDto>()
             integrityToken = res.token
-            integrityExp = res.exp * 1000
+            integrityExp = Instant.fromEpochSeconds(res.exp)
         }
 
         return integrityToken
@@ -482,14 +508,12 @@ abstract class Kagane :
         val integrityToken = getIntegrityToken()
 
         val challengeUrl = "$apiUrl/books/$chapterId".toHttpUrl().newBuilder()
-            .addQueryParameter("is_datasaver", dataSaver.toString())
+            .addQueryParameter("intent", "Read")
             .build()
-
-        val challengeBody = "{}".toJsonRequestBody()
 
         val headers = headers.newBuilder().add("x-integrity-token", integrityToken).build()
 
-        val response = client.post(challengeUrl.toString(), headers, challengeBody)
+        val response = client.post(challengeUrl, headers, Fetch.XHR, "".toRequestBody())
 
         return response.parseAs<ChallengeDto>()
     }
@@ -683,6 +707,11 @@ abstract class Kagane :
     // ============================= Utilities ==============================
 
     companion object {
+        private const val HUB_URL = "https://kagane.org/"
+        private const val HUB_BYTES = 128 * 1024L
+
+        private val TOKEN_REFRESH_INTERVAL = 1.minutes
+        private val LINK_HOSTS = setOf("kagane.cx", "kagane.moe", "kagane.net")
         private const val MAX_SOURCE_FILTER = 50
         private const val CONTENT_RATING = "pref_content_rating"
 
@@ -744,19 +773,20 @@ abstract class Kagane :
 
     override suspend fun fetchFilterData(): JsonElement = coroutineScope {
         val genresDeferred = async {
-            client.get("$apiUrl/genres/list")
+            client.get("$apiUrl/genres/list", Fetch.XHR)
                 .parseAs<List<GenreDto>>()
                 .associate { it.id to it.genreName }
         }
 
         val tagsDeferred = async {
-            client.get("$apiUrl/tags/list")
+            client.get("$apiUrl/tags/list", Fetch.XHR)
                 .parseAs<List<TagDto>>()
                 .associate { it.tagName.lowercase() to it.id }
         }
         val sourcesDeferred = async {
             client.post(
                 "$apiUrl/sources/list",
+                Fetch.XHR,
                 buildJsonObject { put("source_types", null) }.toJsonRequestBody(),
             )
                 .parseAs<SourcesDto>().sources

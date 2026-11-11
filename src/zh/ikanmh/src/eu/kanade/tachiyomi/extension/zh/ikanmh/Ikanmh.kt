@@ -7,6 +7,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
+import keiyoushi.network.Fetch
 import keiyoushi.network.get
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.asJsoup
@@ -33,7 +34,6 @@ import java.util.Locale
  */
 @Source
 abstract class Ikanmh : KeiSource() {
-
     // ---- 热门 ----
 
     override suspend fun getPopularManga(page: Int): MangasPage = browseBooklist(
@@ -49,7 +49,7 @@ abstract class Ikanmh : KeiSource() {
         val url = "$baseUrl/update".toHttpUrl().newBuilder()
             .apply { if (page > 1) addQueryParameter("page", page.toString()) }
             .build()
-        val document = client.get(url).asJsoup()
+        val document = client.get(url, Fetch.DOCUMENT).asJsoup()
         return MangasPage(parseMangaListCards(document), document.hasNextPage())
     }
 
@@ -61,7 +61,7 @@ abstract class Ikanmh : KeiSource() {
             val url = "$baseUrl/search".toHttpUrl().newBuilder()
                 .addQueryParameter("keyword", queryTrimmed)
                 .build()
-            val document = client.get(url).asJsoup()
+            val document = client.get(url, Fetch.DOCUMENT).asJsoup()
             // 站点搜索无分页
             return MangasPage(parseSearchCards(document), hasNextPage = false)
         }
@@ -87,7 +87,7 @@ abstract class Ikanmh : KeiSource() {
             .addQueryParameter("end", end)
             .apply { if (page > 1) addQueryParameter("page", page.toString()) }
             .build()
-        val document = client.get(url).asJsoup()
+        val document = client.get(url, Fetch.DOCUMENT).asJsoup()
         return MangasPage(parseMangaListCards(document), document.hasNextPage())
     }
 
@@ -99,7 +99,7 @@ abstract class Ikanmh : KeiSource() {
         fetchDetails: Boolean,
         fetchChapters: Boolean,
     ): SMangaUpdate {
-        val document = client.get(getMangaUrl(manga)).asJsoup()
+        val document = client.get(getMangaUrl(manga), Fetch.DOCUMENT).asJsoup()
         return SMangaUpdate(document.parseDetails(manga), document.parseChapters())
     }
 
@@ -143,16 +143,24 @@ abstract class Ikanmh : KeiSource() {
     // ---- URL 搜索（在搜索框粘贴站点链接） ----
 
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
-        if (url.host != baseUrl.toHttpUrl().host || url.pathSegments.firstOrNull() != "book") return null
-        return client.get(url).asJsoup().parseDetails(SManga.create()).apply {
-            this.url = url.encodedPath
+        if (url.host.removePrefix("www.") !in DOMAINS) return null
+        val id = url.pathSegments.getOrNull(1)?.takeIf { it.isNotEmpty() } ?: return null
+        val bookPath = when (url.pathSegments[0]) {
+            "book" -> "/book/$id"
+            "chapter" -> client.get("$baseUrl/chapter/$id", Fetch.DOCUMENT).asJsoup()
+                .selectFirst("a.view-fix-bottom-bar-item[href^=/book/]")!!
+                .absUrl("href").toHttpUrl().encodedPath
+            else -> return null
         }
+        val manga = SManga.create().apply { this.url = bookPath }
+        return client.get(getMangaUrl(manga), Fetch.DOCUMENT).asJsoup().parseDetails(manga)
+            .apply { initialized = true }
     }
 
     // ---- 正文 ----
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val document = client.get(getChapterUrl(chapter)).asJsoup()
+        val document = client.get(getChapterUrl(chapter), Fetch.DOCUMENT).asJsoup()
         return document.select("#cp_img img[data-original]")
             .mapIndexed { index, img ->
                 Page(index = index, imageUrl = img.attr("data-original"))
@@ -166,6 +174,7 @@ abstract class Ikanmh : KeiSource() {
     private companion object {
         val DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ENGLISH)
         val CHAPTER_NUMBER = Regex("""第(\d+)""")
+        val DOMAINS = setOf("ikanmh.xyz", "ikanmh.cc", "jjmhw12.top")
     }
 }
 

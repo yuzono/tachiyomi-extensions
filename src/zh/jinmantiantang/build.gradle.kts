@@ -6,7 +6,7 @@ plugins {
 
 keiyoushi {
     name = "Jinman Tiantang"
-    versionCode = 62
+    versionCode = 64
     contentWarning = ContentWarning.NSFW
     libVersion = "1.6"
 

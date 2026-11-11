@@ -18,6 +18,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
+import keiyoushi.network.Fetch
 import keiyoushi.network.get
 import keiyoushi.network.post
 import keiyoushi.network.rateLimit
@@ -52,13 +53,13 @@ import okhttp3.RequestBody
 import okhttp3.Response
 import java.io.IOException
 import java.time.LocalDate
+import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
 
 @Source
 abstract class Jinmantiantang :
     KeiSource(),
     ConfigurableSource {
-
     private val preferences = getPreferences { preferenceMigration() }
 
     override val supportsRelatedMangas get() = true
@@ -134,7 +135,7 @@ abstract class Jinmantiantang :
     }
 
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
-        if (url.host != baseUrl.toHttpUrl().host) return null
+        if (url.host !in MIRROR_HOSTS) return null
         if (url.pathSegments.firstOrNull() !in listOf("album", "photo")) return null
         return fetchAlbum(url.pathSegments.getOrNull(1) ?: return null)
     }
@@ -233,7 +234,7 @@ abstract class Jinmantiantang :
 
     // The app's server list, or a snapshot of it when the list fails
     private suspend fun fetchServers(): List<String> = try {
-        val text = client.get(SERVER_LIST_URL).body.string().trimStart('\uFEFF')
+        val text = client.get(SERVER_LIST_URL, Fetch.XHR).body.string().trimStart('\uFEFF')
         decrypt(text, SERVER_LIST_SECRET).parseAs<ServerListDto>().server
     } catch (e: CancellationException) {
         throw e
@@ -259,12 +260,12 @@ abstract class Jinmantiantang :
 
     private suspend inline fun <reified T> apiGet(url: HttpUrl, token: String? = null): T {
         val timestamp = timestamp()
-        return client.get(url, apiHeaders(timestamp, token)).decode(timestamp)
+        return client.get(url, apiHeaders(timestamp, token), Fetch.XHR).decode(timestamp)
     }
 
     private suspend inline fun <reified T> apiPost(url: HttpUrl, body: RequestBody, token: String? = null, ensureSuccess: Boolean = true): T {
         val timestamp = timestamp()
-        return client.post(url, apiHeaders(timestamp, token), body, ensureSuccess).decode(timestamp)
+        return client.post(url, apiHeaders(timestamp, token), Fetch.XHR, body, ensureSuccess).decode(timestamp)
     }
 
     // The API sometimes answers 200 with a plain-text server error
@@ -284,7 +285,7 @@ abstract class Jinmantiantang :
         .aesDecrypt(aesEcb(secret.md5().toHexString().encodeToByteArray()))
         .decodeToString()
 
-    private fun timestamp() = (System.currentTimeMillis() / 1000).toString()
+    private fun timestamp() = Clock.System.now().epochSeconds.toString()
 
     private val loginMutex = Mutex()
 
@@ -409,6 +410,9 @@ abstract class Jinmantiantang :
         private const val PREFIX_ID_SEARCH = "JM"
         private const val PAGE_SIZE = 80
         private const val FAVORITES_PAGE_SIZE = 20
+
+        // The mirrors in build.gradle.kts, all deep linked
+        private val MIRROR_HOSTS = setOf("18comic.vip", "18comic.ink", "jmcomic-zzz.one", "jmcomic-zzz.org")
 
         private const val APP_VERSION = "2.1.12"
         private const val TOKEN_SECRET = "185Hcomic3PAPP7R"

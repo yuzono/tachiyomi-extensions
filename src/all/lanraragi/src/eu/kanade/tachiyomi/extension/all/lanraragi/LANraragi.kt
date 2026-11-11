@@ -6,7 +6,6 @@ import android.text.InputType
 import android.util.Base64
 import android.widget.Toast
 import androidx.preference.ListPreference
-import eu.kanade.tachiyomi.network.await
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.UnmeteredSource
 import eu.kanade.tachiyomi.source.model.Filter
@@ -17,6 +16,9 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
+import keiyoushi.network.Fetch
+import keiyoushi.network.call
+import keiyoushi.network.fetch
 import keiyoushi.network.get
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.firstInstanceOrNull
@@ -160,7 +162,7 @@ class LANraragi(
         }
 
         val searchUrl = uri.toString().toHttpUrl()
-        val jsonResult = client.get(searchUrl, headers, CacheControl.FORCE_NETWORK).parseAs<ArchiveSearchResult>()
+        val jsonResult = client.get(searchUrl, headers, Fetch.XHR, CacheControl.FORCE_NETWORK).parseAs<ArchiveSearchResult>()
         val archives = arrayListOf<SManga>()
 
         lastResultCount = jsonResult.data.size
@@ -222,7 +224,7 @@ class LANraragi(
     ): SMangaUpdate {
         val id = if (manga.url.startsWith("/api/search/random")) randomArchiveID else getIDFromURL(manga.url)
 
-        val response = client.get(apiTypeByID(id).toString())
+        val response = client.get(apiTypeByID(id).toString(), Fetch.XHR)
 
         val (archive, archives) = if (!id.startsWith("TANK_")) {
             val archive = response.parseAs<Archive>()
@@ -278,7 +280,7 @@ class LANraragi(
                 .delete()
                 .build()
 
-            client.newCall(clearNew).await().close()
+            client.call(clearNew.newBuilder().fetch(Fetch.XHR).build(), ensureSuccess = false).close()
         }
 
         var baseChapter = 0F
@@ -332,7 +334,7 @@ class LANraragi(
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         val url = chapter.url.toHttpUrl()
-        val archivePage = client.get(url).parseAs<ArchivePage>()
+        val archivePage = client.get(url, Fetch.XHR).parseAs<ArchivePage>()
         val range = url.fragment?.split("-")?.map { it.toInt() } ?: listOf(0, archivePage.pages.size)
 
         return archivePage.pages.subList(range.first(), range.last()).mapIndexed { index, url ->
@@ -357,7 +359,7 @@ class LANraragi(
 
     override val supportsFilterFetching get() = true
 
-    override suspend fun fetchFilterData(): JsonElement = client.get("$baseUrl/api/categories")
+    override suspend fun fetchFilterData(): JsonElement = client.get("$baseUrl/api/categories", Fetch.XHR)
         .parseAs<List<Category>>()
         .toJsonElement()
 
@@ -512,7 +514,7 @@ class LANraragi(
     ).build()
 
     private suspend fun getRandomID(query: String): String {
-        val searchRandom = client.get("$baseUrl/api/search/random?count=1&$query", headers, CacheControl.FORCE_NETWORK)
+        val searchRandom = client.get("$baseUrl/api/search/random?count=1&$query", headers, Fetch.XHR, CacheControl.FORCE_NETWORK)
         val result = searchRandom.parseAs<ArchiveSearchResult>() // Intermittent empty data[] on parse, but not from manual API testing
         return result.data.firstOrNull()?.arcid ?: randomArchiveID
     }

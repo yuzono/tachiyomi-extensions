@@ -13,6 +13,7 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
 import keiyoushi.network.Fetch
+import keiyoushi.network.fetch
 import keiyoushi.network.get
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.asJsoup
@@ -77,8 +78,6 @@ abstract class OnfMangas :
             )?.toString()
         }
     }
-
-    override val imageFetch = Fetch.IMAGE
 
     override val supportsFilterFetching = true
 
@@ -173,16 +172,14 @@ abstract class OnfMangas :
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         val document = client.get(getChapterUrl(chapter), Fetch.DOCUMENT).asJsoup()
-        val json = document.decodeHexVariable("_hexP") ?: return emptyList()
-
-        return json.parseAs<List<PageDto>>()
-            .mapIndexed { index, dto -> dto.toPage(index) }
+        return document.selectFirst("script[type=application/json]:containsData(\"src\":)")!!.data()
+            .parseAs<List<PageDto>>()
+            .mapIndexed { index, dto -> dto.toPage(index, document.location()) }
     }
 
-    // uploads.mangadex.org serves a placeholder image with either header
+    // The site's image proxy answers 403 without the chapter page as Referer
     override fun getImageRequest(page: Page): Request = super.getImageRequest(page).newBuilder()
-        .removeHeader("Referer")
-        .removeHeader("Origin")
+        .fetch(imageFetch.from(page.url))
         .build()
 
     override suspend fun fetchFilterData(): JsonElement {

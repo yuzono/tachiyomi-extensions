@@ -7,10 +7,10 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
+import keiyoushi.network.Fetch
 import keiyoushi.network.get
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.parseAs
-import keiyoushi.utils.string
 import keiyoushi.utils.stringOrNull
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -28,9 +28,6 @@ abstract class KomikuCom : KeiSource() {
     override fun Headers.Builder.configureHeaders(): Headers.Builder = apply {
         add("Accept", "application/json, text/plain, */*")
         add("Accept-Language", "id-ID,id;q=0.9,en-US;q=0.8")
-        add("Sec-Fetch-Dest", "empty")
-        add("Sec-Fetch-Mode", "cors")
-        add("Sec-Fetch-Site", "same-origin")
     }
 
     // ------------------------- Browse (Popular) -------------------------
@@ -41,6 +38,7 @@ abstract class KomikuCom : KeiSource() {
                 .addQueryParameter("sort", "popular")
                 .addQueryParameter("page", page.toString())
                 .build(),
+            Fetch.XHR,
         ),
     )
 
@@ -52,6 +50,7 @@ abstract class KomikuCom : KeiSource() {
                 .addQueryParameter("sort", "update")
                 .addQueryParameter("page", page.toString())
                 .build(),
+            Fetch.XHR,
         ),
     )
 
@@ -76,7 +75,7 @@ abstract class KomikuCom : KeiSource() {
                 addQueryParameter("page", page.toString())
             }
             .build()
-        val response = client.get(url)
+        val response = client.get(url, Fetch.XHR)
         return if (query.isEmpty()) {
             parseComicListResponse(response)
         } else {
@@ -89,7 +88,7 @@ abstract class KomikuCom : KeiSource() {
 
     override val supportsFilterFetching: Boolean get() = true
 
-    override suspend fun fetchFilterData(): JsonElement = client.get("$apiUrl/comics/filters").parseAs()
+    override suspend fun fetchFilterData(): JsonElement = client.get("$apiUrl/comics/filters", Fetch.XHR).parseAs()
 
     override fun getFilterList(data: JsonElement?): FilterList {
         val dto = data?.parseAs<FilterResponse>() ?: return FilterList()
@@ -111,12 +110,14 @@ abstract class KomikuCom : KeiSource() {
         fetchDetails: Boolean,
         fetchChapters: Boolean,
     ): SMangaUpdate = coroutineScope {
-        val comicId = manga.memo["id"]!!.string
-        val slug = manga.url.substringAfter("/manga/")
-        val details = if (fetchDetails) async { client.get("$apiUrl/comics/$slug") } else null
-        val chapterList = if (fetchChapters) async { client.get("$apiUrl/comics/$comicId/chapters") } else null
+        // Library entries added before the /api/v2 rewrite have no memo id and a trailing slash in the url
+        val slug = manga.url.substringAfter("/manga/").trimEnd('/')
+        val memoId = manga.memo["id"]?.stringOrNull
+        val details = if (fetchDetails || memoId == null) async { client.get("$apiUrl/comics/$slug", Fetch.XHR).parseAs<ComicDto>() } else null
+        val comicId = memoId ?: details!!.await().id.toString()
+        val chapterList = if (fetchChapters) async { client.get("$apiUrl/comics/$comicId/chapters", Fetch.XHR) } else null
 
-        val comicDto = details?.await()?.parseAs<ComicDto>()
+        val comicDto = details?.await()
         val chapterDtos = chapterList?.await()?.parseAs<List<ChapterDto>>()
         SMangaUpdate(
             manga = comicDto?.toSManga() ?: manga,
@@ -131,7 +132,7 @@ abstract class KomikuCom : KeiSource() {
         if (url.host != baseUrl.toHttpUrl().host) return null
         val slug = url.pathSegments.getOrNull(1) ?: return null
         return try {
-            client.get("$apiUrl/comics/$slug").parseAs<ComicDto>().toSManga()
+            client.get("$apiUrl/comics/$slug", Fetch.XHR).parseAs<ComicDto>().toSManga()
         } catch (_: Exception) {
             null
         }
@@ -141,7 +142,7 @@ abstract class KomikuCom : KeiSource() {
         val segments = chapter.url.split("/").filter { it.isNotEmpty() }
         val comicId = segments.getOrNull(0)
         val chapterId = segments.getOrNull(1)
-        return client.get("$apiUrl/comics/$comicId/chapters/id/$chapterId")
+        return client.get("$apiUrl/comics/$comicId/chapters/id/$chapterId", Fetch.XHR)
             .parseAs<ChapterDetailDto>()
             .toPageList()
     }

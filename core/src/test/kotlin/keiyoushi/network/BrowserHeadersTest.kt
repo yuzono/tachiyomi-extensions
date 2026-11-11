@@ -26,6 +26,14 @@ class BrowserHeadersTest {
     private val firefoxUa = "Mozilla/5.0 (Android 14; Mobile; rv:158.0) Gecko/158.0 Firefox/158.0"
 
     @Test
+    fun transportTagKeepsHttp2Headers() {
+        val page = Request.Builder().url("https://a.test/").header("User-Agent", chromeUa).fetch(Fetch.DOCUMENT)
+        assertNull(intercept(page.build(), wireOrder = true).header("Priority"))
+        val tagged = page.tag(TransportProtocol::class.java, TransportProtocol(Protocol.HTTP_2)).build()
+        assertEquals("u=0, i", intercept(tagged, wireOrder = true).header("Priority"))
+    }
+
+    @Test
     fun brandsMatchChrome() {
         assertEquals("\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"", chromeBrands(155))
         assertEquals("\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"", chromeBrands(120))
@@ -72,8 +80,8 @@ class BrowserHeadersTest {
     fun withoutKindGoesOutAsBuilt() {
         val get = builder("https://api.b.test/list", referer = "https://a.test/").header("X-Site", "1").build()
         assertEquals(get.headers, intercept(get, wireOrder = true).headers)
-        // A source that drops the default Origin keeps it dropped
-        val post = builder("https://a.test/api/search", referer = "https://a.test/").removeHeader("Origin").post(json()).build()
+        // No Origin added without a kind
+        val post = builder("https://a.test/api/search", referer = "https://a.test/").post(json()).build()
         assertEquals(post.headers, intercept(post, wireOrder = true).headers)
     }
 
@@ -99,7 +107,7 @@ class BrowserHeadersTest {
     }
 
     @Test
-    fun defaultOriginWithoutReferer() {
+    fun originWithoutReferer() {
         val sent = intercept(builder("https://a.test/api/search").fetch(Fetch.XHR).post(json()).build())
         assertEquals("https://a.test", sent.header("Origin"))
         assertEquals("same-origin", sent.header("Sec-Fetch-Site"))
@@ -131,15 +139,14 @@ class BrowserHeadersTest {
 
     @Test
     fun otherClientsGoOutAsBuilt() {
-        val safari = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
-        val request = builder("https://a.test/series/1", ua = safari).fetch(Fetch.DOCUMENT).build()
+        val request = builder("https://a.test/series/1", ua = "ExampleApiClient/1.0").fetch(Fetch.DOCUMENT).build()
         assertEquals(request.headers, intercept(request).headers)
     }
 
     @Test
     fun nonBrowserClientsGetNoBrowserHeaders() {
         val sent = intercept(builder("https://api.a.test/list", ua = "Tachiyomi Dalvik/2.1.0").fetch(Fetch.XHR).build())
-        assertEquals("https://a.test", sent.header("Origin"))
+        assertNull(sent.header("Origin"))
         assertNull(sent.header("Accept-Language"))
         assertNull(sent.header("Sec-Fetch-Mode"))
         assertNull(sent.header("Accept"))
@@ -207,12 +214,6 @@ class BrowserHeadersTest {
     }
 
     @Test
-    fun removedOriginStaysRemoved() {
-        val sent = intercept(builder("https://a.test/api/search", referer = "https://a.test/").removeHeader("Origin").fetch(Fetch.XHR).post(json()).build())
-        assertNull(sent.header("Origin"))
-    }
-
-    @Test
     fun fromPageIsSentAsBrowsersDo() {
         val sameOrigin = intercept(builder("https://a.test/api/pages").fetch(Fetch.XHR.from("https://a.test/series/1/2#p3")).build())
         assertEquals("https://a.test/series/1/2", sameOrigin.header("Referer"))
@@ -266,6 +267,39 @@ class BrowserHeadersTest {
     }
 
     @Test
+    fun jxlOnlyFromFirefox158() {
+        val image = { ua: String -> intercept(builder("https://a.test/1.jpg", ua = ua).fetch(Fetch.IMAGE).build()).header("Accept") }
+        assertEquals("image/avif,image/jxl,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5", image(firefoxUa))
+        assertEquals("image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5", image(firefoxUa.replace("158", "157")))
+    }
+
+    @Test
+    fun storageAccessOnCrossSiteImages() {
+        val image = { url: String, ua: String -> intercept(builder(url, referer = "https://a.test/series/1", ua = ua).fetch(Fetch.IMAGE).build()).header("Sec-Fetch-Storage-Access") }
+        assertEquals("active", image("https://cdn.b.test/1.jpg", chromeUa))
+        assertEquals("none", image("https://cdn.b.test/1.jpg", chromeUa.replace("Chrome/155", "Chrome/141")))
+        assertNull(image("https://cdn.b.test/1.jpg", chromeUa.replace("Chrome/155", "Chrome/132")))
+        assertEquals("none", image("https://cdn.b.test/1.jpg", firefoxUa))
+        assertNull(image("https://cdn.b.test/1.jpg", firefoxUa.replace("158", "146")))
+        assertNull(image("https://media.a.test/1.jpg", chromeUa))
+        assertNull(intercept(builder("https://api.b.test/list", referer = "https://a.test/series/1").fetch(Fetch.XHR).build()).header("Sec-Fetch-Storage-Access"))
+    }
+
+    @Test
+    fun storageAccessOrder() {
+        val names = { ua: String ->
+            val request = builder("https://cdn.b.test/1.jpg", referer = "https://a.test/series/1", ua = ua).fetch(Fetch.IMAGE).build()
+            intercept(request, wireOrder = true, compression = true).headers.map { it.first }
+        }
+        val chrome = names(chromeUa)
+        assertEquals(chrome.indexOf("Sec-Fetch-Dest") + 1, chrome.indexOf("Sec-Fetch-Storage-Access"))
+        assertEquals(chrome.indexOf("Referer") - 1, chrome.indexOf("Sec-Fetch-Storage-Access"))
+        val firefox = names(firefoxUa)
+        assertEquals(firefox.indexOf("Accept-Encoding") + 1, firefox.indexOf("Sec-Fetch-Storage-Access"))
+        assertEquals(firefox.indexOf("Referer") - 1, firefox.indexOf("Sec-Fetch-Storage-Access"))
+    }
+
+    @Test
     fun ipv6Origin() {
         val sent = intercept(builder("http://[::1]:8080/api", referer = "http://[::1]:8080/").fetch(Fetch.XHR).post(json()).build())
         assertEquals("http://[::1]:8080", sent.header("Origin"))
@@ -285,7 +319,7 @@ class BrowserHeadersTest {
 
     @Test
     fun retryFromResponseRequestStartsOver() {
-        val stale = builder("https://a.test/api").tag(BrowserCall::class.java, BrowserCall(null, "https://a.test".toHttpUrl(), "https://a.test"))
+        val stale = builder("https://a.test/api").tag(BrowserCall::class.java, BrowserCall(null, "https://a.test".toHttpUrl()))
         val none = stale.fetch(Fetch.NONE).build()
         assertEquals(none.headers, intercept(none, wireOrder = true).headers)
     }
@@ -308,13 +342,12 @@ class BrowserHeadersTest {
 
     private fun json() = "{}".toRequestBody("application/json".toMediaType())
 
-    // A source's request: KeiSource's default Origin, the given Referer
+    // A source's request: the given Referer
     private fun builder(url: String, referer: String? = null, ua: String = chromeUa) = Request.Builder().url(url)
         .header("User-Agent", ua)
-        .header("Origin", "https://a.test")
         .apply { referer?.let { header("Referer", it) } }
 
-    // The request as sent: with the wire order pass it's HTTP/1.1, as a unit test has no connection; without, the
+    // The request as sent: with the wire order pass it uses the HTTP/1.1 rules; without, the
     // headers as added. With compression, KeiSource's Accept-Encoding
     private fun intercept(request: Request, wireOrder: Boolean = false, compression: Boolean = false, site: String = "https://a.test", imageFetch: Fetch = Fetch.IMAGE): Request {
         var sent: Request? = null

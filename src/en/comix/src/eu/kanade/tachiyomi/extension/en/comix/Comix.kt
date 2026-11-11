@@ -20,6 +20,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
+import keiyoushi.network.Fetch
 import keiyoushi.network.get
 import keiyoushi.network.rateLimit
 import keiyoushi.source.KeiSource
@@ -50,7 +51,6 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import okhttp3.Headers
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -136,7 +136,8 @@ abstract class Comix :
             }
             response
         }
-        .rateLimit(2) { it.host == baseUrlHost }
+        // Covers are cached static files
+        .rateLimit(2) { it.host == baseUrlHost && !it.encodedPath.startsWith("/images/covers/") }
         .rateLimit(2) { it.isPageImage() }
         .rateLimit(5)
 
@@ -182,8 +183,6 @@ abstract class Comix :
 
         return response
     }
-
-    override fun Headers.Builder.configureHeaders() = add("Accept", "*/*")
 
     override suspend fun getPopularManga(page: Int): MangasPage {
         val url = baseUrl.toHttpUrl().newBuilder().apply {
@@ -231,7 +230,7 @@ abstract class Comix :
         ).parseAs<SearchResponse>()
 
         val mangaList = searchResponse.result.items.map {
-            it.toBasicSManga(preferences.posterQuality())
+            it.toBasicSManga(baseUrl.toHttpUrl(), preferences.posterQuality())
         }
         return MangasPage(mangaList, searchResponse.result.hasNextPage())
     }
@@ -330,7 +329,7 @@ abstract class Comix :
             .addQueryParameter("q", name)
             .addQueryParameter("limit", "20")
             .build()
-        val hits = client.get(url).parseAs<TagSearchResponse>().result
+        val hits = client.get(url, Fetch.XHR).parseAs<TagSearchResponse>().result
         if (hits.isEmpty()) throw Exception("No $type named \"$name\"")
         // Exact names when the site's fuzzy search has them
         val ids = hits.filter { it.label.equals(name, ignoreCase = true) }.ifEmpty { hits }.map { it.id.toString() }
@@ -461,6 +460,7 @@ abstract class Comix :
     }
 
     private fun parseMangaDetails(detail: Manga): SManga = detail.toSManga(
+        baseUrl.toHttpUrl(),
         preferences.posterQuality(),
         preferences.alternativeNamesInDescription(),
         preferences.scorePosition(),
@@ -480,7 +480,7 @@ abstract class Comix :
             ?: return emptyList()
 
         return related.parseAs<SearchResponse.Items>().items.map {
-            it.toBasicSManga(preferences.posterQuality())
+            it.toBasicSManga(baseUrl.toHttpUrl(), preferences.posterQuality())
         }
     }
 
@@ -620,7 +620,6 @@ abstract class Comix :
             ?: page.imageUrl
             ?: return super.getImageRequest(page)
         val requestHeaders = headersBuilder()
-            .removeAll("Origin")
             .removeAll("Referer")
             .build()
         return GET(imageUrl, requestHeaders)

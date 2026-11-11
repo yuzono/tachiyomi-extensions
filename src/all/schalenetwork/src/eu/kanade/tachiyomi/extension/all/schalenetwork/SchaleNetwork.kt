@@ -15,6 +15,8 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
+import keiyoushi.network.Fetch
+import keiyoushi.network.fetch
 import keiyoushi.network.get
 import keiyoushi.network.post
 import keiyoushi.source.KeiSource
@@ -26,13 +28,13 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonElement
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.Request
 import okhttp3.RequestBody
 
 @Source
 abstract class SchaleNetwork :
     KeiSource(),
     ConfigurableSource {
-
     private val preferences: SharedPreferences by getPreferencesLazy()
 
     private val searchLang: String
@@ -70,7 +72,7 @@ abstract class SchaleNetwork :
             if (terms.isNotEmpty()) addQueryParameter("s", terms.joinToString(" "))
         }.build()
 
-        val data = client.get(url).parseAs<Books>()
+        val data = client.get(url, Fetch.XHR).parseAs<Books>()
         return MangasPage(
             data.entries.map { it.toSManga(trimTitlePref()) },
             data.page * data.limit < data.total,
@@ -140,7 +142,7 @@ abstract class SchaleNetwork :
             addQueryParameter("page", page.toString())
         }.build()
 
-        val data = client.get(url).parseAs<Books>()
+        val data = client.get(url, Fetch.XHR).parseAs<Books>()
         return MangasPage(
             data.entries.map { it.toSManga(trimTitlePref()) },
             data.page * data.limit < data.total,
@@ -149,7 +151,7 @@ abstract class SchaleNetwork :
 
     override val supportsFilterFetching get() = true
 
-    override suspend fun fetchFilterData(): JsonElement = client.get("$apiUrl/books/tags/filters").parseAs()
+    override suspend fun fetchFilterData(): JsonElement = client.get("$apiUrl/books/tags/filters", Fetch.XHR).parseAs()
 
     override fun getFilterList(data: JsonElement?): FilterList {
         val tags = data?.parseAs<List<FilterDto>>().orEmpty()
@@ -193,7 +195,7 @@ abstract class SchaleNetwork :
         fetchDetails: Boolean,
         fetchChapters: Boolean,
     ): SMangaUpdate {
-        val data = client.get("$apiUrl/books/detail/${manga.url}").parseAs<MangaDetail>()
+        val data = client.get("$apiUrl/books/detail/${manga.url}", Fetch.XHR).parseAs<MangaDetail>()
 
         return SMangaUpdate(
             data.toSManga(trimTitlePref()),
@@ -209,20 +211,26 @@ abstract class SchaleNetwork :
         val (chapterId, chapterKey) = chapter.url.split("/", limit = 2)
 
         return withClearance { crt ->
-            val data = client.post("$apiUrl/books/detail/$chapterId/$chapterKey?crt=$crt", RequestBody.EMPTY)
+            val data = client.post("$apiUrl/books/detail/$chapterId/$chapterKey?crt=$crt", Fetch.XHR, RequestBody.EMPTY)
                 .parseAs<MangaData>().data
 
             val selected = data.getBestQuality(qualityPref()) ?: return@withClearance emptyList()
 
             val images = client.get(
                 "$apiUrl/books/data/$chapterId/$chapterKey/${selected.id}/${selected.key}/${selected.quality}?crt=$crt",
+                Fetch.XHR,
             ).parseAs<ImagesInfo>()
 
             images.entries.mapIndexed { index, image ->
-                Page(index, imageUrl = "${images.base}/${image.path}?w=${selected.quality}")
+                Page(index, imageUrl = images.base + image.path)
             }
         }
     }
+
+    // the image cdn answers 400 unless the site's Origin is sent, like the reader's XHR does
+    override fun getImageRequest(page: Page): Request = super.getImageRequest(page).newBuilder()
+        .fetch(Fetch.XHR)
+        .build()
 
     private suspend fun <T> withClearance(block: suspend (crt: String) -> T): T {
         var crt = getClearance()
@@ -272,16 +280,12 @@ abstract class SchaleNetwork :
         )
 
         val authHeaders = headersBuilder()
-            .set("Accept", "*/*")
             .set("Accept-Language", "en-US,en;q=0.9")
             .set("Authorization", "Bearer $challenge")
             .set("host", "auth.$apiDomain")
-            .set("Sec-Fetch-Dest", "empty")
-            .set("Sec-Fetch-Mode", "cors")
-            .set("Sec-Fetch-Site", "cross-site")
             .build()
 
-        return client.post("$authUrl/clearance", authHeaders, RequestBody.EMPTY).body.string()
+        return client.post("$authUrl/clearance", authHeaders, Fetch.XHR, RequestBody.EMPTY).body.string()
             .also { clearance = it }
     }
 
@@ -289,7 +293,7 @@ abstract class SchaleNetwork :
 
     override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> = runCatching {
         val token = clearance ?: return emptyList() // no need to load webview for related
-        val data = client.post("$apiUrl/books/detail/${manga.url}?crt=$token", RequestBody.EMPTY)
+        val data = client.post("$apiUrl/books/detail/${manga.url}?crt=$token", Fetch.XHR, RequestBody.EMPTY)
             .parseAs<MangaData>()
 
         data.similar.map { it.toSManga(trimTitlePref()) }

@@ -11,6 +11,7 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
+import keiyoushi.network.Fetch
 import keiyoushi.network.get
 import keiyoushi.network.post
 import keiyoushi.source.KeiSource
@@ -32,10 +33,17 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonElement
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.Interceptor
+import okhttp3.MultipartBody
+import okhttp3.OkHttpClient
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.asResponseBody
+import okio.Buffer
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import org.jsoup.select.Elements
+import java.io.IOException
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -68,6 +76,8 @@ abstract class InitManga :
 
     protected open val siteZone: ZoneId = ZoneId.of("Europe/Istanbul")
 
+    override fun OkHttpClient.Builder.configureClient(): OkHttpClient.Builder = addInterceptor(::decryptImage)
+
     override suspend fun getPopularManga(page: Int): MangasPage = getMangaList(baseUrl.toHttpUrl().newBuilder().addPathSegment(popularUrlSlug), page)
 
     override suspend fun getLatestUpdates(page: Int): MangasPage = getMangaList(baseUrl.toHttpUrl().newBuilder().addPathSegment(latestUrlSlug), page)
@@ -78,7 +88,7 @@ abstract class InitManga :
                 .addQueryParameter("term", query)
                 .addQueryParameter("page", page.toString())
                 .build()
-            val results = client.get(url).parseAs<List<SearchDto>>()
+            val results = client.get(url, Fetch.XHR).parseAs<List<SearchDto>>()
             // Search also returns other post types (stickers); the endpoint has no type filter
             val mangas = results.filter { it.postType == "manga" }.map { it.toSManga() }
             return MangasPage(mangas, results.size == SEARCH_PAGE_SIZE)
@@ -95,7 +105,7 @@ abstract class InitManga :
 
     private suspend fun getMangaList(url: HttpUrl.Builder, page: Int): MangasPage {
         if (page > 1) url.addPathSegment("page").addPathSegment(page.toString())
-        val document = client.get(url.addPathSegment("").build()).asJsoup()
+        val document = client.get(url.addPathSegment("").build(), Fetch.DOCUMENT).asJsoup()
 
         val mangas = document.select("div.manga-card, div.manga-item-grid > div.uk-panel").map { card ->
             SManga.create().apply {
@@ -127,7 +137,7 @@ abstract class InitManga :
         fetchChapters: Boolean,
     ): SMangaUpdate {
         val mangaUrl = getMangaUrl(manga)
-        val document = client.get(mangaUrl).asJsoup()
+        val document = client.get(mangaUrl, Fetch.DOCUMENT).asJsoup()
 
         manga.apply {
             title = document.selectFirst("h1")!!.text()
@@ -151,7 +161,7 @@ abstract class InitManga :
 
     override val supportsRelatedMangas = true
 
-    override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> = client.get(getMangaUrl(manga)).asJsoup()
+    override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> = client.get(getMangaUrl(manga), Fetch.DOCUMENT).asJsoup()
         .select("div.manga-item-slider")
         .map { card ->
             SManga.create().apply {
@@ -220,15 +230,17 @@ abstract class InitManga :
             .addQueryParameter("per_page", "50")
             .addQueryParameter("paged", page.toString())
             .build()
-        return client.get(url).parseAs()
+        return client.get(url, Fetch.XHR).parseAs()
     }
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         val chapterUrl = getChapterUrl(chapter)
-        val document = client.get(chapterUrl).asJsoup()
+        val document = client.get(chapterUrl, Fetch.DOCUMENT).asJsoup()
         if (document.selectFirst("div.lock-card") != null) return emptyList()
 
         val scripts = document.scriptContents()
+        document.selectFirst("div.imip-protected-gallery")?.let { return getProtectedPages(it, scripts, chapterUrl) }
+
         val payload = scripts.firstOrNull { "\"ciphertext\"" in it }?.objectLiteral()?.parseAs<EncryptedPayloadDto>()
             ?: return document.select("div#chapter-content > img").toPages()
         val key = if (payload.salt != null) {
@@ -242,6 +254,35 @@ abstract class InitManga :
             .decodeToString()
 
         return Jsoup.parseBodyFragment(content, baseUrl).select("img, canvas[data-enc]").toPages()
+    }
+
+    private suspend fun getProtectedPages(gallery: Element, scripts: List<String>, chapterUrl: String): List<Page> {
+        val vault = scripts.first { "admin-ajax" in it && "\"nonce\"" in it }.objectLiteral().parseAs<ImageVaultDto>()
+        val body = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("action", "imip_gate_unlock")
+            .addFormDataPart("cid", gallery.attr("data-cid"))
+            .addFormDataPart("nonce", vault.nonce)
+            .build()
+        val key = client.post(vault.url, Fetch.XHR.from(chapterUrl), body).parseAs<ImageKeyResponseDto>().data.k
+
+        return gallery.select("div.imip-page[data-bin]").mapIndexed { i, element ->
+            val imageUrl = element.absUrl("data-bin").toHttpUrl().newBuilder().fragment("$IMAGE_KEY_FRAGMENT$key").build().toString()
+            Page(i, imageUrl = imageUrl)
+        }
+    }
+
+    private fun decryptImage(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        val key = request.url.fragment?.takeIf { it.startsWith(IMAGE_KEY_FRAGMENT) }?.removePrefix(IMAGE_KEY_FRAGMENT)
+            ?: return chain.proceed(request)
+        val response = chain.proceed(request)
+        if (!response.isSuccessful) return response
+
+        // The real image header sits at the end of the file, so the whole body is needed
+        val data = response.body.use { body -> Buffer().apply { writeAll(body.source()) } }
+        val image = ImageProtector.decrypt(data, key) ?: throw IOException("Failed to decrypt image")
+        return response.newBuilder().body(image.asResponseBody(response.body.contentType(), image.size)).build()
     }
 
     // Reader data is in inline scripts or base64 data: scripts
@@ -260,9 +301,8 @@ abstract class InitManga :
     }
 
     private suspend fun fetchChapterKey(payload: EncryptedPayloadDto, chapterUrl: String): ByteArray {
-        val keyHeaders = headers.newBuilder().set("Referer", chapterUrl).build()
         val body = ChapterKeyRequestDto(payload.cid!!, payload.e!!, payload.g!!).toJsonRequestBody()
-        return client.post("$baseUrl/wp-json/initmanga/v1/chapter-key", keyHeaders, body)
+        return client.post("$baseUrl/wp-json/initmanga/v1/chapter-key", Fetch.XHR.from(chapterUrl), body)
             .parseAs<ChapterKeyResponseDto>().key.decodeHex()
     }
 
@@ -282,7 +322,7 @@ abstract class InitManga :
 
     override suspend fun fetchFilterData(): JsonElement {
         val url = baseUrl.toHttpUrl().newBuilder().addPathSegment(mangaUrlDirectory).addPathSegment("").build()
-        val document = client.get(url).asJsoup()
+        val document = client.get(url, Fetch.DOCUMENT).asJsoup()
         return document.select("ul.uk-list.uk-text-small a")
             .map { GenreData(it.ownText(), it.absUrl("href").toHttpUrl().encodedPath) }
             .toJsonElement()
@@ -308,6 +348,7 @@ abstract class InitManga :
         private const val PREF_HIDE_LOCKED_KEY = "pref_hide_locked_chapters"
         private const val PREF_HIDE_LOCKED_DEFAULT = false
         private const val SEARCH_PAGE_SIZE = 10
+        private const val IMAGE_KEY_FRAGMENT = "imip="
         private val POST_ID_REGEX = Regex("""postid-(\d+)""")
         private val chapterDateFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.ROOT)
     }
