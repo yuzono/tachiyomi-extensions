@@ -25,46 +25,42 @@ internal object Hentai3Utils {
         }
     }
 
-    fun getDescriptions(document: Document): String {
-        val stringBuilder = StringBuilder()
-
+    fun getDescriptions(document: Document): String = buildString {
         val categories = document.select("#main-info a[href*=/category/]")
         if (categories.isNotEmpty()) {
-            stringBuilder.append("Categories: ")
-            stringBuilder.append(categories.joinToString { it.cleanTag() })
-            stringBuilder.append("\n")
+            append("Categories: ")
+            append(categories.joinToString { it.cleanTag() })
+            append("\n")
         }
 
         val groups = getGroups(document)
         if (!groups.isNullOrBlank()) {
-            stringBuilder.append("Groups: ")
-            stringBuilder.append(groups)
-            stringBuilder.append("\n")
+            append("Groups: ")
+            append(groups)
+            append("\n")
         }
-        stringBuilder.append("\n")
+        append("\n")
 
         val series = document.select("#main-info a[href*=/series/]")
         if (series.isNotEmpty()) {
-            stringBuilder.append("Series: ")
-            stringBuilder.append(series.joinToString { it.cleanTag() })
-            stringBuilder.append("\n")
+            append("Series: ")
+            append(series.joinToString { it.cleanTag() })
+            append("\n")
         }
 
         val characters = document.select("#main-info a[href*=/characters/]")
         if (characters.isNotEmpty()) {
-            stringBuilder.append("Characters: ")
-            stringBuilder.append(characters.joinToString { it.cleanTag() })
-            stringBuilder.append("\n")
+            append("Characters: ")
+            append(characters.joinToString { it.cleanTag() })
+            append("\n")
         }
-        stringBuilder.append("\n")
+        append("\n")
 
         val languages = document.select("#main-info a[href*=/language/]")
         if (languages.isNotEmpty()) {
-            stringBuilder.append("Languages: ")
-            stringBuilder.append(languages.joinToString { it.cleanTag() })
+            append("Languages: ")
+            append(languages.joinToString { it.cleanTag() })
         }
-
-        return stringBuilder.toString()
     }
 
     // Everything listed under "Tags:", including the language and search links the site puts there
