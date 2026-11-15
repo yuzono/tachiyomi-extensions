@@ -276,9 +276,9 @@ abstract class Hentai3 :
     }
 
     private fun parseMangaDetails(document: Document): SManga {
-        val fullTitle = document.select("#main-info > h1").text()
+        val fullTitle = document.select("#main-info h1").text()
             .replace("\"", "").trim()
-        val shortTitle = document.select("#main-info > h1 > span").text()
+        val shortTitle = document.select("#main-info h1 > span").text()
             .replace("\"", "").trim()
             .takeIf { !displayFullTitle && it.isNotEmpty() }
 
@@ -299,11 +299,11 @@ abstract class Hentai3 :
             description = "Full English and Japanese titles:\n"
                 .plus("$fullTitle\n\n")
                 .plus(code ?: "")
-                .plus("Pages: ${getNumPages(document)}\n")
+                .plus(getNumPages(document)?.let { "Pages: $it\n" } ?: "")
                 .plus(getDescriptions(document))
             genre = getTags(document)
 
-            thumbnail_url = document.selectFirst("#main-cover img")?.getImage()
+            thumbnail_url = document.selectFirst("#main-info img")?.getImage()
             status = SManga.COMPLETED
             update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
         }
@@ -336,9 +336,9 @@ abstract class Hentai3 :
     override val supportsRelatedMangas = true
 
     private fun relatedMangaListSelector(): String = if (flagLang.isNotEmpty()) {
-        "$popularMangaSelector:has(.title.flag-$flagLang), $popularMangaSelector:has(.title:not(.flag))"
+        "#similar-content .doujin.flag-$flagLang a.cover, #similar-content .doujin:not(.flag) a.cover"
     } else {
-        popularMangaSelector
+        "#similar-content a.cover"
     }
 
     override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> = client.get(getMangaUrl(manga), Fetch.DOCUMENT).asJsoup()
