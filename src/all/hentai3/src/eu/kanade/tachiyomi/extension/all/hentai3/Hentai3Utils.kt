@@ -3,13 +3,12 @@ package eu.kanade.tachiyomi.extension.all.hentai3
 import keiyoushi.utils.tryParse
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
-import java.text.SimpleDateFormat
 import java.util.Locale
+import kotlin.time.Instant
 
 internal object Hentai3Utils {
     fun getArtists(document: Document): String? {
-        // "a[href*=/artists/]"
-        val artists = document.select("#main-info > div.tag-container:contains(Artists) > .filter-elem > a.name")
+        val artists = document.select("#main-info a[href*=/artists/]")
         return if (artists.isNotEmpty()) {
             artists.joinToString { it.cleanTag() }
         } else {
@@ -18,8 +17,7 @@ internal object Hentai3Utils {
     }
 
     fun getGroups(document: Document): String? {
-        // "a[href*=/groups/]"
-        val groups = document.select("#main-info > div.tag-container:contains(Groups) > .filter-elem > a.name")
+        val groups = document.select("#main-info a[href*=/groups/]")
         return if (groups.isNotEmpty()) {
             groups.joinToString { it.cleanTag() }
         } else {
@@ -27,71 +25,56 @@ internal object Hentai3Utils {
         }
     }
 
-    fun getDescriptions(document: Document): String {
-        val stringBuilder = StringBuilder()
-
-        // "a[href*=/category/]"
-        val categories = document.select("#main-info > div.tag-container:contains(Categories) > .filter-elem > a.name")
+    fun getDescriptions(document: Document): String = buildString {
+        val categories = document.select("#main-info a[href*=/category/]")
         if (categories.isNotEmpty()) {
-            stringBuilder.append("Categories: ")
-            stringBuilder.append(categories.joinToString { it.cleanTag() })
-            stringBuilder.append("\n")
+            append("Categories: ")
+            append(categories.joinToString { it.cleanTag() })
+            append("\n")
         }
 
-        // "a[href*=/group/]"
         val groups = getGroups(document)
         if (!groups.isNullOrBlank()) {
-            stringBuilder.append("Groups: ")
-            stringBuilder.append(groups)
-            stringBuilder.append("\n")
+            append("Groups: ")
+            append(groups)
+            append("\n")
         }
-        stringBuilder.append("\n")
+        append("\n")
 
-        // "a[href*=/series/]"
-        val series = document.select("#main-info > div.tag-container:contains(Series) > .filter-elem > a.name")
+        val series = document.select("#main-info a[href*=/series/]")
         if (series.isNotEmpty()) {
-            stringBuilder.append("Series: ")
-            stringBuilder.append(series.joinToString { it.cleanTag() })
-            stringBuilder.append("\n")
+            append("Series: ")
+            append(series.joinToString { it.cleanTag() })
+            append("\n")
         }
 
-        // "a[href*=/characters/]"
-        val characters = document.select("#main-info > div.tag-container:contains(Characters) > .filter-elem > a.name")
+        val characters = document.select("#main-info a[href*=/characters/]")
         if (characters.isNotEmpty()) {
-            stringBuilder.append("Characters: ")
-            stringBuilder.append(characters.joinToString { it.cleanTag() })
-            stringBuilder.append("\n")
+            append("Characters: ")
+            append(characters.joinToString { it.cleanTag() })
+            append("\n")
         }
-        stringBuilder.append("\n")
+        append("\n")
 
-        // "a[href*=/language/]"
-        val languages = document.select("#main-info > div.tag-container:contains(Languages) > .filter-elem > a.name")
+        val languages = document.select("#main-info a[href*=/language/]")
         if (languages.isNotEmpty()) {
-            stringBuilder.append("Languages: ")
-            stringBuilder.append(languages.joinToString { it.cleanTag() })
+            append("Languages: ")
+            append(languages.joinToString { it.cleanTag() })
         }
-
-        return stringBuilder.toString()
     }
 
+    // Everything listed under "Tags:", including the language and search links the site puts there
     fun getTags(document: Document): String {
-        // "a[href*=/tags/]"
-        val tags = document.select("#main-info > div.tag-container:contains(Tags) > .filter-elem > a.name")
+        val tags = document.select("#main-info .tag-tags a.name")
         return tags.map { it.cleanTag() }.sorted().joinToString()
     }
 
-    fun getNumPages(document: Document): String = document.selectFirst("#main-info > div.tag-container:contains(Pages) > span")!!.cleanTag()
+    fun getNumPages(document: Document): String? = document.selectFirst("#main-info div.tag-container:containsOwn(Pages:) > span")?.cleanTag()
 
-    fun getTime(document: Document): Long {
-        val timeString = document.selectFirst("#main-info > div.tag-container > time")
-            ?.attr("datetime")
-            ?.replace("T", " ")
-
-        return SimpleDateFormat("yyyy-MM-dd HH:mm:ssZ", Locale.getDefault()).tryParse(timeString)
-    }
+    fun getTime(document: Document): Long = Instant.tryParse(document.selectFirst("#main-info time")?.attr("datetime"))
 
     fun getCodes(document: Document): String? {
-        val codes = document.select("#main-info > h3 > strong")
+        val codes = document.select("#main-info h3 > strong")
         if (codes.isNotEmpty()) {
             return "Code: "
                 .plus(
