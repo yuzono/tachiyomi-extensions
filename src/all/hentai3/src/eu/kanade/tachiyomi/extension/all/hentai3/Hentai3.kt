@@ -170,9 +170,7 @@ abstract class Hentai3 :
     private val popularMangaNextPageSelector = "a[rel=next]"
 
     private fun popularMangaFromElement(element: Element): SManga = SManga.create().apply {
-        title = element.selectFirst("div.title")!!.ownText()
-            .replace("\"", "")
-            .shortenTitle()
+        title = element.selectFirst("div.title")!!.ownText().shortenTitle()
         setUrlWithoutDomain(element.absUrl("href"))
         thumbnail_url = element.selectFirst(".cover img")?.getImage()
     }
@@ -277,7 +275,6 @@ abstract class Hentai3 :
 
     private fun parseMangaDetails(document: Document): SManga {
         val fullTitle = document.select("#main-info h1").text()
-            .replace("\"", "").trim()
 
         return SManga.create().apply {
             setUrlWithoutDomain(document.location())
