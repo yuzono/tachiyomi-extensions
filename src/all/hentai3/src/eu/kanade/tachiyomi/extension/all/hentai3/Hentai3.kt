@@ -278,9 +278,6 @@ abstract class Hentai3 :
     private fun parseMangaDetails(document: Document): SManga {
         val fullTitle = document.select("#main-info h1").text()
             .replace("\"", "").trim()
-        val shortTitle = document.select("#main-info h1 > span").text()
-            .replace("\"", "").trim()
-            .takeIf { !displayFullTitle && it.isNotEmpty() }
 
         return SManga.create().apply {
             setUrlWithoutDomain(document.location())
@@ -289,7 +286,7 @@ abstract class Hentai3 :
             val artists = getArtists(document)
             initialized = true
 
-            title = shortTitle ?: fullTitle.shortenTitle()
+            title = fullTitle.shortenTitle()
 
             author = authors ?: artists
             artist = artists ?: authors
