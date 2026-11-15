@@ -58,13 +58,12 @@ abstract class DeviantArt :
 
     override fun OkHttpClient.Builder.configureClient(): OkHttpClient.Builder = apply {
         rateLimit(30, 1.minutes) { it.host == baseUrlHost }
-        // rateLimit(5, 1.minutes) { it.host == backendBaseUrlHost }
         rateLimit(30, 5.minutes) { it.host == backendBaseUrlHost }
         addInterceptor(OriginalImageInterceptor())
     }
 
-    private val baseUrlHost by lazy { baseUrl.toHttpUrl().host }
-    private val backendBaseUrlHost by lazy { backendBaseUrl.toHttpUrl().host }
+    private val baseUrlHost get() = baseUrl.toHttpUrl().host
+    private val backendBaseUrlHost get() = backendBaseUrl.toHttpUrl().host
 
     private fun queryBuilder(page: Int): HttpUrl.Builder = backendBuilder()
         .addPathSegment("rss.xml")
@@ -280,7 +279,6 @@ abstract class DeviantArt :
             setUrlWithoutDomain(link)
             name = artTitle(if (isVideo) "$artName (video)" else artName, id)
             date_upload = it.selectFirst("pubDate")?.text()?.let(dateFormat::tryParse) ?: 0L
-            // scanlator = it.selectFirst("media|credit")?.text()
         }
     }
 
