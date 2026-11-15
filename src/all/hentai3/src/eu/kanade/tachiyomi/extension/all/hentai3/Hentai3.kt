@@ -293,8 +293,7 @@ abstract class Hentai3 :
 
             val code = getCodes(document)
             // Some people want these additional details in description
-            description = "Full English and Japanese titles:\n"
-                .plus("$fullTitle\n\n")
+            description = (if (title == fullTitle) "" else "Full title: $fullTitle\n\n")
                 .plus(code ?: "")
                 .plus(getNumPages(document)?.let { "Pages: $it\n" } ?: "")
                 .plus(getDescriptions(document))
