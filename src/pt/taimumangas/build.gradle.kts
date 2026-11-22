@@ -5,8 +5,8 @@ plugins {
 }
 
 keiyoushi {
-    name = "Taimu Mangas"
-    versionCode = 1
+    name = "TaimuMangas"
+    versionCode = 2
     contentWarning = ContentWarning.MIXED
     libVersion = "1.6"
 
