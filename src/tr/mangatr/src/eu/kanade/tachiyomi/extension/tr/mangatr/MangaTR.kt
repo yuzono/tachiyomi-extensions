@@ -1,16 +1,16 @@
 package eu.kanade.tachiyomi.extension.tr.mangatr
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.util.Base64
+import android.graphics.Rect
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
-import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
 import keiyoushi.network.Fetch
 import keiyoushi.network.fetch
@@ -18,6 +18,7 @@ import keiyoushi.network.get
 import keiyoushi.network.post
 import keiyoushi.network.rateLimit
 import keiyoushi.source.KeiSource
+import keiyoushi.source.SMangaUpdate
 import keiyoushi.utils.asJsoup
 import keiyoushi.utils.parseAs
 import keiyoushi.utils.sha256
@@ -55,6 +56,7 @@ abstract class MangaTR : KeiSource() {
     override fun OkHttpClient.Builder.configureClient() = apply {
         addInterceptor(::verifyChallengeInterceptor)
         addInterceptor(::brokenImageInterceptor)
+        addInterceptor(::unscrambleInterceptor)
         addInterceptor(DDoSGuardInterceptor(network.client))
         rateLimit(10) { it.host == IMAGE_HOST }
         rateLimit(2)
@@ -289,7 +291,7 @@ abstract class MangaTR : KeiSource() {
         val document = response.asJsoup()
 
         if (document.selectFirst("div#uyari:contains(üye girişi), body :containsOwn(Giriş Yapmalısınız)") != null) {
-            throw IOException("Bu bölümü okuyabilmek için WebView üzerinden üye girişi yapmanız gerekmektedir.")
+            throw IOException(LOGIN_REQUIRED)
         }
 
         if (document.selectFirst("canvas#sliderCanvas, div.box h2:contains(Güvenlik Doğrulaması), div.cf-turnstile") != null) {
@@ -297,31 +299,60 @@ abstract class MangaTR : KeiSource() {
             throw IOException("Lütfen WebView'da Bot Korumasını geçin.")
         }
 
-        val matrix = document.select("script:not([src])").firstNotNullOfOrNull { MATRIX_REGEX.find(it.data()) }
-        if (matrix != null) {
-            return matrix.groupValues[1].parseAs<List<MatrixPage>>().mapIndexed { index, page ->
-                Page(index, imageUrl = page.decode())
+        val urls = readerPageUrls(document)
+        if (urls.isEmpty()) {
+            throw IOException("Sayfalar bulunamadı; site okuyucusunu değiştirmiş olabilir.")
+        }
+        return urls.mapIndexed { index, url -> Page(index, imageUrl = url) }
+    }
+
+    private suspend fun readerPageUrls(document: Document): List<String> {
+        val scripts = document.select("script:not([src])").joinToString("\n") { it.data() }
+
+        // The reader asks /reader/pages/ for each batch of three pages. The images are stored with their left and
+        // right parts swapped; each page's tk, mixed with the page index and the chapter's seed, gives where to cut.
+        val readerId = SCRAMBLE_ID_REGEX.find(scripts)?.groupValues?.get(1) ?: return emptyList()
+        val seed = READER_SEED_REGEX.find(scripts)?.groupValues?.get(1).orEmpty()
+        val slots = document.select(".reader-page-wrap, .reader-webtoon-wrap").size
+        val from = Fetch.XHR.from(document.location())
+        val headers = ajaxHeaders.newBuilder().set("Accept", "application/json").build()
+        val pages = mutableListOf<RoutePage>()
+        val limit = if (slots > 0) slots else MAX_PAGES
+        var start = 0
+        while (start < limit) {
+            val url = "$baseUrl/reader/pages/".toHttpUrl().newBuilder()
+                .addQueryParameter("reader", readerId)
+                .addQueryParameter("start", start.toString())
+                .build()
+            val response = client.get(url, headers, from, ensureSuccess = slots > 0)
+            // Without slots to count, the batch after the last page is a 404
+            if (response.code == 404 && slots == 0) {
+                response.close()
+                break
             }
+            val batch = response.parseAs<RouteBatch>().pages
+            if (batch.isEmpty()) break
+            pages += batch
+            start += 3
         }
-
-        // Lazy-loaded pages keep their real URL in data-mtr-src until scrolled into view
-        return document.select("img.chapter-img").mapIndexed { index, img ->
-            Page(index, imageUrl = img.absUrl("data-mtr-src").ifEmpty { img.absUrl("src") })
+        return pages.distinctBy { it.index }.sortedBy { it.index }.map { page ->
+            if (page.tk == null) page.url else "${page.url}#$CUT_FRAGMENT=${cutPoint(page.tk, page.index, seed)}"
         }
     }
 
-    // The reader script builds each page from window.__MTR_MATRIX__, with its url encoded one of three ways
+    // The reader's 16-bit FNV-1a of "index:seed"; tk xor this is the left part's share of the width, in 1/10000
+    private fun cutPoint(tk: Int, index: Int, seed: String): Int {
+        var hash = 0x811c9dc5.toInt()
+        for (char in "$index:$seed") hash = ((hash xor char.code) * 0x01000193) and 0xFFFF
+        val share = tk xor hash
+        return if (share in 2000..8000) share else 5000
+    }
+
     @Serializable
-    private class MatrixPage(private val m: Int, private val s: Int, private val d: String) {
-        fun decode(): String = when (m) {
-            0 -> d.base64Bytes().map { ((it.toInt() and 0xFF) xor (s and 0xFF)).toChar() }.joinToString("")
-            1 -> d.split('.').map { it.base64Bytes().decodeToString() }.let { (a, b, c) -> c + a + b }
-            2 -> d.base64Bytes().map { ((it.toInt() and 0xFF) - (s % 25 + 1)).toChar() }.joinToString("")
-            else -> throw IOException("Bilinmeyen sayfa kodlaması: $m")
-        }
+    private class RouteBatch(val pages: List<RoutePage>)
 
-        private fun String.base64Bytes() = Base64.decode(this, Base64.DEFAULT)
-    }
+    @Serializable
+    private class RoutePage(val index: Int, val url: String, val tk: Int? = null)
 
     // ============================= Utilities =============================
 
@@ -347,6 +378,27 @@ abstract class MangaTR : KeiSource() {
             response.close()
             if (++attempt == IMAGE_ATTEMPTS) return brokenPageResponse(request)
         }
+    }
+
+    // Puts a page's parts back in order: with "#cut=<share>", the stored image is the right part, then the left part,
+    // whose width is share/10000 of the page
+    private fun unscrambleInterceptor(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        val share = request.url.fragment?.removePrefix("$CUT_FRAGMENT=")?.toIntOrNull()
+        val response = chain.proceed(request)
+        if (share == null || !response.isSuccessful) return response
+
+        val image = response.body.byteStream().use(BitmapFactory::decodeStream)
+        val (width, height) = image.width to image.height
+        val left = width * share / 10000
+        val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        Canvas(output).apply {
+            drawBitmap(image, Rect(width - left, 0, width, height), Rect(0, 0, left, height), null)
+            drawBitmap(image, Rect(0, 0, width - left, height), Rect(left, 0, width, height), null)
+        }
+        val buffer = Buffer()
+        output.compress(Bitmap.CompressFormat.JPEG, 90, buffer.outputStream())
+        return response.newBuilder().body(buffer.asResponseBody("image/jpeg".toMediaType())).build()
     }
 
     private fun brokenPageResponse(request: Request): Response {
@@ -426,7 +478,11 @@ abstract class MangaTR : KeiSource() {
         private val RELATIVE_DATE_REGEX = Regex("""(\d+)\s*([a-zçğıöşü]+)""")
         private val CHALLENGE_REGEX = Regex("""challenge:\s*"([^"]+)"""")
         private val CHAPTER_URL_REGEX = Regex("""id-\d+-read-(.+)-chapter-[^/]+\.html""")
-        private val MATRIX_REGEX = Regex("""__MTR_MATRIX__\s*=\s*\{.*?\bm\s*:\s*(\[.*\])\s*\}\s*;""", RegexOption.DOT_MATCHES_ALL)
+        private val SCRAMBLE_ID_REGEX = Regex("""MTR_SCRAMBLE_ID\s*=\s*["']([a-f0-9]{64})["']""")
+        private val READER_SEED_REGEX = Regex("""MTR_READER_SEED\s*=\s*["']([^"']*)["']""")
+        private const val CUT_FRAGMENT = "cut"
+        private const val LOGIN_REQUIRED = "Bu bölümü okuyabilmek için WebView üzerinden üye girişi yapmanız gerekmektedir."
+        private const val MAX_PAGES = 600
         private val SEED_REGEX = Regex("""--mdx-(white|black)\s*:\s*(-?\d+)""")
         private const val IMAGE_HOST = "image.mngtr.site"
         private const val IMAGE_ATTEMPTS = 3
